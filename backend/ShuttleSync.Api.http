@@ -1,0 +1,6 @@
+@ShuttleSync.Api_HostAddress = http://localhost:5284
+
+GET {{ShuttleSync.Api_HostAddress}}/api/health
+Accept: application/json
+
+###
