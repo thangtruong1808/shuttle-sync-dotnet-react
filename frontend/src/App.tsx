@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import AuthPanel from "./features/auth/AuthPanel";
 
 type HealthResponse = {
   status: string;
@@ -44,6 +45,11 @@ function App() {
         </p>
 
         <section className="mt-10 rounded-2xl border border-slate-800 bg-slate-900 p-6">
+          <h2 className="text-sm font-medium text-slate-400">Account</h2>
+          <AuthPanel />
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-6">
           <h2 className="text-sm font-medium text-slate-400">Backend health</h2>
           {health ? (
             <p className="mt-3 text-lg">

@@ -1,8 +1,15 @@
+# cursor
+.cursor/
+*.plan.md
+
 # Dependencies
 node_modules/
 
 # database
-database/
+database/*
+!database/schema/
+database/schema/*
+!database/schema/*.sql
 
 #documentation
 documentation/
@@ -20,6 +27,7 @@ obj/
 .env
 .env.*
 !.env.example
+
 
 # Logs and OS files
 *.log
