@@ -17,9 +17,9 @@ public static class AuthEndpoints
         auth.MapPost("/register", RegisterAsync);
         auth.MapPost("/login", LoginAsync);
         auth.MapPost("/refresh", RefreshAsync);
+        auth.MapGet("/me", MeAsync);
 
         var signedIn = auth.MapGroup("").RequireAuthorization();
-        signedIn.MapGet("/me", MeAsync);
         signedIn.MapGet("/sessions", SessionsAsync);
         signedIn.MapDelete("/sessions/{id:guid}", RevokeSessionAsync);
         signedIn.MapPost("/logout", LogoutAsync);
@@ -173,7 +173,9 @@ public static class AuthEndpoints
         var current = await CurrentSessionAsync(http, repository, cancellationToken);
         if (current is null)
         {
-            return SignInAgain();
+            return http.Request.Cookies.ContainsKey(AuthCookies.Access)
+                ? SignInAgain()
+                : Results.NoContent();
         }
 
         var user = await repository.FindUserByIdAsync(current.UserId, cancellationToken);

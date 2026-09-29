@@ -14,12 +14,14 @@ export type AuthState = {
   status: "unknown" | "authenticated" | "anonymous";
   user: User | null;
   sessions: SessionSummary[];
+  sessionsStatus: "idle" | "loading" | "ready";
 };
 
 const initialState: AuthState = {
   status: "unknown",
   user: null,
   sessions: [],
+  sessionsStatus: "idle",
 };
 
 type AuthSliceState = { auth: AuthState };
@@ -89,11 +91,13 @@ const authSlice = createSlice({
         state.status = action.payload ? "authenticated" : "anonymous";
         if (!action.payload) {
           state.sessions = [];
+          state.sessionsStatus = "idle";
         }
       })
       .addCase(loadCurrentUser.rejected, (state) => {
         state.user = null;
         state.sessions = [];
+        state.sessionsStatus = "idle";
         state.status = "anonymous";
       })
       .addCase(signedIn, (state, action) => {
@@ -103,10 +107,18 @@ const authSlice = createSlice({
       .addCase(signedOut, (state) => {
         state.user = null;
         state.sessions = [];
+        state.sessionsStatus = "idle";
         state.status = "anonymous";
+      })
+      .addCase(fetchSessions.pending, (state) => {
+        state.sessionsStatus = "loading";
       })
       .addCase(fetchSessions.fulfilled, (state, action) => {
         state.sessions = action.payload;
+        state.sessionsStatus = "ready";
+      })
+      .addCase(fetchSessions.rejected, (state) => {
+        state.sessionsStatus = "ready";
       });
   },
 });

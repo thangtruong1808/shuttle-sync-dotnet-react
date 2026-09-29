@@ -1,6 +1,6 @@
 using System.Data;
 using Dapper;
-using Microsoft.Data.SqlClient;
+using MySqlConnector;
 using ShuttleSync.Api.Auth;
 
 namespace ShuttleSync.Api.Data;
@@ -14,7 +14,7 @@ public sealed class AuthRepository(IConfiguration configuration)
             new CommandDefinition(
                 """
                 SELECT Id, Email, EmailVerified, PasswordHash, DisplayName
-                FROM dbo.Users
+                FROM Users
                 WHERE Email = @Email
                 """,
                 new { Email = email },
@@ -28,7 +28,7 @@ public sealed class AuthRepository(IConfiguration configuration)
             new CommandDefinition(
                 """
                 SELECT Id, Email, EmailVerified, PasswordHash, DisplayName
-                FROM dbo.Users
+                FROM Users
                 WHERE Id = @Id
                 """,
                 new { Id = id },
@@ -43,7 +43,7 @@ public sealed class AuthRepository(IConfiguration configuration)
             await connection.ExecuteAsync(
                 new CommandDefinition(
                     """
-                    INSERT INTO dbo.Users (Id, Email, EmailVerified, PasswordHash, DisplayName, CreatedAt, UpdatedAt)
+                    INSERT INTO Users (Id, Email, EmailVerified, PasswordHash, DisplayName, CreatedAt, UpdatedAt)
                     VALUES (@Id, @Email, @EmailVerified, @PasswordHash, @DisplayName, @CreatedAt, @UpdatedAt)
                     """,
                     new
@@ -59,7 +59,7 @@ public sealed class AuthRepository(IConfiguration configuration)
                     cancellationToken: cancellationToken));
             return true;
         }
-        catch (SqlException exception) when (exception.Number is 2601 or 2627)
+        catch (MySqlException exception) when (exception.Number == 1062)
         {
             return false;
         }
@@ -75,7 +75,7 @@ public sealed class AuthRepository(IConfiguration configuration)
             new CommandDefinition(
                 """
                 SELECT Id, UserId, Provider, ProviderUserId
-                FROM dbo.ExternalLogins
+                FROM ExternalLogins
                 WHERE Provider = @Provider AND ProviderUserId = @ProviderUserId
                 """,
                 new { Provider = provider, ProviderUserId = providerUserId },
@@ -96,7 +96,7 @@ public sealed class AuthRepository(IConfiguration configuration)
             await connection.ExecuteAsync(
                 new CommandDefinition(
                     """
-                    INSERT INTO dbo.Users (Id, Email, EmailVerified, PasswordHash, DisplayName, CreatedAt, UpdatedAt)
+                    INSERT INTO Users (Id, Email, EmailVerified, PasswordHash, DisplayName, CreatedAt, UpdatedAt)
                     VALUES (@Id, @Email, @EmailVerified, NULL, @DisplayName, @Now, @Now)
                     """,
                     new
@@ -113,7 +113,7 @@ public sealed class AuthRepository(IConfiguration configuration)
             await transaction.CommitAsync(cancellationToken);
             return true;
         }
-        catch (SqlException exception) when (exception.Number is 2601 or 2627)
+        catch (MySqlException exception) when (exception.Number == 1062)
         {
             await transaction.RollbackAsync(cancellationToken);
             return false;
@@ -141,7 +141,7 @@ public sealed class AuthRepository(IConfiguration configuration)
                 cancellationToken);
             return true;
         }
-        catch (SqlException exception) when (exception.Number is 2601 or 2627)
+        catch (MySqlException exception) when (exception.Number == 1062)
         {
             return false;
         }
@@ -182,12 +182,12 @@ public sealed class AuthRepository(IConfiguration configuration)
                 """
                 SELECT Id, UserId, FamilyId, RefreshTokenHash, ReplacedBySessionId, ExpiresAt, RevokedAt,
                        UserAgent, IpAddress, CreatedAt, LastUsedAt
-                FROM dbo.Sessions
+                FROM Sessions
                 WHERE Id = @Id
                   AND UserId = @UserId
                   AND ReplacedBySessionId IS NULL
                   AND RevokedAt IS NULL
-                  AND ExpiresAt > SYSUTCDATETIME()
+                  AND ExpiresAt > UTC_TIMESTAMP(6)
                 """,
                 new { Id = sessionId, UserId = userId },
                 cancellationToken: cancellationToken));
@@ -201,11 +201,11 @@ public sealed class AuthRepository(IConfiguration configuration)
                 """
                 SELECT Id, UserId, FamilyId, RefreshTokenHash, ReplacedBySessionId, ExpiresAt, RevokedAt,
                        UserAgent, IpAddress, CreatedAt, LastUsedAt
-                FROM dbo.Sessions
+                FROM Sessions
                 WHERE UserId = @UserId
                   AND ReplacedBySessionId IS NULL
                   AND RevokedAt IS NULL
-                  AND ExpiresAt > SYSUTCDATETIME()
+                  AND ExpiresAt > UTC_TIMESTAMP(6)
                 ORDER BY LastUsedAt DESC
                 """,
                 new { UserId = userId },
@@ -226,8 +226,9 @@ public sealed class AuthRepository(IConfiguration configuration)
                 """
                 SELECT Id, UserId, FamilyId, RefreshTokenHash, ReplacedBySessionId, ExpiresAt, RevokedAt,
                        UserAgent, IpAddress, CreatedAt, LastUsedAt
-                FROM dbo.Sessions WITH (UPDLOCK, ROWLOCK)
+                FROM Sessions
                 WHERE RefreshTokenHash = @Hash
+                FOR UPDATE
                 """,
                 new { Hash = presentedHash },
                 transaction,
@@ -271,7 +272,7 @@ public sealed class AuthRepository(IConfiguration configuration)
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                UPDATE dbo.Sessions
+                UPDATE Sessions
                 SET ReplacedBySessionId = @NextId, LastUsedAt = @Now
                 WHERE Id = @Id
                 """,
@@ -285,21 +286,40 @@ public sealed class AuthRepository(IConfiguration configuration)
     public async Task<SessionRow?> RevokeSessionAsync(Guid sessionId, Guid userId, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var session = await connection.QuerySingleOrDefaultAsync<SessionRow>(
             new CommandDefinition(
                 """
-                UPDATE dbo.Sessions
-                SET RevokedAt = SYSUTCDATETIME(), RevokeReason = @Reason, LastUsedAt = SYSUTCDATETIME()
-                OUTPUT inserted.Id, inserted.UserId, inserted.FamilyId, inserted.RefreshTokenHash,
-                       inserted.ReplacedBySessionId, inserted.ExpiresAt, inserted.RevokedAt,
-                       inserted.UserAgent, inserted.IpAddress, inserted.CreatedAt, inserted.LastUsedAt
+                SELECT Id, UserId, FamilyId, RefreshTokenHash, ReplacedBySessionId, ExpiresAt, RevokedAt,
+                       UserAgent, IpAddress, CreatedAt, LastUsedAt
+                FROM Sessions
                 WHERE Id = @Id
                   AND UserId = @UserId
                   AND ReplacedBySessionId IS NULL
                   AND RevokedAt IS NULL
+                FOR UPDATE
                 """,
-                new { Id = sessionId, UserId = userId, Reason = "revoked" },
+                new { Id = sessionId, UserId = userId },
+                transaction,
                 cancellationToken: cancellationToken));
+        if (session is null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return null;
+        }
+
+        var revokedAt = DateTimeOffset.UtcNow;
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE Sessions
+                SET RevokedAt = @RevokedAt, RevokeReason = @Reason, LastUsedAt = @RevokedAt
+                WHERE Id = @Id
+                """,
+                new { Id = sessionId, RevokedAt = revokedAt, Reason = "revoked" },
+                transaction,
+                cancellationToken: cancellationToken));
+        await transaction.CommitAsync(cancellationToken);
         return session;
     }
 
@@ -309,7 +329,7 @@ public sealed class AuthRepository(IConfiguration configuration)
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var familyId = await connection.QuerySingleOrDefaultAsync<Guid?>(
             new CommandDefinition(
-                "SELECT FamilyId FROM dbo.Sessions WHERE Id = @Id AND UserId = @UserId",
+                "SELECT FamilyId FROM Sessions WHERE Id = @Id AND UserId = @UserId",
                 new { Id = sessionId, UserId = userId },
                 transaction,
                 cancellationToken: cancellationToken));
@@ -329,8 +349,8 @@ public sealed class AuthRepository(IConfiguration configuration)
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                UPDATE dbo.Sessions
-                SET RevokedAt = SYSUTCDATETIME(), RevokeReason = @Reason
+                UPDATE Sessions
+                SET RevokedAt = UTC_TIMESTAMP(6), RevokeReason = @Reason
                 WHERE UserId = @UserId AND RevokedAt IS NULL
                 """,
                 new { UserId = userId, Reason = "logout-all" },
@@ -338,7 +358,7 @@ public sealed class AuthRepository(IConfiguration configuration)
     }
 
     private static async Task InsertExternalLoginAsync(
-        SqlConnection connection,
+        MySqlConnection connection,
         IDbTransaction? transaction,
         Guid userId,
         string provider,
@@ -350,7 +370,7 @@ public sealed class AuthRepository(IConfiguration configuration)
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO dbo.ExternalLogins (Id, UserId, Provider, ProviderUserId, EmailAtLink, CreatedAt)
+                INSERT INTO ExternalLogins (Id, UserId, Provider, ProviderUserId, EmailAtLink, CreatedAt)
                 VALUES (@Id, @UserId, @Provider, @ProviderUserId, @Email, @CreatedAt)
                 """,
                 new
@@ -367,7 +387,7 @@ public sealed class AuthRepository(IConfiguration configuration)
     }
 
     private static async Task RevokeFamilyAsync(
-        SqlConnection connection,
+        MySqlConnection connection,
         IDbTransaction transaction,
         Guid familyId,
         string reason,
@@ -376,8 +396,8 @@ public sealed class AuthRepository(IConfiguration configuration)
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                UPDATE dbo.Sessions
-                SET RevokedAt = SYSUTCDATETIME(), RevokeReason = @Reason
+                UPDATE Sessions
+                SET RevokedAt = UTC_TIMESTAMP(6), RevokeReason = @Reason
                 WHERE FamilyId = @FamilyId AND RevokedAt IS NULL
                 """,
                 new { FamilyId = familyId, Reason = reason },
@@ -385,22 +405,26 @@ public sealed class AuthRepository(IConfiguration configuration)
                 cancellationToken: cancellationToken));
     }
 
-    private async Task<SqlConnection> OpenAsync(CancellationToken cancellationToken)
+    private async Task<MySqlConnection> OpenAsync(CancellationToken cancellationToken)
     {
         var connectionString = configuration.GetConnectionString("Default");
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            throw new InvalidOperationException("The SQL Server connection string is not configured.");
+            throw new InvalidOperationException("The MySQL connection string is not configured.");
         }
 
-        var connection = new SqlConnection(connectionString);
+        var builder = new MySqlConnectionStringBuilder(connectionString)
+        {
+            GuidFormat = MySqlGuidFormat.Char36,
+        };
+        var connection = new MySqlConnection(builder.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         return connection;
     }
 
     private const string InsertSessionSql =
         """
-        INSERT INTO dbo.Sessions
+        INSERT INTO Sessions
             (Id, UserId, FamilyId, RefreshTokenHash, ExpiresAt, UserAgent, IpAddress, CreatedAt, LastUsedAt)
         VALUES
             (@Id, @UserId, @FamilyId, @RefreshTokenHash, @ExpiresAt, @UserAgent, @IpAddress, @CreatedAt, @LastUsedAt)

@@ -114,9 +114,18 @@ export async function registerRequest(email: string, password: string): Promise<
   }
 }
 
-export async function currentUser(): Promise<User | null> {
+let sessionCheck: Promise<User | null> | null = null;
+
+export function currentUser(): Promise<User | null> {
+  sessionCheck ??= readCurrentUser().finally(() => {
+    sessionCheck = null;
+  });
+  return sessionCheck;
+}
+
+async function readCurrentUser(): Promise<User | null> {
   const response = await apiFetch("/api/auth/me");
-  if (response.status === 401) {
+  if (response.status === 204 || response.status === 401) {
     return null;
   }
   if (!response.ok) {

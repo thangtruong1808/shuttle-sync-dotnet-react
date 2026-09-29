@@ -6,10 +6,8 @@
 node_modules/
 
 # database
-database/*
-!database/schema/
-database/schema/*
-!database/schema/*.sql
+database/
+
 
 #documentation
 documentation/
