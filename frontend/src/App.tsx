@@ -8,7 +8,12 @@ import { Skeleton } from "./components/ui";
 import AuthPanel from "./features/auth/AuthPanel";
 import BookingStubPage from "./features/booking/BookingStubPage";
 import CourtsPage from "./features/courts/CourtsPage";
+import DashboardLayout from "./features/dashboard/DashboardLayout";
 import DashboardPage from "./features/dashboard/DashboardPage";
+import { ActivityPage, BookingsPage, PaymentsPage, PromotionsPage, RecommendationsPage, RewardsPage as DashboardRewardsPage } from "./features/dashboard/OpsPages";
+import { UserDesk, UsersPage } from "./features/dashboard/UsersDesk";
+import VenueDesk from "./features/dashboard/VenueDesk";
+import VenuesPage from "./features/dashboard/VenuesPage";
 import HomePage from "./features/home/HomePage";
 import { CancellationPage, ContactPage, FaqPage, NotFoundPage, PrivacyPage, RewardsPage, TermsPage } from "./features/pages/StaticPages";
 import { BookingsSection } from "./features/profile/BookingsSection";
@@ -83,6 +88,20 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/dashboard" element={<DashboardLayout />}>
+          <Route index element={<DashboardPage />} />
+          <Route path="venues" element={<VenuesPage />} />
+          <Route path="venues/:venueId" element={<VenueDesk />} />
+          <Route path="venues/:venueId/:section" element={<VenueDesk />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route path="users/:userId" element={<UserDesk />} />
+          <Route path="bookings" element={<BookingsPage />} />
+          <Route path="promotions" element={<PromotionsPage />} />
+          <Route path="payments" element={<PaymentsPage />} />
+          <Route path="rewards" element={<DashboardRewardsPage />} />
+          <Route path="activity" element={<ActivityPage />} />
+          <Route path="recommendations" element={<RecommendationsPage />} />
+        </Route>
         <Route element={<SiteLayout />}>
           <Route path="/" element={<HomeRedirect />} />
           <Route path="/login" element={<AuthPage mode="login" />} />
@@ -93,7 +112,6 @@ export default function App() {
           <Route path="/cancellation" element={<CancellationPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/profile" element={<ProfileLayout />}>
             <Route index element={<OverviewSection />} />
             <Route path="details" element={<DetailsSection />} />

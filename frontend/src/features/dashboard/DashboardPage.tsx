@@ -1,64 +1,88 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
-import { useSelector } from "react-redux";
-import type { RootState } from "../../app/store";
-import { CourtImage, EmptyState, ErrorState } from "../../components/format";
-import { PageSection } from "../../components/layout/SiteLayout";
+import { Link } from "react-router-dom";
+import { EmptyState, ErrorState } from "../../components/format";
 import { Skeleton } from "../../components/ui";
 import { dashboardVenues, type Venue } from "../venues/venueApi";
+import { DashError, overview } from "./dashboardApi";
 
 export default function DashboardPage() {
-  const status = useSelector((state: RootState) => state.auth.status);
-  const user = useSelector((state: RootState) => state.auth.user);
+  const [counts, setCounts] = useState<{ venues: number; courts: number } | null>(null);
   const [venues, setVenues] = useState<Venue[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (status !== "authenticated" || (user?.role !== "staff" && user?.role !== "admin")) {
-      return;
-    }
+    let active = true;
     setError(null);
-    dashboardVenues()
-      .then(setVenues)
-      .catch(() => setError("Dashboard venues could not be loaded."));
-  }, [status, user?.role, attempt]);
-
-  if (status === "unknown") {
-    return <PageSection><Skeleton className="h-40" /></PageSection>;
-  }
-  if (status !== "authenticated" || !user) {
-    return <Navigate to="/login?next=/dashboard" replace />;
-  }
-  if (user.role !== "staff" && user.role !== "admin") {
-    return <Navigate to="/" replace />;
-  }
+    Promise.all([overview(), dashboardVenues()])
+      .then(([summary, list]) => {
+        if (!active) return;
+        setCounts(summary);
+        setVenues(list);
+      })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setError(reason instanceof DashError ? reason.message : "Dashboard could not be loaded.");
+      })
+      .finally(() => {
+        if (active) setRetrying(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [attempt]);
 
   return (
-    <main>
-      <PageSection>
-        <h1 className="font-display text-3xl text-white">Dashboard</h1>
-        <p className="mt-2 max-w-2xl text-sm text-mist/70">
-          This view is read-only. {user.role === "staff" ? "Staff can see assigned venues only." : "Admins can see every venue."} Creating or editing courts, sessions, and incentives is not available yet.
-        </p>
-        {error ? (
-          <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
-        ) : venues === null ? (
-          <div className="mt-6" aria-busy="true"><span className="sr-only">Loading venues</span><Skeleton className="h-40" /></div>
-        ) : venues.length === 0 ? (
-          <div className="mt-6"><EmptyState title="No venues to show" body="Assigned venues will appear here." /></div>
-        ) : (
-          <ul className="mt-6 grid gap-4 sm:grid-cols-2">
-            {venues.map((venue) => (
-              <li key={venue.id} className="rounded-3xl border border-white/10 p-4">
-                <CourtImage src={venue.imageUrl} alt="" />
-                <h2 className="mt-3 font-display text-xl text-white">{venue.name}</h2>
-                <p className="text-sm text-mist/65">{[venue.suburb, venue.state].filter(Boolean).join(", ") || venue.slug}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </PageSection>
-    </main>
+    <div>
+      <h1 className="font-display text-3xl text-white">Overview</h1>
+      <p className="mt-2 text-sm text-mist/70">Venues and courts you can manage.</p>
+      {error ? (
+        <div className="mt-6">
+          <ErrorState
+            message={error}
+            loading={retrying}
+            onRetry={() => {
+              setRetrying(true);
+              setAttempt((value) => value + 1);
+            }}
+          />
+        </div>
+      ) : counts === null || venues === null ? (
+        <div className="mt-6" aria-busy="true">
+          <span className="sr-only">Loading overview</span>
+          <Skeleton className="h-40" />
+        </div>
+      ) : (
+        <>
+          <dl className="mt-6 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 px-4 py-3">
+              <dt className="text-sm text-mist/65">Venues</dt>
+              <dd className="font-display text-3xl text-white">{counts.venues}</dd>
+            </div>
+            <div className="rounded-2xl border border-white/10 px-4 py-3">
+              <dt className="text-sm text-mist/65">Courts</dt>
+              <dd className="font-display text-3xl text-white">{counts.courts}</dd>
+            </div>
+          </dl>
+          {venues.length === 0 ? (
+            <div className="mt-6">
+              <EmptyState title="No venues to show" body="Assigned venues will appear here." />
+            </div>
+          ) : (
+            <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {venues.map((venue) => (
+                <li key={venue.id}>
+                  <Link to={`/dashboard/venues/${venue.id}`} className="block rounded-2xl border border-white/10 p-4 hover:bg-white/5">
+                    <p className="font-medium text-white">{venue.name}</p>
+                    <p className="text-sm text-mist/65">{[venue.suburb, venue.state].filter(Boolean).join(", ") || venue.slug}</p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
   );
 }

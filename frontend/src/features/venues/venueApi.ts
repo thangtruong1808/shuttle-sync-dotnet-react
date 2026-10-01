@@ -20,12 +20,17 @@ export type Venue = {
   currency: string;
 };
 
-export type CourtSlot = {
+export type ScheduleBooking = {
   id: string;
   startTime: string;
   endTime: string;
-  price: number;
-  incentivePoints: number | null;
+};
+
+export type ScheduleClosure = {
+  id: string;
+  courtId: string | null;
+  startTime: string;
+  endTime: string;
 };
 
 export type AvailableCourt = {
@@ -35,13 +40,24 @@ export type AvailableCourt = {
   surfaceType: string | null;
   imageUrl: string | null;
   description: string | null;
-  slots: CourtSlot[];
+  bookings: ScheduleBooking[];
+};
+
+export type VenueIncentive = {
+  id: string;
+  points: number;
+  startsOn: string;
+  endsOn: string;
 };
 
 export type Availability = {
   venue: Venue;
   date: string;
+  windowStart: string;
+  windowEnd: string;
   courts: AvailableCourt[];
+  incentives: VenueIncentive[];
+  closures: ScheduleClosure[];
 };
 
 export type Promotion = {
@@ -63,8 +79,8 @@ export type CourtSlotDetail = {
   incentivePoints: number | null;
 };
 
-async function readJson<T>(path: string): Promise<T> {
-  const response = await apiFetch(path);
+async function readJson<T>(path: string, cache?: RequestCache): Promise<T> {
+  const response = await apiFetch(path, cache ? { cache } : {});
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { errors?: FieldErrors } | null;
     throw new AuthRequestError(body?.errors ?? { form: ["The request could not be completed."] });
@@ -84,7 +100,7 @@ export function venueAvailability(slug: string, date: string, from: string, to: 
   if (to) {
     params.set("to", to);
   }
-  return readJson(`/api/venues/${encodeURIComponent(slug)}/availability?${params}`);
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/availability?${params}`, "no-store");
 }
 
 export function venuePromotions(slug: string): Promise<Promotion[]> {
@@ -96,7 +112,7 @@ export function venueSlot(slug: string, sessionId: string): Promise<CourtSlotDet
 }
 
 export function dashboardVenues(): Promise<Venue[]> {
-  return readJson("/api/dashboard/venues");
+  return readJson("/api/dashboard/venues", "no-store");
 }
 
 const venueKey = "shuttle-sync-venue";

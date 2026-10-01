@@ -43,7 +43,9 @@ public static class VenueEndpoints
             return Results.NotFound();
         }
 
-        if (!VenueClock.TryGetDayWindow(venue.TimeZone, date, from, to, out var window, out var error))
+        var fromClock = string.IsNullOrWhiteSpace(from) ? "00:00" : from;
+        var toClock = string.IsNullOrWhiteSpace(to) ? "23:59" : to;
+        if (!VenueClock.TryGetDayWindow(venue.TimeZone, date, fromClock, toClock, out var window, out var error))
         {
             return Results.Json(new
             {
@@ -51,34 +53,47 @@ public static class VenueEndpoints
             }, statusCode: StatusCodes.Status400BadRequest);
         }
 
-        var rows = await repository.ListAvailableSlotsAsync(venue.Id, window.StartUtc, window.EndUtc, cancellationToken);
-        var courts = rows.GroupBy(row => row.CourtId).Select(group =>
+        var incentives = await repository.ListPublicIncentivesAsync(venue.Id, DateOnly.Parse(window.Date), cancellationToken);
+        var bookings = await repository.ListConfirmedBookingsAsync(venue.Id, window.StartUtc, window.EndUtc, cancellationToken);
+        var closures = await repository.ListPublicClosuresAsync(venue.Id, window.StartUtc, window.EndUtc, cancellationToken);
+        var courtRows = await repository.ListPublicCourtsAsync(venue.Id, cancellationToken);
+        var courts = courtRows.Select(court => new
         {
-            var court = group.First();
-            return new
+            id = court.Id,
+            courtName = court.CourtName,
+            courtNumber = court.CourtNumber,
+            surfaceType = court.SurfaceType,
+            imageUrl = court.ImageUrl,
+            description = court.Description,
+            bookings = bookings.Where(booking => booking.CourtId == court.Id).Select(booking => new
             {
-                id = court.CourtId,
-                courtName = court.CourtName,
-                courtNumber = court.CourtNumber,
-                surfaceType = court.SurfaceType,
-                imageUrl = court.ImageUrl,
-                description = court.Description,
-                slots = group.Select(slot => new
-                {
-                    id = slot.SessionId,
-                    startTime = VenueClock.AsUtc(slot.StartTime),
-                    endTime = VenueClock.AsUtc(slot.EndTime),
-                    price = slot.Price,
-                    incentivePoints = slot.IncentivePoints,
-                }),
-            };
+                id = booking.BookingId,
+                startTime = VenueClock.AsUtc(booking.StartTime),
+                endTime = VenueClock.AsUtc(booking.EndTime),
+            }),
         });
 
         return Results.Ok(new
         {
             venue = VenueResponse(venue),
             date = window.Date,
+            windowStart = VenueClock.AsUtc(window.StartUtc),
+            windowEnd = VenueClock.AsUtc(window.EndUtc),
             courts,
+            incentives = incentives.Select(incentive => new
+            {
+                id = incentive.Id,
+                points = incentive.Points,
+                startsOn = incentive.StartsOn.ToString("yyyy-MM-dd"),
+                endsOn = incentive.EndsOn.ToString("yyyy-MM-dd"),
+            }),
+            closures = closures.Select(closure => new
+            {
+                id = closure.Id,
+                courtId = closure.CourtId,
+                startTime = VenueClock.AsUtc(closure.StartTime),
+                endTime = VenueClock.AsUtc(closure.EndTime),
+            }),
         });
     }
 

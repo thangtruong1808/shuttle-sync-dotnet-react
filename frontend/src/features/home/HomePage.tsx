@@ -1,9 +1,11 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
+import { SlidersHorizontal, X } from "lucide-react";
 import type { RootState } from "../../app/store";
-import { Button, Skeleton } from "../../components/ui";
+import { Button, PickerInput, Skeleton } from "../../components/ui";
 import { CourtImage, EmptyState, ErrorState, Money, addDays, formatVenueRange, venueToday } from "../../components/format";
+import { DayChart, SessionClock, upcomingBookings, useNow } from "../courts/CourtSchedule";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
 import {
   rememberVenueSlug,
@@ -19,31 +21,34 @@ export default function HomePage() {
   const user = useSelector((state: RootState) => state.auth.user);
   const status = useSelector((state: RootState) => state.auth.status);
   const venue = venues?.find((item) => item.slug === slug) ?? null;
-  const [date, setDate] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [draft, setDraft] = useState({ date: "", from: "", to: "" });
+  const [applied, setApplied] = useState({ date: "", from: "", to: "" });
   const [availability, setAvailability] = useState<Availability | null>(null);
   const [promotions, setPromotions] = useState<Promotion[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<null | "filter" | "clear" | "next">(null);
+  const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const navigate = useNavigate();
+  const now = useNow();
 
   useEffect(() => {
     if (venue) {
-      setDate((current) => current || venueToday(venue.timeZone));
+      const today = venueToday(venue.timeZone);
+      setDraft((current) => ({ ...current, date: current.date || today }));
+      setApplied((current) => (current.date ? current : { date: today, from: "", to: "" }));
       rememberVenueSlug(venue.slug);
     }
   }, [venue]);
 
   useEffect(() => {
-    if (!slug || !date) {
+    if (!slug || !applied.date) {
       return;
     }
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    Promise.all([venueAvailability(slug, date, from, to), venuePromotions(slug)])
+    Promise.all([venueAvailability(slug, applied.date, applied.from, applied.to), venuePromotions(slug)])
       .then(([nextAvailability, nextPromotions]) => {
         if (!controller.signal.aborted) {
           setAvailability(nextAvailability);
@@ -58,14 +63,29 @@ export default function HomePage() {
       .finally(() => {
         if (!controller.signal.aborted) {
           setLoading(false);
+          setRetrying(false);
+          setBusy(null);
         }
       });
     return () => controller.abort();
-  }, [slug, date, from, to, attempt]);
+  }, [slug, applied, attempt]);
 
-  function onSearch(event: FormEvent) {
+  function onFilter(event: FormEvent) {
     event.preventDefault();
-    navigate(`/${slug}/courts?date=${date}&from=${from}&to=${to}`);
+    setBusy("filter");
+    setApplied({ date: draft.date, from: draft.from, to: draft.to });
+    setAttempt((value) => value + 1);
+  }
+
+  function onClear() {
+    const today = venue ? venueToday(venue.timeZone) : draft.date || applied.date;
+    if (!today) {
+      return;
+    }
+    setBusy("clear");
+    setDraft({ date: today, from: "", to: "" });
+    setApplied({ date: today, from: "", to: "" });
+    setAttempt((value) => value + 1);
   }
 
   if (venues && !venue) {
@@ -77,7 +97,9 @@ export default function HomePage() {
   }
 
   const others = (venues ?? []).filter((item) => item.slug !== slug);
-  const nextDay = date ? addDays(date, 1) : "";
+  const nextDay = applied.date ? addDays(applied.date, 1) : "";
+  const today = venue ? venueToday(venue.timeZone) : "";
+  const filtered = Boolean(applied.from || applied.to || (today && applied.date && applied.date !== today));
 
   return (
     <main>
@@ -87,28 +109,31 @@ export default function HomePage() {
           <h1 className="mt-3 max-w-2xl font-display text-4xl font-semibold tracking-tight text-white sm:text-5xl">
             Find a court at {venue?.name ?? "your venue"}.
           </h1>
-          <p className="mt-3 max-w-xl text-mist/75">Pick a day, filter the time, and hold a slot. Prices and points come from the venue.</p>
-          <form className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]" onSubmit={onSearch}>
+          <p className="mt-3 max-w-xl text-mist/75">Pick a day to see who is booked on each court.</p>
+          <form className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onSubmit={onFilter}>
             <label className="text-sm">
               <span className="mb-1 block text-mist/70">Date</span>
-              <input type="date" required value={date} onChange={(event) => setDate(event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
+              <PickerInput type="date" required value={draft.date} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, date: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
             </label>
             <label className="text-sm">
               <span className="mb-1 block text-mist/70">From</span>
-              <input type="time" value={from} onChange={(event) => setFrom(event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
+              <PickerInput type="time" value={draft.from} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, from: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
             </label>
             <label className="text-sm">
               <span className="mb-1 block text-mist/70">To</span>
-              <input type="time" value={to} onChange={(event) => setTo(event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
+              <PickerInput type="time" value={draft.to} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, to: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
             </label>
-            <div className="flex items-end">
-              <Button type="submit" className="w-full">Find courts</Button>
+            <div className="flex flex-wrap items-center gap-2 sm:col-span-2 lg:col-span-3">
+              <Button type="submit" className="w-full sm:w-auto" icon={<SlidersHorizontal className="h-4 w-4" aria-hidden="true" />} loading={busy === "filter"} disabled={!draft.date || (busy !== null && busy !== "filter")}>Filter</Button>
+              {filtered || busy === "clear" ? (
+                <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<X className="h-4 w-4" aria-hidden="true" />} loading={busy === "clear"} disabled={busy !== null && busy !== "clear"} onClick={onClear}>Clear</Button>
+              ) : null}
             </div>
           </form>
         </section>
 
         <section className="mt-10" aria-labelledby="available-courts">
-          <h2 id="available-courts" className="font-display text-2xl font-semibold text-white">Available courts</h2>
+          <h2 id="available-courts" className="font-display text-2xl font-semibold text-white">On the courts</h2>
           {venueError ? <div className="mt-4"><ErrorState message={venueError} onRetry={reload} /></div> : null}
           {loading ? (
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
@@ -118,36 +143,46 @@ export default function HomePage() {
               <Skeleton className="h-64" />
             </div>
           ) : error ? (
-            <div className="mt-4"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
+            <div className="mt-4"><ErrorState message={error} loading={retrying} onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }} /></div>
           ) : availability && availability.courts.length > 0 ? (
-            <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {availability.courts.map((court) => (
-                <li key={court.id} className="rounded-3xl border border-white/10 bg-pine/70 p-4">
-                  <CourtImage src={court.imageUrl} alt={`${court.courtName} court`} />
-                  <h3 className="mt-4 font-display text-xl text-white">{court.courtName}</h3>
-                  <p className="text-sm text-mist/65">Court {court.courtNumber}{court.surfaceType ? ` · ${court.surfaceType}` : ""}</p>
-                  <ul className="mt-3 flex flex-wrap gap-2">
-                    {court.slots.slice(0, 3).map((slot) => (
-                      <li key={slot.id}>
-                        <Link
-                          to={`/${slug}/book/${slot.id}`}
-                          className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-sm hover:border-line/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line"
-                        >
-                          <span>{formatVenueRange(slot.startTime, slot.endTime, availability.venue.timeZone)}</span>
-                          <Money amount={slot.price} currency={availability.venue.currency} />
-                          {slot.incentivePoints ? <span className="rounded-full bg-line/15 px-1.5 text-xs font-semibold text-line">+{slot.incentivePoints} pts</span> : null}
-                        </Link>
-                      </li>
+            <>
+              <DayChart schedule={availability} now={now} compact />
+              <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {availability.courts.map((court) => {
+                  const bookings = upcomingBookings(court.bookings, now);
+                  return (
+                  <li key={court.id} className="rounded-3xl border border-white/10 bg-pine/70 p-4">
+                    <CourtImage src={court.imageUrl} alt={`${court.courtName} court`} />
+                    <h3 className="mt-4 font-display text-xl text-white">{court.courtName}</h3>
+                    <p className="text-sm text-mist/65">Court {court.courtNumber}{court.surfaceType ? ` · ${court.surfaceType}` : ""}</p>
+                    {(availability.incentives ?? []).map((incentive) => (
+                      <p key={incentive.id} className="mt-2 text-sm font-semibold text-line">+{incentive.points} pts · {incentive.startsOn} to {incentive.endsOn}</p>
                     ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
+                    {bookings.length === 0 ? <p className="mt-3 text-sm text-mist/65">Nothing else is booked today.</p> : (
+                      <ul className="mt-3 grid grid-cols-2 gap-2">
+                        {bookings.map((booking) => (
+                          <li key={booking.id} className="min-w-0 rounded-2xl border border-white/15 px-3 py-2">
+                            <p className="text-sm text-white">{formatVenueRange(booking.startTime, booking.endTime, availability.venue.timeZone)}</p>
+                            <SessionClock start={booking.startTime} end={booking.endTime} />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                  );
+                })}
+              </ul>
+            </>
           ) : (
             <div className="mt-4 space-y-3">
-              <EmptyState title="No courts are free" body="Try the next day, widen the time filter, or look at another venue." />
+              <EmptyState title="No courts on this day" body="Try the next day or look at another venue." />
               {nextDay ? (
-                <Button variant="secondary" onClick={() => setDate(nextDay)}>See {nextDay}</Button>
+                <Button variant="secondary" loading={busy === "next"} disabled={busy !== null && busy !== "next"} onClick={() => {
+                  setDraft((current) => ({ ...current, date: nextDay }));
+                  setBusy("next");
+                  setApplied((current) => ({ ...current, date: nextDay }));
+                  setAttempt((value) => value + 1);
+                }}>See {nextDay}</Button>
               ) : null}
             </div>
           )}
@@ -178,7 +213,7 @@ export default function HomePage() {
         <section className="mt-10 grid gap-4 rounded-3xl border border-white/10 bg-pine/70 p-6 md:grid-cols-[1.4fr_0.6fr] md:items-center">
           <div>
             <h2 className="font-display text-2xl text-white">Play more, earn points</h2>
-            <p className="mt-2 text-mist/75">When a court session ends, active incentives add points to your profile. Sessions without an incentive are skipped.</p>
+            <p className="mt-2 text-mist/75">Book on a day that shows points on the court. Those points are added after the session ends.</p>
           </div>
           {status === "authenticated" && user ? (
             <p className="text-lg font-semibold text-line">{user.rewardPoints} points</p>
@@ -218,7 +253,7 @@ export default function HomePage() {
           <dl className="mt-4 space-y-3 text-sm">
             <div>
               <dt className="font-medium text-white">When do I earn points?</dt>
-              <dd className="mt-1 text-mist/70">After the booked session ends, and only if that session has an active incentive.</dd>
+              <dd className="mt-1 text-mist/70">After the booked session ends, when that day is inside the points range shown on the court.</dd>
             </div>
             <div>
               <dt className="font-medium text-white">Can I cancel?</dt>

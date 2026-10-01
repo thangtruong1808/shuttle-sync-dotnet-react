@@ -34,6 +34,77 @@ public sealed class BookingRepository(IConfiguration configuration)
                 cancellationToken: cancellationToken));
     }
 
+    public async Task<PublicCourtRow[]> ListPublicCourtsAsync(Guid venueId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<PublicCourtRow>(new CommandDefinition(
+            """
+            SELECT Id, CourtName, CourtNumber, SurfaceType, ImageUrl, Description
+            FROM Courts
+            WHERE VenueId = @VenueId AND IsActive = 1 AND IsDeleted = 0
+            ORDER BY CourtNumber
+            """,
+            new { VenueId = venueId },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
+    public async Task<ConfirmedBookingRow[]> ListConfirmedBookingsAsync(
+        Guid venueId,
+        DateTime dayStartUtc,
+        DateTime dayEndUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<ConfirmedBookingRow>(new CommandDefinition(
+            """
+            SELECT b.Id AS BookingId, c.Id AS CourtId, cs.StartTime, cs.EndTime
+            FROM Bookings b
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId AND cs.VenueId = b.VenueId AND cs.IsDeleted = 0
+            JOIN Courts c ON c.Id = cs.CourtId AND c.VenueId = cs.VenueId AND c.IsActive = 1 AND c.IsDeleted = 0
+            WHERE b.VenueId = @VenueId
+              AND b.IsDeleted = 0
+              AND b.Status = 'confirmed'
+              AND cs.StartTime < @DayEndUtc
+              AND cs.EndTime > @DayStartUtc
+              AND (
+                    EXISTS (
+                        SELECT 1 FROM Payments p
+                        WHERE p.BookingId = b.Id AND p.Status = 'succeeded'
+                    )
+                    OR NOT EXISTS (
+                        SELECT 1 FROM Payments p
+                        WHERE p.BookingId = b.Id
+                    )
+                  )
+            ORDER BY c.CourtNumber, cs.StartTime
+            """,
+            new { VenueId = venueId, DayStartUtc = dayStartUtc, DayEndUtc = dayEndUtc },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
+    public async Task<PublicClosureRow[]> ListPublicClosuresAsync(
+        Guid venueId,
+        DateTime dayStartUtc,
+        DateTime dayEndUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<PublicClosureRow>(new CommandDefinition(
+            """
+            SELECT Id, CourtId, StartTime, EndTime
+            FROM CourtClosures
+            WHERE VenueId = @VenueId
+              AND StartTime < @DayEndUtc
+              AND EndTime > @DayStartUtc
+            ORDER BY StartTime
+            """,
+            new { VenueId = venueId, DayStartUtc = dayStartUtc, DayEndUtc = dayEndUtc },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
     public async Task<AvailabilityRow[]> ListAvailableSlotsAsync(
         Guid venueId,
         DateTime dayStartUtc,
@@ -98,6 +169,22 @@ public sealed class BookingRepository(IConfiguration configuration)
                 """,
                 new { Id = sessionId, VenueId = venueId },
                 cancellationToken: cancellationToken));
+    }
+
+    public async Task<PublicIncentiveRow[]> ListPublicIncentivesAsync(Guid venueId, DateOnly day, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<PublicIncentiveRow>(new CommandDefinition(
+            """
+            SELECT Id, Points, StartsOn, EndsOn
+            FROM VenueIncentives
+            WHERE VenueId = @VenueId AND IsActive = 1
+              AND StartsOn <= @Day AND EndsOn >= @Day
+            ORDER BY StartsOn
+            """,
+            new { VenueId = venueId, Day = day.ToDateTime(TimeOnly.MinValue) },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
     }
 
     public async Task<PromotionRow[]> ListPromotionsAsync(Guid venueId, CancellationToken cancellationToken)
@@ -337,6 +424,32 @@ public sealed class VenueRow
     public string Currency { get; init; } = "AUD";
 }
 
+public sealed class PublicCourtRow
+{
+    public Guid Id { get; init; }
+    public string CourtName { get; init; } = "";
+    public int CourtNumber { get; init; }
+    public string? SurfaceType { get; init; }
+    public string? ImageUrl { get; init; }
+    public string? Description { get; init; }
+}
+
+public sealed class ConfirmedBookingRow
+{
+    public Guid BookingId { get; init; }
+    public Guid CourtId { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+}
+
+public sealed class PublicClosureRow
+{
+    public Guid Id { get; init; }
+    public Guid? CourtId { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+}
+
 public sealed class AvailabilityRow
 {
     public Guid CourtId { get; init; }
@@ -361,6 +474,14 @@ public sealed class SlotRow
     public DateTime EndTime { get; init; }
     public decimal Price { get; init; }
     public int? IncentivePoints { get; init; }
+}
+
+public sealed class PublicIncentiveRow
+{
+    public Guid Id { get; init; }
+    public int Points { get; init; }
+    public DateTime StartsOn { get; init; }
+    public DateTime EndsOn { get; init; }
 }
 
 public sealed class PromotionRow

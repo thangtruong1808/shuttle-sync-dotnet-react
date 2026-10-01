@@ -33,6 +33,7 @@ builder.Services.AddSingleton<AuthRateLimiter>();
 builder.Services.AddSingleton<PasswordHasher<UserRow>>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<BookingRepository>();
+builder.Services.AddScoped<DashboardRepository>();
 builder.Services.AddHttpClient("oauth", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHttpClient("cloudinary", client => client.Timeout = TimeSpan.FromSeconds(30));
 
@@ -106,5 +107,6 @@ app.MapAuthEndpoints();
 app.MapOAuthEndpoints();
 app.MapVenueEndpoints();
 app.MapProfileEndpoints();
+app.MapDashboardEndpoints();
 
 app.Run();

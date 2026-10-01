@@ -13,3 +13,17 @@ body {
   outline: 2px solid #c6f54e;
   outline-offset: 2px;
 }
+
+.picker-input {
+  position: relative;
+}
+
+.picker-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0;
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2.5rem;
+  height: 100%;
+}
