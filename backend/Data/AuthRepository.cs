@@ -245,6 +245,22 @@ public sealed class AuthRepository(IConfiguration configuration)
 
         if (current.ReplacedBySessionId is not null)
         {
+            var replacedSecondsAgo = await connection.ExecuteScalarAsync<long>(
+                new CommandDefinition(
+                    """
+                    SELECT TIMESTAMPDIFF(SECOND, LastUsedAt, UTC_TIMESTAMP(6))
+                    FROM Sessions
+                    WHERE Id = @Id
+                    """,
+                    new { current.Id },
+                    transaction,
+                    cancellationToken: cancellationToken));
+            if (replacedSecondsAgo <= 30)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return new RotateResult.Replayed(current.ReplacedBySessionId.Value, current.UserId);
+            }
+
             await RevokeFamilyAsync(connection, transaction, current.FamilyId, "reuse", cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return RotateResult.Reuse.Instance;
@@ -554,6 +570,8 @@ public sealed class SessionRow
 public abstract record RotateResult
 {
     public sealed record Rotated(SessionRow Session) : RotateResult;
+
+    public sealed record Replayed(Guid SessionId, Guid UserId) : RotateResult;
     public sealed record Invalid : RotateResult
     {
         public static readonly Invalid Instance = new();

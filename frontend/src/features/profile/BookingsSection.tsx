@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Skeleton } from "../../components/ui";
+import { Button, Skeleton, Spinner } from "../../components/ui";
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
 import { cancelBooking, myBookings, type BookingRow, type Page } from "./profileApi";
 
@@ -19,14 +19,30 @@ export function BookingsSection() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pageMove, setPageMove] = useState<"prev" | "next" | null>(null);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
-    setError(null);
     myBookings(tab, page)
-      .then(setData)
-      .catch(() => setError("Bookings could not be loaded."))
-      .finally(() => setLoading(false));
+      .then((next) => {
+        if (active) {
+          setData(next);
+          setError(null);
+        }
+      })
+      .catch(() => {
+        if (active) setError("Bookings could not be loaded.");
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+          setPageMove(null);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, [tab, page, attempt]);
 
   async function onCancel(id: string) {
@@ -56,25 +72,34 @@ export function BookingsSection() {
             type="button"
             role="tab"
             aria-selected={tab === item.id}
-            className={`rounded-full px-3 py-1.5 text-sm ${tab === item.id ? "bg-line text-ink" : "border border-white/10 text-mist"}`}
+            aria-busy={loading && pageMove === null && tab === item.id}
+            disabled={loading}
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${tab === item.id ? "bg-line text-ink" : "border border-white/10 text-mist"}`}
             onClick={() => {
+              if (item.id === tab) {
+                return;
+              }
+              setError(null);
+              setPageMove(null);
+              setLoading(true);
               setTab(item.id);
               setPage(1);
             }}
           >
+            {loading && pageMove === null && tab === item.id ? <Spinner className="h-3.5 w-3.5" /> : null}
             {item.label}
           </button>
         ))}
       </div>
       {notice ? <p className="mt-4 text-sm text-mist" role="status">{notice}</p> : null}
-      {loading ? (
+      {error ? (
+        <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
+      ) : loading && pageMove === null ? (
         <div className="mt-4 space-y-3" aria-busy="true">
           <span className="sr-only">Loading bookings</span>
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
         </div>
-      ) : error ? (
-        <div className="mt-4"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
       ) : data && data.items.length > 0 ? (
         <ul className="mt-4 space-y-3">
           {data.items.map((booking) => (
@@ -95,10 +120,10 @@ export function BookingsSection() {
                 confirmId === booking.id ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="danger" loading={pendingId === booking.id} onClick={() => void onCancel(booking.id)}>Confirm cancel</Button>
-                    <Button variant="secondary" onClick={() => setConfirmId(null)}>Keep booking</Button>
+                    <Button variant="secondary" disabled={pendingId === booking.id} onClick={() => setConfirmId(null)}>Keep booking</Button>
                   </div>
                 ) : (
-                  <Button className="mt-3" variant="secondary" onClick={() => setConfirmId(booking.id)}>Cancel</Button>
+                  <Button className="mt-3" variant="secondary" disabled={pendingId !== null} onClick={() => setConfirmId(booking.id)}>Cancel</Button>
                 )
               ) : null}
             </li>
@@ -109,9 +134,9 @@ export function BookingsSection() {
       )}
       {data && data.total > data.pageSize ? (
         <div className="mt-4 flex items-center gap-3 text-sm">
-          <Button variant="secondary" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
+          <Button variant="secondary" loading={loading && pageMove === "prev"} disabled={page <= 1 || loading} onClick={() => { setLoading(true); setPageMove("prev"); setPage((value) => value - 1); }}>Previous</Button>
           <span>Page {page} of {pages}</span>
-          <Button variant="secondary" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>Next</Button>
+          <Button variant="secondary" loading={loading && pageMove === "next"} disabled={page >= pages || loading} onClick={() => { setLoading(true); setPageMove("next"); setPage((value) => value + 1); }}>Next</Button>
         </div>
       ) : null}
     </div>

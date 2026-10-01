@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useDispatch } from "react-redux";
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import type { AppDispatch } from "../../app/store";
@@ -5,7 +6,7 @@ import { logout } from "../auth/authSlice";
 import { useSelector } from "react-redux";
 import type { RootState } from "../../app/store";
 import { initials } from "../../components/format";
-import { Skeleton } from "../../components/ui";
+import { Skeleton, Spinner } from "../../components/ui";
 
 const sections = [
   { to: "/profile", label: "Overview", end: true },
@@ -22,6 +23,7 @@ export default function ProfileLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
+  const [leaving, setLeaving] = useState(false);
 
   if (status === "unknown") {
     return (
@@ -62,11 +64,17 @@ export default function ProfileLayout() {
           ))}
           <button
             type="button"
-            className="rounded-xl px-3 py-2 text-left text-sm font-medium text-rose-200 hover:bg-rose-500/10"
+            disabled={leaving}
+            aria-busy={leaving}
+            className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
             onClick={() => {
-              void dispatch(logout()).then(() => navigate("/"));
+              setLeaving(true);
+              void dispatch(logout())
+                .then(() => navigate("/"))
+                .finally(() => setLeaving(false));
             }}
           >
+            {leaving ? <Spinner className="h-4 w-4" /> : null}
             Log out
           </button>
         </nav>

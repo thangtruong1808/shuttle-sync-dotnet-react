@@ -13,22 +13,39 @@ export function RewardsSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [pageMove, setPageMove] = useState<"prev" | "next" | null>(null);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
     myRewards(page)
-      .then(setData)
-      .catch(() => setError("Rewards could not be loaded."))
-      .finally(() => setLoading(false));
+      .then((next) => {
+        if (active) {
+          setData(next);
+          setError(null);
+        }
+      })
+      .catch(() => {
+        if (active) setError("Rewards could not be loaded.");
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+          setPageMove(null);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, [page, attempt]);
 
   return (
     <div>
       <h1 className="font-display text-3xl text-white">Reward points</h1>
-      {loading ? (
+      {error ? (
+        <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
+      ) : loading && pageMove === null ? (
         <div className="mt-4" aria-busy="true"><span className="sr-only">Loading rewards</span><Skeleton className="h-24" /></div>
-      ) : error ? (
-        <div className="mt-4"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
       ) : data ? (
         <>
           <p className="mt-2 text-lg font-semibold text-line">{data.balance} points</p>
@@ -61,7 +78,7 @@ export function RewardsSection() {
               </table>
             </div>
           )}
-          <Pager page={page} pageSize={data.pageSize} total={data.total} onPage={setPage} />
+          <Pager page={page} pageSize={data.pageSize} total={data.total} loading={loading} pageMove={pageMove} onPage={(next, move) => { setLoading(true); setPageMove(move); setPage(next); }} />
         </>
       ) : null}
     </div>
@@ -74,22 +91,39 @@ export function PaymentsSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [pageMove, setPageMove] = useState<"prev" | "next" | null>(null);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
     myPayments(page)
-      .then(setData)
-      .catch(() => setError("Payments could not be loaded."))
-      .finally(() => setLoading(false));
+      .then((next) => {
+        if (active) {
+          setData(next);
+          setError(null);
+        }
+      })
+      .catch(() => {
+        if (active) setError("Payments could not be loaded.");
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+          setPageMove(null);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, [page, attempt]);
 
   return (
     <div>
       <h1 className="font-display text-3xl text-white">Payments and refunds</h1>
-      {loading ? (
+      {error ? (
+        <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
+      ) : loading && pageMove === null ? (
         <div className="mt-4" aria-busy="true"><span className="sr-only">Loading payments</span><Skeleton className="h-24" /></div>
-      ) : error ? (
-        <div className="mt-4"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
       ) : data && data.items.length > 0 ? (
         <ul className="mt-4 space-y-3">
           {data.items.map((item) => (
@@ -108,7 +142,7 @@ export function PaymentsSection() {
       ) : (
         <div className="mt-4"><EmptyState title="No payments yet" body="Stripe charges and refunds will be listed here." /></div>
       )}
-      {data ? <Pager page={page} pageSize={data.pageSize} total={data.total} onPage={setPage} /> : null}
+      {data && !error ? <Pager page={page} pageSize={data.pageSize} total={data.total} loading={loading} pageMove={pageMove} onPage={(next, move) => { setLoading(true); setPageMove(move); setPage(next); }} /> : null}
     </div>
   );
 }
@@ -131,7 +165,26 @@ export function SecuritySection() {
       <div>
         <h1 className="font-display text-3xl text-white">Security</h1>
         <h2 className="mt-6 text-lg font-semibold text-white">Linked accounts</h2>
-        {error ? <div className="mt-3"><ErrorState message={error} onRetry={() => externalLogins().then(setLogins).catch(() => setError("Linked accounts could not be loaded."))} /></div> : null}
+        {error ? (
+          <div className="mt-3">
+            <ErrorState
+              message={error}
+              loading={pending === "logins"}
+              onRetry={() => {
+                setPending("logins");
+                externalLogins()
+                  .then((items) => {
+                    setLogins(items);
+                    setError(null);
+                  })
+                  .catch(() => setError("Linked accounts could not be loaded."))
+                  .finally(() => setPending((current) => (current === "logins" ? null : current)));
+              }}
+            />
+          </div>
+        ) : logins === null ? (
+          <div className="mt-3" aria-busy="true"><span className="sr-only">Loading linked accounts</span><Skeleton className="h-12" /></div>
+        ) : null}
         {logins && logins.length === 0 ? <p className="mt-2 text-sm text-mist/70">No Google or GitHub account is linked.</p> : null}
         <ul className="mt-3 space-y-2">
           {(logins ?? []).map((login) => (
@@ -148,6 +201,7 @@ export function SecuritySection() {
           <Button
             variant="secondary"
             loading={pending === "others"}
+            disabled={pending !== null && pending !== "others" && pending !== "logins"}
             onClick={() => {
               setPending("others");
               void dispatch(logoutOthers()).finally(() => setPending(null));
@@ -171,6 +225,7 @@ export function SecuritySection() {
                   className="mt-3"
                   variant="danger"
                   loading={pending === session.id}
+                  disabled={pending !== null && pending !== session.id && pending !== "logins"}
                   onClick={() => {
                     setPending(session.id);
                     void dispatch(revokeSession(session.id)).finally(() => setPending(null));
@@ -187,16 +242,30 @@ export function SecuritySection() {
   );
 }
 
-function Pager({ page, pageSize, total, onPage }: { page: number; pageSize: number; total: number; onPage: (page: number) => void }) {
+function Pager({
+  page,
+  pageSize,
+  total,
+  loading = false,
+  pageMove = null,
+  onPage,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  loading?: boolean;
+  pageMove?: "prev" | "next" | null;
+  onPage: (page: number, move: "prev" | "next") => void;
+}) {
   if (total <= pageSize) {
     return null;
   }
   const pages = Math.ceil(total / pageSize);
   return (
-    <div className="mt-4 flex items-center gap-3 text-sm">
-      <Button variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Button>
+    <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+      <Button variant="secondary" loading={loading && pageMove === "prev"} disabled={page <= 1 || loading} onClick={() => onPage(page - 1, "prev")}>Previous</Button>
       <span>Page {page} of {pages}</span>
-      <Button variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next</Button>
+      <Button variant="secondary" loading={loading && pageMove === "next"} disabled={page >= pages || loading} onClick={() => onPage(page + 1, "next")}>Next</Button>
     </div>
   );
 }

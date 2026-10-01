@@ -91,11 +91,11 @@ public static class OAuthEndpoints
 
         var code = http.Request.Query["code"].ToString();
         var state = http.Request.Query["state"].ToString();
-        http.Request.Cookies.TryGetValue(AuthCookies.OAuthState, out var oauthCookie);
+        AuthCookies.TryGetOAuthState(http, out var oauthCookie);
         AuthCookies.ClearOAuthState(http, settings);
 
         if (string.IsNullOrWhiteSpace(code)
-            || oauthCookie is null
+            || string.IsNullOrWhiteSpace(oauthCookie)
             || !TryReadState(oauthCookie, provider, state, out var verifier))
         {
             return RedirectError(settings, "oauth_failed");
@@ -137,7 +137,24 @@ public static class OAuthEndpoints
         }
 
         await AuthEndpoints.IssueSessionAsync(http, repository, tokens, settings, completion.User, cancellationToken);
-        return Results.Redirect($"{settings.FrontendOrigin}/");
+        var destination = $"{settings.FrontendOrigin}/";
+        var scriptDestination = System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(destination);
+        var linkDestination = System.Text.Encodings.Web.HtmlEncoder.Default.Encode(destination);
+        return Results.Content(
+            $$"""
+            <!doctype html>
+            <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <title>Signing in</title>
+            </head>
+            <body>
+              <p>Signing you in… <a href="{{linkDestination}}">Continue</a></p>
+              <script>location.replace("{{scriptDestination}}")</script>
+            </body>
+            </html>
+            """,
+            "text/html");
     }
 
     private static async Task<SignInCompletion> CompleteSignInAsync(

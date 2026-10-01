@@ -1,3 +1,5 @@
+import { Spinner } from "./ui";
+
 export function Money({ amount, currency }: { amount: number; currency: string }) {
   const formatted = new Intl.NumberFormat("en-AU", {
     style: "currency",
@@ -63,15 +65,26 @@ export function EmptyState({ title, body }: { title: string; body: string }) {
   );
 }
 
-export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+export function ErrorState({
+  message,
+  onRetry,
+  loading = false,
+}: {
+  message: string;
+  onRetry: () => void;
+  loading?: boolean;
+}) {
   return (
     <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-5" role="alert">
       <p className="text-sm text-rose-100">{message}</p>
       <button
         type="button"
-        className="mt-3 rounded-lg border border-white/15 px-3 py-1.5 text-sm font-semibold text-mist hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line"
+        disabled={loading}
+        aria-busy={loading}
+        className="mt-3 inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-sm font-semibold text-mist hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line disabled:cursor-not-allowed disabled:opacity-60"
         onClick={onRetry}
       >
+        {loading ? <Spinner className="h-4 w-4" /> : null}
         Try again
       </button>
     </div>

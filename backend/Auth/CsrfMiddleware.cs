@@ -35,7 +35,7 @@ public sealed class CsrfMiddleware(RequestDelegate next)
 
     private static bool IsValid(HttpContext context)
     {
-        if (!context.Request.Cookies.TryGetValue(AuthCookies.Csrf, out var cookie)
+        if (!AuthCookies.TryGetCsrf(context, out var cookie)
             || string.IsNullOrEmpty(cookie))
         {
             return false;

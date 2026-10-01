@@ -4,6 +4,7 @@ import { useSelector } from "react-redux";
 import { ChevronDown, Menu, X } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { initials } from "../format";
+import { Skeleton } from "../ui";
 import { rememberVenueSlug } from "../../features/venues/venueApi";
 import { useVenues } from "./SiteLayout";
 
@@ -105,7 +106,12 @@ export function Navbar() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2 lg:ml-0">
-          {status !== "authenticated" || !user ? (
+          {status === "unknown" ? (
+            <div aria-busy="true">
+              <span className="sr-only">Checking your session</span>
+              <Skeleton className="h-10 w-16 rounded-full sm:w-28" />
+            </div>
+          ) : status !== "authenticated" || !user ? (
             <div className="hidden items-center gap-2 sm:flex">
               <NavLink to="/login" className="rounded-xl px-3 py-2 text-sm font-semibold text-mist hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line">Log in</NavLink>
               <NavLink to="/register" className="rounded-xl bg-line px-3 py-2 text-sm font-semibold text-ink hover:bg-lime-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line">Sign up</NavLink>
@@ -161,7 +167,12 @@ export function Navbar() {
             {user && (user.role === "staff" || user.role === "admin") ? (
               <NavLink to="/dashboard" className={linkClass}>Dashboard</NavLink>
             ) : null}
-            {status !== "authenticated" ? (
+            {status === "unknown" ? (
+              <div aria-busy="true">
+                <span className="sr-only">Checking your session</span>
+                <Skeleton className="h-10 w-full" />
+              </div>
+            ) : status !== "authenticated" ? (
               <>
                 <NavLink to="/login" className={linkClass}>Log in</NavLink>
                 <NavLink to="/register" className={linkClass}>Sign up</NavLink>

@@ -6,6 +6,7 @@ using ShuttleSync.Api.Auth;
 using ShuttleSync.Api.Booking;
 using ShuttleSync.Api.Configuration;
 using ShuttleSync.Api.Data;
+using ShuttleSync.Api.Media;
 
 // Load the development file.
 EnvLoader.LoadDevelopmentFile();
@@ -15,6 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Load the authentication settings from the configuration.
 var authSettings = AuthSettings.FromConfiguration(builder.Configuration);
+var cloudinarySettings = CloudinarySettings.FromConfiguration(builder.Configuration);
 
 var port = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrWhiteSpace(port))
@@ -24,12 +26,15 @@ if (!string.IsNullOrWhiteSpace(port))
 
 // Add services to the container.
 builder.Services.AddSingleton(authSettings);
+builder.Services.AddSingleton(cloudinarySettings);
+builder.Services.AddSingleton<CloudinaryImages>();
 builder.Services.AddSingleton<AccessTokens>();
 builder.Services.AddSingleton<AuthRateLimiter>();
 builder.Services.AddSingleton<PasswordHasher<UserRow>>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<BookingRepository>();
 builder.Services.AddHttpClient("oauth", client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHttpClient("cloudinary", client => client.Timeout = TimeSpan.FromSeconds(30));
 
 // Add authentication services to the container.
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(authSettings.JwtSigningKey));
@@ -52,7 +57,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             OnMessageReceived = context =>
             {
-                if (context.Request.Cookies.TryGetValue(AuthCookies.Access, out var accessToken))
+                if (AuthCookies.TryGetAccess(context.HttpContext, out var accessToken))
                 {
                     context.Token = accessToken;
                 }

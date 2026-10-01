@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using ShuttleSync.Api.Data;
+using ShuttleSync.Api.Media;
 
 namespace ShuttleSync.Api.Auth;
 
@@ -126,7 +127,7 @@ public static class AuthEndpoints
         AuthSettings settings,
         CancellationToken cancellationToken)
     {
-        if (!http.Request.Cookies.TryGetValue(AuthCookies.Refresh, out var refreshToken)
+        if (!AuthCookies.TryGetRefresh(http, out var refreshToken)
             || string.IsNullOrWhiteSpace(refreshToken))
         {
             AuthCookies.ClearSession(http, settings);
@@ -140,6 +141,19 @@ public static class AuthEndpoints
             TokenProtection.Sha256(nextRefreshToken),
             nextSessionId,
             cancellationToken);
+
+        if (rotation is RotateResult.Replayed replayed)
+        {
+            var replayUser = await repository.FindUserByIdAsync(replayed.UserId, cancellationToken);
+            if (replayUser is null)
+            {
+                AuthCookies.ClearSession(http, settings);
+                return SignInAgain();
+            }
+
+            AuthCookies.SetAccess(http, settings, tokens.Create(replayUser, replayed.SessionId));
+            return Results.Ok(ToUser(replayUser));
+        }
 
         if (rotation is not RotateResult.Rotated rotated)
         {
@@ -181,8 +195,7 @@ public static class AuthEndpoints
         {
             // The access cookie expires with the JWT. The refresh cookie lasts for
             // REFRESH_TOKEN_DAYS, so a 401 tells the browser to rotate and stay signed in.
-            var canRefresh = http.Request.Cookies.ContainsKey(AuthCookies.Access)
-                || http.Request.Cookies.ContainsKey(AuthCookies.Refresh);
+            var canRefresh = AuthCookies.HasSessionCookie(http);
             return canRefresh ? SignInAgain() : Results.NoContent();
         }
 
@@ -226,7 +239,8 @@ public static class AuthEndpoints
         HttpRequest request,
         HttpContext http,
         AuthRepository repository,
-        IWebHostEnvironment environment,
+        CloudinaryImages images,
+        ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         var current = await CurrentSessionAsync(http, repository, cancellationToken);
@@ -260,14 +274,8 @@ public static class AuthEndpoints
             });
         }
 
-        var extension = file.ContentType switch
-        {
-            "image/jpeg" => ".jpg",
-            "image/png" => ".png",
-            "image/webp" => ".webp",
-            _ => null,
-        };
-        if (extension is null)
+        var contentType = PhotoContentType(file.ContentType, file.FileName);
+        if (contentType is null)
         {
             return Validation(new Dictionary<string, string[]>
             {
@@ -275,30 +283,26 @@ public static class AuthEndpoints
             });
         }
 
-        var directory = Path.Combine(environment.ContentRootPath, "App_Data", "avatars");
-        Directory.CreateDirectory(directory);
-        var fileName = $"{current.UserId:D}{extension}";
-        var path = Path.Combine(directory, fileName);
-        await using (var stream = File.Create(path))
+        string url;
+        try
         {
-            await file.CopyToAsync(stream, cancellationToken);
+            await using var stream = file.OpenReadStream();
+            url = await images.UploadAsync(
+                stream,
+                contentType,
+                "avatars",
+                current.UserId.ToString("D"),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            loggerFactory.CreateLogger("Cloudinary").LogWarning(exception, "Profile image upload failed.");
+            return Validation(new Dictionary<string, string[]>
+            {
+                ["form"] = ["The photo could not be uploaded. Try again."],
+            }, StatusCodes.Status502BadGateway);
         }
 
-        foreach (var oldExtension in new[] { ".jpg", ".png", ".webp" })
-        {
-            if (oldExtension == extension)
-            {
-                continue;
-            }
-
-            var oldPath = Path.Combine(directory, $"{current.UserId:D}{oldExtension}");
-            if (File.Exists(oldPath))
-            {
-                File.Delete(oldPath);
-            }
-        }
-
-        var url = $"/api/auth/avatars/{fileName}";
         await repository.UpdateAvatarAsync(current.UserId, url, cancellationToken);
         var user = await repository.FindUserByIdAsync(current.UserId, cancellationToken);
         return user is null ? SignInAgain() : Results.Ok(ToUser(user));
@@ -510,6 +514,28 @@ public static class AuthEndpoints
 
     private static string ClientIp(HttpContext http) =>
         http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+    private static string? PhotoContentType(string contentType, string fileName)
+    {
+        var normalized = contentType.Split(';', 2)[0].Trim().ToLowerInvariant();
+        if (normalized is "image/jpg")
+        {
+            normalized = "image/jpeg";
+        }
+
+        if (normalized is "image/jpeg" or "image/png" or "image/webp")
+        {
+            return normalized;
+        }
+
+        return Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            _ => null,
+        };
+    }
 
     private static IResult Validation(Dictionary<string, string[]> errors, int status = StatusCodes.Status400BadRequest) =>
         Results.Json(new { errors }, statusCode: status);

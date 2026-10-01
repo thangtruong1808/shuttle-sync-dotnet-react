@@ -22,7 +22,7 @@ export type SessionSummary = {
   isCurrent: boolean;
 };
 
-const csrfCookieName = "__Host-ss_csrf";
+const csrfCookieNames = ["ss_csrf", "__Host-ss_csrf"];
 
 export class AuthRequestError extends Error {
   readonly fieldErrors: FieldErrors;
@@ -48,10 +48,11 @@ function apiBase(): string {
  */
 
 export function readCsrfToken(): string | null {
-  const prefix = `${csrfCookieName}=`;
-  for (const part of document.cookie.split(";")) {
-    const cookie = part.trim();
-    if (cookie.startsWith(prefix)) {
+  const cookies = document.cookie.split(";").map((part) => part.trim());
+  for (const name of csrfCookieNames) {
+    const prefix = `${name}=`;
+    const cookie = cookies.find((part) => part.startsWith(prefix));
+    if (cookie) {
       return decodeURIComponent(cookie.slice(prefix.length));
     }
   }
@@ -97,13 +98,24 @@ export async function apiFetch(path: string, init: RequestInit = {}, retry = tru
 
   const skipRefresh = path === "/api/auth/login" || path === "/api/auth/register" || path === "/api/auth/refresh";
   if (response.status === 401 && retry && !skipRefresh) {
-    const refreshed = await apiFetch("/api/auth/refresh", { method: "POST" }, false);
-    if (refreshed.ok) {
+    const refreshed = await refreshSession();
+    if (refreshed) {
       return apiFetch(path, init, false);
     }
   }
 
   return response;
+}
+
+let refreshPromise: Promise<boolean> | null = null;
+
+function refreshSession(): Promise<boolean> {
+  refreshPromise ??= apiFetch("/api/auth/refresh", { method: "POST" }, false)
+    .then((response) => response.ok)
+    .finally(() => {
+      refreshPromise = null;
+    });
+  return refreshPromise;
 }
 
 /**
