@@ -10,12 +10,44 @@ type HealthResponse = {
   service: string;
 };
 
+type AppView = "home" | "login" | "dashboard";
+
+const dashboardViewKey = "shuttle-sync-view";
+
+function readDashboardView(): AppView {
+  try {
+    return sessionStorage.getItem(dashboardViewKey) === "dashboard" ? "dashboard" : "home";
+  } catch {
+    return "home";
+  }
+}
+
+function rememberView(next: AppView) {
+  try {
+    if (next === "dashboard") {
+      sessionStorage.setItem(dashboardViewKey, "dashboard");
+      return;
+    }
+    sessionStorage.removeItem(dashboardViewKey);
+  } catch {
+    // Private browsing can block storage. The in-memory view still changes.
+  }
+}
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"home" | "login" | "dashboard">("home");
+  const [view, setViewState] = useState<AppView>(readDashboardView);
 
+  function setView(next: AppView) {
+    rememberView(next);
+    setViewState(next);
+  }
+
+  /**
+   * Check the health of the API.
+   */
   useEffect(() => {
     const controller = new AbortController();
 
@@ -42,14 +74,23 @@ function App() {
     return () => controller.abort();
   }, []);
 
+  /**
+   * Render the home page.
+   */
   if (view === "home") {
     return <HomePage onLogin={() => setView("login")} onDashboard={() => setView("dashboard")} />;
   }
 
+  /**
+   * Render the dashboard page.
+   */
   if (view === "dashboard") {
     return <DashboardPage onFront={() => setView("home")} />;
   }
 
+  /**
+   * Render the login page.
+   */
   return (
     <main className="min-h-screen bg-ink text-mist">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(ellipse_at_top,rgba(198,245,78,0.18),transparent_60%)]" />

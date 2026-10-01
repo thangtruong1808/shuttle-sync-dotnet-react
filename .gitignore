@@ -12,6 +12,9 @@ database/
 #documentation
 documentation/
 
+# features_flow 
+features_flow/
+
 # Frontend build
 frontend/dist/
 

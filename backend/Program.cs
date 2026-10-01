@@ -6,9 +6,13 @@ using ShuttleSync.Api.Auth;
 using ShuttleSync.Api.Configuration;
 using ShuttleSync.Api.Data;
 
+// Load the development file.
 EnvLoader.LoadDevelopmentFile();
 
+// Create the web application builder.
 var builder = WebApplication.CreateBuilder(args);
+
+// Load the authentication settings from the configuration.
 var authSettings = AuthSettings.FromConfiguration(builder.Configuration);
 
 var port = Environment.GetEnvironmentVariable("PORT");
@@ -17,6 +21,7 @@ if (!string.IsNullOrWhiteSpace(port))
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
 
+// Add services to the container.
 builder.Services.AddSingleton(authSettings);
 builder.Services.AddSingleton<AccessTokens>();
 builder.Services.AddSingleton<AuthRateLimiter>();
@@ -24,6 +29,7 @@ builder.Services.AddSingleton<PasswordHasher<UserRow>>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddHttpClient("oauth", client => client.Timeout = TimeSpan.FromSeconds(15));
 
+// Add authentication services to the container.
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(authSettings.JwtSigningKey));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -53,8 +59,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             },
         };
     });
+// Add authorization services to the container.
 builder.Services.AddAuthorization();
 
+// Add CORS services to the container.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -71,7 +79,10 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Build the application.
 var app = builder.Build();
+
+// Use the application.
 
 app.UseCors("Frontend");
 app.UseAuthentication();

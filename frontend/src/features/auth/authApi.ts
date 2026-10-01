@@ -27,9 +27,19 @@ export class AuthRequestError extends Error {
   }
 }
 
+/**
+ * Get the API base URL.
+ * @returns The API base URL.
+ */
+
 function apiBase(): string {
   return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 }
+
+/**
+ * Read the CSRF token from the cookie.
+ * @returns The CSRF token or null if not found.
+ */
 
 export function readCsrfToken(): string | null {
   const prefix = `${csrfCookieName}=`;
@@ -42,6 +52,11 @@ export function readCsrfToken(): string | null {
   return null;
 }
 
+/**
+ * Ensure that the CSRF cookie is present.
+ * @returns A promise that resolves when the CSRF cookie is present.
+ */
+
 export async function ensureCsrfCookie(): Promise<void> {
   if (readCsrfToken()) {
     return;
@@ -50,6 +65,13 @@ export async function ensureCsrfCookie(): Promise<void> {
   await fetch(`${apiBase()}/api/auth/csrf`, { credentials: "include" });
 }
 
+/**
+ * Fetch data from the API.
+ * @param path The path to fetch from.
+ * @param init The request init.
+ * @param retry Whether to retry the request if it fails.
+ * @returns The response.
+ */
 export async function apiFetch(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
   await ensureCsrfCookie();
   const headers = new Headers(init.headers);
@@ -78,10 +100,22 @@ export async function apiFetch(path: string, init: RequestInit = {}, retry = tru
   return response;
 }
 
+/**
+ * Parse the errors from the response.
+ * @param response The response to parse the errors from.
+ * @returns The errors.
+ */
 async function parseErrors(response: Response): Promise<FieldErrors> {
   const body = (await response.json().catch(() => null)) as { errors?: FieldErrors } | null;
   return body?.errors ?? { form: ["The request could not be completed."] };
 }
+
+/**
+ * Login request.
+ * @param email The email to login with.
+ * @param password The password to login with.
+ * @returns The user.
+ */
 
 export async function loginRequest(email: string, password: string): Promise<User> {
   const response = await apiFetch(
@@ -98,6 +132,13 @@ export async function loginRequest(email: string, password: string): Promise<Use
   }
   return (await response.json()) as User;
 }
+
+/**
+ * Register request.
+ * @param email The email to register with.
+ * @param password The password to register with.
+ * @returns A promise that resolves when the registration is complete.
+ */
 
 export async function registerRequest(email: string, password: string): Promise<void> {
   const response = await apiFetch(
@@ -116,12 +157,22 @@ export async function registerRequest(email: string, password: string): Promise<
 
 let sessionCheck: Promise<User | null> | null = null;
 
+/**
+ * Get the current user.
+ * @returns The current user or null if not authenticated.
+ */
+
 export function currentUser(): Promise<User | null> {
   sessionCheck ??= readCurrentUser().finally(() => {
     sessionCheck = null;
   });
   return sessionCheck;
 }
+
+/**
+ * Read the current user from the API.
+ * @returns The current user or null if not authenticated.
+ */
 
 async function readCurrentUser(): Promise<User | null> {
   const response = await apiFetch("/api/auth/me");
@@ -133,6 +184,11 @@ async function readCurrentUser(): Promise<User | null> {
   }
   return (await response.json()) as User;
 }
+
+/**
+ * Get the session list.
+ * @returns The session list.
+ */
 
 export async function sessionList(): Promise<SessionSummary[]> {
   const response = await apiFetch("/api/auth/sessions");

@@ -38,6 +38,8 @@ export default function HomePage({
           <p className="mt-4 text-base leading-relaxed text-mist/75 sm:text-lg">
             Book and follow your court from one place. Sign in when you are ready.
           </p>
+
+
           {status === "unknown" ? (
             <Skeleton className="mt-8 h-11 w-36" />
           ) : status === "authenticated" && username ? (

@@ -175,7 +175,7 @@ public static class AuthEndpoints
         {
             return http.Request.Cookies.ContainsKey(AuthCookies.Access)
                 ? SignInAgain()
-                : Results.NoContent();
+                : Results.NoContent();  //  as if the user is not logged in, return no content with code 204
         }
 
         var user = await repository.FindUserByIdAsync(current.UserId, cancellationToken);
