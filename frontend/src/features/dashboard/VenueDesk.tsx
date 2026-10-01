@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { NavLink, useNavigate, useParams } from "react-router-dom";
 import type { RootState } from "../../app/store";
-import { EmptyState, ErrorState, formatVenueRange, Money } from "../../components/format";
+import { CourtImage, EmptyState, ErrorState, formatVenueRange, Money } from "../../components/format";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import {
   createClosure,
@@ -358,7 +358,7 @@ function Courts({ venueId }: { venueId: string }) {
                 try {
                   const url = await uploadDashboardImage(file, "courts");
                   setDraft((current) => ({ ...current, imageUrl: url }));
-                  setSuccess("Photo uploaded.");
+                  setSuccess("Photo uploaded. Add the court to keep it.");
                 } catch (reason) {
                   setMessage(reason instanceof DashError ? reason.message : "The photo could not be uploaded.");
                 }
@@ -366,6 +366,11 @@ function Courts({ venueId }: { venueId: string }) {
             }}
           />
         </label>
+        {draft.imageUrl ? (
+          <div className="sm:col-span-2">
+            <CourtImage src={draft.imageUrl} alt="New court" />
+          </div>
+        ) : null}
         <Check label="Active" checked={draft.isActive} disabled={busy !== null} onChange={(checked) => setDraft({ ...draft, isActive: checked })} />
         <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
           <Notice message={message} />
@@ -398,7 +403,9 @@ function CourtRow({ venueId, court, onChanged }: { venueId: string; court: DashC
   useEffect(() => setName(court.courtName), [court.courtName]);
   const { busy, run } = useBusy();
   return (
-    <li className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 p-3">
+    <li className="grid gap-3 rounded-2xl border border-white/10 p-3">
+      <CourtImage src={court.imageUrl} alt={`${court.courtName} court`} />
+      <div className="flex flex-wrap items-center gap-2">
       <input className={`${control} max-w-xs`} value={name} disabled={busy !== null} onChange={(event) => setName(event.target.value)} />
       <span className="text-sm text-mist/65">#{court.courtNumber}</span>
       <Button
@@ -435,6 +442,34 @@ function CourtRow({ venueId, court, onChanged }: { venueId: string; court: DashC
       >
         Delete
       </Button>
+      </div>
+      <label className="text-sm text-mist/80">
+        <span className="inline-flex items-center gap-2">
+          {court.imageUrl ? "Change photo" : "Upload photo"}
+          {busy === "upload" ? <Spinner /> : null}
+        </span>
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+          disabled={busy !== null}
+          className="mt-1 block w-full text-sm text-mist disabled:opacity-60"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+            setMessage(null);
+            void run("upload", async () => {
+              try {
+                const url = await uploadDashboardImage(file, "courts");
+                await saveCourt(venueId, { ...court, courtName: name, imageUrl: url }, court.id);
+                onChanged("Photo saved. It now shows on this court and the homepage.");
+              } catch (reason) {
+                setMessage(reason instanceof DashError ? reason.message : "The photo could not be saved.");
+              }
+            });
+          }}
+        />
+      </label>
       <Notice message={message} />
     </li>
   );
