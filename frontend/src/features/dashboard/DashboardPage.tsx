@@ -1,93 +1,64 @@
 import { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import { CircleCheck, House, LayoutDashboard, LogOut } from "lucide-react";
-import type { AppDispatch, RootState } from "../../app/store";
-import { Button, Skeleton } from "../../components/ui";
-import { loadCurrentUser, logout } from "../auth/authSlice";
+import { Navigate } from "react-router-dom";
+import { useSelector } from "react-redux";
+import type { RootState } from "../../app/store";
+import { CourtImage, EmptyState, ErrorState } from "../../components/format";
+import { PageSection } from "../../components/layout/SiteLayout";
+import { Skeleton } from "../../components/ui";
+import { dashboardVenues, type Venue } from "../venues/venueApi";
 
-export default function DashboardPage({ onFront }: { onFront: () => void }) {
-  const dispatch = useDispatch<AppDispatch>();
+export default function DashboardPage() {
   const status = useSelector((state: RootState) => state.auth.status);
   const user = useSelector((state: RootState) => state.auth.user);
-  const [leaving, setLeaving] = useState(false);
+  const [venues, setVenues] = useState<Venue[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    void dispatch(loadCurrentUser());
-  }, [dispatch]);
-
-  async function onLogout() {
-    setLeaving(true);
-    try {
-      await dispatch(logout());
-      onFront();
-    } finally {
-      setLeaving(false);
+    if (status !== "authenticated" || (user?.role !== "staff" && user?.role !== "admin")) {
+      return;
     }
+    setError(null);
+    dashboardVenues()
+      .then(setVenues)
+      .catch(() => setError("Dashboard venues could not be loaded."));
+  }, [status, user?.role, attempt]);
+
+  if (status === "unknown") {
+    return <PageSection><Skeleton className="h-40" /></PageSection>;
+  }
+  if (status !== "authenticated" || !user) {
+    return <Navigate to="/login?next=/dashboard" replace />;
+  }
+  if (user.role !== "staff" && user.role !== "admin") {
+    return <Navigate to="/" replace />;
   }
 
   return (
-    <div className="min-h-screen bg-ink text-mist md:grid md:grid-cols-[16rem_1fr]">
-      <aside className="flex flex-col gap-6 border-b border-white/10 bg-pine/95 p-5 md:min-h-screen md:border-b-0 md:border-r">
-        <p className="font-display text-lg font-semibold text-white">Shuttle Sync</p>
-        <nav className="flex flex-1 flex-col gap-2" aria-label="Dashboard">
-          <span className="inline-flex items-center gap-2 rounded-xl bg-line/15 px-3 py-2.5 text-sm font-semibold text-line">
-            <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
-            Dashboard
-          </span>
-        </nav>
-        <div className="flex flex-col gap-2">
-          <Button
-            variant="secondary"
-            className="w-full"
-            icon={<House className="h-4 w-4" aria-hidden="true" />}
-            onClick={onFront}
-          >
-            Frontend
-          </Button>
-          <Button
-            variant="danger"
-            className="w-full"
-            loading={leaving}
-            icon={<LogOut className="h-4 w-4" aria-hidden="true" />}
-            onClick={() => void onLogout()}
-          >
-            Log out
-          </Button>
-        </div>
-      </aside>
-      <main className="px-4 py-8 sm:px-8">
-        <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-line">
-          <LayoutDashboard className="h-3.5 w-3.5" aria-hidden="true" />
-          Dashboard
+    <main>
+      <PageSection>
+        <h1 className="font-display text-3xl text-white">Dashboard</h1>
+        <p className="mt-2 max-w-2xl text-sm text-mist/70">
+          This view is read-only. {user.role === "staff" ? "Staff can see assigned venues only." : "Admins can see every venue."} Creating or editing courts, sessions, and incentives is not available yet.
         </p>
-        <h1 className="mt-3 font-display text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-          Authentication check
-        </h1>
-        <section className="mt-6 max-w-xl rounded-3xl border border-white/10 bg-pine/80 p-6">
-          {status === "unknown" ? (
-            <div className="space-y-3" aria-busy="true">
-              <span className="sr-only">Checking your session</span>
-              <Skeleton className="h-4 w-40" />
-              <Skeleton className="h-4 w-64" />
-            </div>
-          ) : status === "authenticated" && user ? (
-            <div className="space-y-3">
-              <p className="flex items-center gap-2 text-base text-mist">
-                <CircleCheck className="h-5 w-5 text-line" aria-hidden="true" />
-                Signed in
-              </p>
-              <p className="text-sm text-mist/70">
-                Email <span className="font-medium text-mist">{user.email}</span>
-              </p>
-              <p className="text-sm text-mist/70">
-                Email verified <span className="font-medium text-mist">{user.emailVerified ? "Yes" : "No"}</span>
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-mist/75">No active session. Sign in from the home page to test again.</p>
-          )}
-        </section>
-      </main>
-    </div>
+        {error ? (
+          <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
+        ) : venues === null ? (
+          <div className="mt-6" aria-busy="true"><span className="sr-only">Loading venues</span><Skeleton className="h-40" /></div>
+        ) : venues.length === 0 ? (
+          <div className="mt-6"><EmptyState title="No venues to show" body="Assigned venues will appear here." /></div>
+        ) : (
+          <ul className="mt-6 grid gap-4 sm:grid-cols-2">
+            {venues.map((venue) => (
+              <li key={venue.id} className="rounded-3xl border border-white/10 p-4">
+                <CourtImage src={venue.imageUrl} alt="" />
+                <h2 className="mt-3 font-display text-xl text-white">{venue.name}</h2>
+                <p className="text-sm text-mist/65">{[venue.suburb, venue.state].filter(Boolean).join(", ") || venue.slug}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PageSection>
+    </main>
   );
 }

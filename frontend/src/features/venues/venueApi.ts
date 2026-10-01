@@ -1,0 +1,118 @@
+import { apiFetch, AuthRequestError } from "../auth/authApi";
+import type { FieldErrors } from "../auth/validation";
+
+export type Venue = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  address: string | null;
+  suburb: string | null;
+  state: string | null;
+  postcode: string | null;
+  country: string;
+  latitude: number | null;
+  longitude: number | null;
+  phone: string | null;
+  email: string | null;
+  imageUrl: string | null;
+  timeZone: string;
+  currency: string;
+};
+
+export type CourtSlot = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  price: number;
+  incentivePoints: number | null;
+};
+
+export type AvailableCourt = {
+  id: string;
+  courtName: string;
+  courtNumber: number;
+  surfaceType: string | null;
+  imageUrl: string | null;
+  description: string | null;
+  slots: CourtSlot[];
+};
+
+export type Availability = {
+  venue: Venue;
+  date: string;
+  courts: AvailableCourt[];
+};
+
+export type Promotion = {
+  id: string;
+  code: string;
+  discountType: string;
+  discountValue: number;
+  venueId: string | null;
+};
+
+export type CourtSlotDetail = {
+  venue: Venue;
+  id: string;
+  courtName: string;
+  courtNumber: number;
+  startTime: string;
+  endTime: string;
+  price: number;
+  incentivePoints: number | null;
+};
+
+async function readJson<T>(path: string): Promise<T> {
+  const response = await apiFetch(path);
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { errors?: FieldErrors } | null;
+    throw new AuthRequestError(body?.errors ?? { form: ["The request could not be completed."] });
+  }
+  return (await response.json()) as T;
+}
+
+export function listVenues(): Promise<Venue[]> {
+  return readJson("/api/venues");
+}
+
+export function venueAvailability(slug: string, date: string, from: string, to: string): Promise<Availability> {
+  const params = new URLSearchParams({ date });
+  if (from) {
+    params.set("from", from);
+  }
+  if (to) {
+    params.set("to", to);
+  }
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/availability?${params}`);
+}
+
+export function venuePromotions(slug: string): Promise<Promotion[]> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/promotions`);
+}
+
+export function venueSlot(slug: string, sessionId: string): Promise<CourtSlotDetail> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/slots/${sessionId}`);
+}
+
+export function dashboardVenues(): Promise<Venue[]> {
+  return readJson("/api/dashboard/venues");
+}
+
+const venueKey = "shuttle-sync-venue";
+
+export function readVenueSlug(): string | null {
+  try {
+    return localStorage.getItem(venueKey);
+  } catch {
+    return null;
+  }
+}
+
+export function rememberVenueSlug(slug: string) {
+  try {
+    localStorage.setItem(venueKey, slug);
+  } catch {
+    // Private browsing can block storage. The URL still carries the venue.
+  }
+}

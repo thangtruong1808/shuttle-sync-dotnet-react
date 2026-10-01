@@ -5,6 +5,12 @@ export type User = {
   email: string;
   displayName: string | null;
   emailVerified: boolean;
+  firstName: string | null;
+  lastName: string | null;
+  mobile: string | null;
+  userAvatar: string | null;
+  rewardPoints: number;
+  role: string;
 };
 
 export type SessionSummary = {
@@ -130,7 +136,7 @@ export async function loginRequest(email: string, password: string): Promise<Use
   if (!response.ok) {
     throw new AuthRequestError(await parseErrors(response));
   }
-  return (await response.json()) as User;
+  return asUser((await response.json()) as User);
 }
 
 /**
@@ -182,7 +188,7 @@ async function readCurrentUser(): Promise<User | null> {
   if (!response.ok) {
     throw new AuthRequestError(await parseErrors(response));
   }
-  return (await response.json()) as User;
+  return asUser((await response.json()) as User);
 }
 
 /**
@@ -200,4 +206,69 @@ export async function sessionList(): Promise<SessionSummary[]> {
 
 export function providerStartUrl(provider: "google" | "github"): string {
   return `${apiBase()}/api/auth/${provider}/start`;
+}
+
+export async function updateProfile(input: {
+  displayName: string;
+  firstName: string;
+  lastName: string;
+  mobile: string;
+}): Promise<User> {
+  const response = await apiFetch("/api/auth/profile", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      displayName: input.displayName,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      mobile: input.mobile,
+    }),
+  });
+  if (!response.ok) {
+    throw new AuthRequestError(await parseErrors(response));
+  }
+  return asUser((await response.json()) as User);
+}
+
+export async function uploadAvatar(file: File): Promise<User> {
+  const body = new FormData();
+  body.set("avatar", file);
+  const response = await apiFetch("/api/auth/avatar", { method: "POST", body });
+  if (!response.ok) {
+    throw new AuthRequestError(await parseErrors(response));
+  }
+  return asUser((await response.json()) as User);
+}
+
+export type ExternalLogin = {
+  provider: string;
+  emailAtLink: string | null;
+  createdAt: string;
+};
+
+export async function externalLogins(): Promise<ExternalLogin[]> {
+  const response = await apiFetch("/api/auth/external-logins");
+  if (!response.ok) {
+    throw new AuthRequestError(await parseErrors(response));
+  }
+  return (await response.json()) as ExternalLogin[];
+}
+
+export async function logoutOthers(): Promise<void> {
+  const response = await apiFetch("/api/auth/logout-others", { method: "POST" });
+  if (!response.ok) {
+    throw new AuthRequestError(await parseErrors(response));
+  }
+}
+
+function asUser(user: User): User {
+  return {
+    ...user,
+    firstName: user.firstName ?? null,
+    lastName: user.lastName ?? null,
+    mobile: user.mobile ?? null,
+    userAvatar: user.userAvatar ?? null,
+    rewardPoints: user.rewardPoints ?? 0,
+    role: user.role ?? "user",
+  };
 }

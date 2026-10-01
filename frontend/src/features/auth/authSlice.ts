@@ -38,7 +38,7 @@ type AuthThunk<Result> = ThunkAction<Result, AuthSliceState, unknown, Action>;
  * @returns The action to sign in a user.
  */
 
-const signedIn = createAction<User>("auth/signedIn");
+export const signedIn = createAction<User>("auth/signedIn");
 
 /**
  * The action to sign out a user.
@@ -99,6 +99,13 @@ export function logout(): AuthThunk<Promise<void>> {
  * The function to logout all users.
  * @returns The function to logout all users.
  */
+export function logoutOthers(): AuthThunk<Promise<void>> {
+  return async (dispatch) => {
+    await apiFetch("/api/auth/logout-others", { method: "POST" });
+    await dispatch(fetchSessions());
+  };
+}
+
 export function logoutAll(): AuthThunk<Promise<void>> {
   return async (dispatch) => {
     await apiFetch("/api/auth/logout-all", { method: "POST" });

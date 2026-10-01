@@ -13,7 +13,8 @@ public sealed class AuthRepository(IConfiguration configuration)
         return await connection.QuerySingleOrDefaultAsync<UserRow>(
             new CommandDefinition(
                 """
-                SELECT Id, Email, EmailVerified, PasswordHash, DisplayName
+                SELECT Id, Email, EmailVerified, PasswordHash, DisplayName,
+                       UserAvatar, FirstName, LastName, Mobile, Role, RewardPoints
                 FROM Users
                 WHERE Email = @Email
                 """,
@@ -27,7 +28,8 @@ public sealed class AuthRepository(IConfiguration configuration)
         return await connection.QuerySingleOrDefaultAsync<UserRow>(
             new CommandDefinition(
                 """
-                SELECT Id, Email, EmailVerified, PasswordHash, DisplayName
+                SELECT Id, Email, EmailVerified, PasswordHash, DisplayName,
+                       UserAvatar, FirstName, LastName, Mobile, Role, RewardPoints
                 FROM Users
                 WHERE Id = @Id
                 """,
@@ -343,6 +345,84 @@ public sealed class AuthRepository(IConfiguration configuration)
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task UpdateProfileAsync(
+        Guid userId,
+        string? displayName,
+        string? firstName,
+        string? lastName,
+        string? mobile,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE Users
+                SET DisplayName = @DisplayName,
+                    FirstName = @FirstName,
+                    LastName = @LastName,
+                    Mobile = @Mobile,
+                    UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id
+                """,
+                new
+                {
+                    Id = userId,
+                    DisplayName = displayName,
+                    FirstName = firstName,
+                    LastName = lastName,
+                    Mobile = mobile,
+                },
+                cancellationToken: cancellationToken));
+    }
+
+    public async Task UpdateAvatarAsync(Guid userId, string avatarUrl, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE Users
+                SET UserAvatar = @UserAvatar, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id
+                """,
+                new { Id = userId, UserAvatar = avatarUrl },
+                cancellationToken: cancellationToken));
+    }
+
+    public async Task<ExternalLoginRow[]> ListExternalLoginsAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<ExternalLoginRow>(
+            new CommandDefinition(
+                """
+                SELECT Id, UserId, Provider, ProviderUserId, EmailAtLink, CreatedAt
+                FROM ExternalLogins
+                WHERE UserId = @UserId
+                ORDER BY CreatedAt
+                """,
+                new { UserId = userId },
+                cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
+    public async Task RevokeOtherSessionsAsync(Guid userId, Guid currentSessionId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE Sessions
+                SET RevokedAt = UTC_TIMESTAMP(6), RevokeReason = @Reason
+                WHERE UserId = @UserId
+                  AND Id <> @SessionId
+                  AND RevokedAt IS NULL
+                  AND ReplacedBySessionId IS NULL
+                """,
+                new { UserId = userId, SessionId = currentSessionId, Reason = "logout-others" },
+                cancellationToken: cancellationToken));
+    }
+
     public async Task RevokeAllForUserAsync(Guid userId, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -438,6 +518,12 @@ public sealed class UserRow
     public bool EmailVerified { get; init; }
     public string? PasswordHash { get; init; }
     public string? DisplayName { get; init; }
+    public string? UserAvatar { get; init; }
+    public string? FirstName { get; init; }
+    public string? LastName { get; init; }
+    public string? Mobile { get; init; }
+    public string Role { get; init; } = "user";
+    public int RewardPoints { get; init; }
 }
 
 public sealed class ExternalLoginRow
@@ -446,6 +532,8 @@ public sealed class ExternalLoginRow
     public Guid UserId { get; init; }
     public string Provider { get; init; } = "";
     public string ProviderUserId { get; init; } = "";
+    public string? EmailAtLink { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
 }
 
 public sealed class SessionRow

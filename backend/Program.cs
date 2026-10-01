@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using ShuttleSync.Api.Auth;
+using ShuttleSync.Api.Booking;
 using ShuttleSync.Api.Configuration;
 using ShuttleSync.Api.Data;
 
@@ -27,6 +28,7 @@ builder.Services.AddSingleton<AccessTokens>();
 builder.Services.AddSingleton<AuthRateLimiter>();
 builder.Services.AddSingleton<PasswordHasher<UserRow>>();
 builder.Services.AddScoped<AuthRepository>();
+builder.Services.AddScoped<BookingRepository>();
 builder.Services.AddHttpClient("oauth", client => client.Timeout = TimeSpan.FromSeconds(15));
 
 // Add authentication services to the container.
@@ -75,7 +77,7 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(authSettings.FrontendOrigin)
             .AllowCredentials()
             .WithHeaders("Content-Type", "X-CSRF-Token")
-            .WithMethods(HttpMethods.Get, HttpMethods.Post, HttpMethods.Delete);
+            .WithMethods(HttpMethods.Get, HttpMethods.Post, HttpMethods.Put, HttpMethods.Delete);
     });
 });
 
@@ -97,5 +99,7 @@ app.MapGet("/api/health", () => Results.Ok(new
 
 app.MapAuthEndpoints();
 app.MapOAuthEndpoints();
+app.MapVenueEndpoints();
+app.MapProfileEndpoints();
 
 app.Run();

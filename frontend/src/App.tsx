@@ -1,155 +1,113 @@
-import { useEffect, useState } from "react";
-import { Activity, CircleAlert, CircleCheck } from "lucide-react";
+import { useEffect } from "react";
+import { BrowserRouter, Navigate, Route, Routes, useNavigate, useSearchParams } from "react-router-dom";
+import { useSelector } from "react-redux";
+import type { RootState } from "./app/store";
+import { PageSection, SiteLayout, useVenues } from "./components/layout/SiteLayout";
+import { EmptyState, ErrorState } from "./components/format";
+import { Skeleton } from "./components/ui";
 import AuthPanel from "./features/auth/AuthPanel";
+import BookingStubPage from "./features/booking/BookingStubPage";
+import CourtsPage from "./features/courts/CourtsPage";
 import DashboardPage from "./features/dashboard/DashboardPage";
 import HomePage from "./features/home/HomePage";
-import { Skeleton } from "./components/ui";
+import { CancellationPage, ContactPage, FaqPage, NotFoundPage, PrivacyPage, RewardsPage, TermsPage } from "./features/pages/StaticPages";
+import { BookingsSection } from "./features/profile/BookingsSection";
+import ProfileLayout from "./features/profile/ProfileLayout";
+import { DetailsSection, OverviewSection } from "./features/profile/ProfileBasics";
+import { PaymentsSection, RewardsSection, SecuritySection } from "./features/profile/ProfileLists";
+import { readVenueSlug } from "./features/venues/venueApi";
 
-type HealthResponse = {
-  status: string;
-  service: string;
-};
-
-type AppView = "home" | "login" | "dashboard";
-
-const dashboardViewKey = "shuttle-sync-view";
-
-function readDashboardView(): AppView {
-  try {
-    return sessionStorage.getItem(dashboardViewKey) === "dashboard" ? "dashboard" : "home";
-  } catch {
-    return "home";
+function HomeRedirect() {
+  const { venues, error, reload } = useVenues();
+  const [params] = useSearchParams();
+  const authError = params.get("authError");
+  if (authError) {
+    return <Navigate to={`/login?authError=${encodeURIComponent(authError)}`} replace />;
   }
+  if (error) {
+    return (
+      <PageSection>
+        <ErrorState message={error} onRetry={reload} />
+      </PageSection>
+    );
+  }
+  if (!venues) {
+    return (
+      <PageSection>
+        <div aria-busy="true">
+          <span className="sr-only">Loading venues</span>
+          <Skeleton className="h-40" />
+        </div>
+      </PageSection>
+    );
+  }
+  const remembered = readVenueSlug();
+  const slug = venues.find((venue) => venue.slug === remembered)?.slug ?? venues[0]?.slug;
+  if (!slug) {
+    return (
+      <PageSection>
+        <EmptyState title="No venues yet" body="Add a venue to the database, then refresh this page." />
+      </PageSection>
+    );
+  }
+  return <Navigate to={`/${slug}`} replace />;
 }
 
-function rememberView(next: AppView) {
-  try {
-    if (next === "dashboard") {
-      sessionStorage.setItem(dashboardViewKey, "dashboard");
-      return;
-    }
-    sessionStorage.removeItem(dashboardViewKey);
-  } catch {
-    // Private browsing can block storage. The in-memory view still changes.
-  }
-}
-
-function App() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [view, setViewState] = useState<AppView>(readDashboardView);
-
-  function setView(next: AppView) {
-    rememberView(next);
-    setViewState(next);
-  }
+function AuthPage({ mode }: { mode: "login" | "register" }) {
+  const status = useSelector((state: RootState) => state.auth.status);
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = params.get("next");
+  const destination = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
 
   useEffect(() => {
-    const authError = new URLSearchParams(window.location.search).get("authError");
-    if (authError) {
-      setView("login");
+    if (status === "authenticated" && !params.get("authError")) {
+      navigate(destination ?? "/", { replace: true });
     }
-  }, []);
+  }, [destination, navigate, params, status]);
 
-  /**
-   * Check the health of the API.
-   */
-  useEffect(() => {
-    const controller = new AbortController();
-
-    fetch("/api/health", { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`API responded with ${response.status}`);
-        }
-        return (await response.json()) as HealthResponse;
-      })
-      .then(setHealth)
-      .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") {
-          return;
-        }
-        setError(reason instanceof Error ? reason.message : "Unable to reach the API");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
-      });
-
-    return () => controller.abort();
-  }, []);
-
-  /**
-   * Render the home page.
-   */
-  if (view === "home") {
-    return <HomePage onLogin={() => setView("login")} onDashboard={() => setView("dashboard")} />;
-  }
-
-  /**
-   * Render the dashboard page.
-   */
-  if (view === "dashboard") {
-    return <DashboardPage onFront={() => setView("home")} />;
-  }
-
-  /**
-   * Render the login page.
-   */
   return (
-    <main className="min-h-screen bg-ink text-mist">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(ellipse_at_top,rgba(198,245,78,0.18),transparent_60%)]" />
-      <div className="relative mx-auto grid min-h-screen max-w-6xl items-center gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:py-16">
-        <section>
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-full border border-line/30 bg-line/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-line transition hover:bg-line/20"
-            onClick={() => setView("home")}
-          >
-            <Activity className="h-3.5 w-3.5" aria-hidden="true" />
-            Shuttle Sync
-          </button>
-          <h1 className="mt-5 max-w-xl font-display text-4xl font-semibold tracking-tight text-white sm:text-5xl lg:text-6xl">
-            Court time, synced.
-          </h1>
-          <p className="mt-4 max-w-lg text-base leading-relaxed text-mist/75 sm:text-lg">
-            Sign in to keep your session on this device. The court API status stays visible while you do.
-          </p>
-          <div className="mt-8 max-w-md rounded-2xl border border-white/10 bg-pine/80 p-5">
-            <h2 className="flex items-center gap-2 text-sm font-medium text-mist/70">
-              <Activity className="h-4 w-4 text-line" aria-hidden="true" />
-              Court API
-            </h2>
-            {loading ? (
-              <div className="mt-4 space-y-2" aria-busy="true">
-                <span className="sr-only">Checking the API</span>
-                <Skeleton className="h-4 w-40" />
-                <Skeleton className="h-4 w-28" />
-              </div>
-            ) : error ? (
-              <p className="mt-4 flex items-start gap-2 text-sm text-rose-200">
-                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                {error}
-              </p>
-            ) : (
-              <p className="mt-4 flex items-center gap-2 text-base text-mist">
-                <CircleCheck className="h-5 w-5 text-line" aria-hidden="true" />
-                {health?.service} is {health?.status}
-              </p>
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-white/10 bg-pine/90 p-5 shadow-2xl shadow-black/30 sm:p-7">
-          <h2 className="font-display text-2xl font-semibold text-white">Your account</h2>
+    <main>
+      <PageSection>
+        <div className="mx-auto max-w-md rounded-3xl border border-white/10 bg-pine/90 p-5 sm:p-7">
+          <h1 className="font-display text-2xl font-semibold text-white">Your account</h1>
           <p className="mt-1 text-sm text-mist/65">Email, Google, or GitHub. Tokens stay in secure cookies.</p>
-          <AuthPanel onLoginSuccess={() => setView("home")} />
-        </section>
-      </div>
+          <AuthPanel initialMode={mode} onLoginSuccess={() => navigate(destination ?? "/")} />
+        </div>
+      </PageSection>
     </main>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<SiteLayout />}>
+          <Route path="/" element={<HomeRedirect />} />
+          <Route path="/login" element={<AuthPage mode="login" />} />
+          <Route path="/register" element={<AuthPage mode="register" />} />
+          <Route path="/rewards" element={<RewardsPage />} />
+          <Route path="/faq" element={<FaqPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/cancellation" element={<CancellationPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/profile" element={<ProfileLayout />}>
+            <Route index element={<OverviewSection />} />
+            <Route path="details" element={<DetailsSection />} />
+            <Route path="bookings" element={<BookingsSection />} />
+            <Route path="rewards" element={<RewardsSection />} />
+            <Route path="payments" element={<PaymentsSection />} />
+            <Route path="security" element={<SecuritySection />} />
+          </Route>
+          <Route path="/:slug" element={<HomePage />} />
+          <Route path="/:slug/courts" element={<CourtsPage />} />
+          <Route path="/:slug/book/:sessionId" element={<BookingStubPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}

@@ -20,10 +20,16 @@ public static class AuthEndpoints
         auth.MapGet("/me", MeAsync);
 
         var signedIn = auth.MapGroup("").RequireAuthorization();
+        signedIn.MapPut("/profile", UpdateProfileAsync);
+        signedIn.MapPost("/avatar", UploadAvatarAsync);
+        signedIn.MapGet("/external-logins", ExternalLoginsAsync);
         signedIn.MapGet("/sessions", SessionsAsync);
         signedIn.MapDelete("/sessions/{id:guid}", RevokeSessionAsync);
         signedIn.MapPost("/logout", LogoutAsync);
+        signedIn.MapPost("/logout-others", LogoutOthersAsync);
         signedIn.MapPost("/logout-all", LogoutAllAsync);
+
+        auth.MapGet("/avatars/{fileName}", AvatarFile);
     }
 
     private static async Task<IResult> RegisterAsync(
@@ -184,6 +190,184 @@ public static class AuthEndpoints
         return user is null ? SignInAgain() : Results.Ok(ToUser(user));
     }
 
+    private static async Task<IResult> UpdateProfileAsync(
+        ProfileRequest request,
+        HttpContext http,
+        AuthRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var current = await CurrentSessionAsync(http, repository, cancellationToken);
+        if (current is null)
+        {
+            return SignInAgain();
+        }
+
+        var displayName = TrimToNull(request.DisplayName, 200);
+        var firstName = TrimToNull(request.FirstName, 100);
+        var lastName = TrimToNull(request.LastName, 100);
+        var mobile = TrimToNull(request.Mobile, 32);
+        if (request.DisplayName is { Length: > 200 }
+            || request.FirstName is { Length: > 100 }
+            || request.LastName is { Length: > 100 }
+            || request.Mobile is { Length: > 32 })
+        {
+            return Validation(new Dictionary<string, string[]>
+            {
+                ["form"] = ["One of the profile fields is too long."],
+            });
+        }
+
+        await repository.UpdateProfileAsync(current.UserId, displayName, firstName, lastName, mobile, cancellationToken);
+        var user = await repository.FindUserByIdAsync(current.UserId, cancellationToken);
+        return user is null ? SignInAgain() : Results.Ok(ToUser(user));
+    }
+
+    private static async Task<IResult> UploadAvatarAsync(
+        HttpRequest request,
+        HttpContext http,
+        AuthRepository repository,
+        IWebHostEnvironment environment,
+        CancellationToken cancellationToken)
+    {
+        var current = await CurrentSessionAsync(http, repository, cancellationToken);
+        if (current is null)
+        {
+            return SignInAgain();
+        }
+
+        if (!request.HasFormContentType)
+        {
+            return Validation(new Dictionary<string, string[]>
+            {
+                ["form"] = ["Choose an image file."],
+            });
+        }
+
+        var file = request.Form.Files.GetFile("avatar");
+        if (file is null || file.Length == 0)
+        {
+            return Validation(new Dictionary<string, string[]>
+            {
+                ["form"] = ["Choose an image file."],
+            });
+        }
+
+        if (file.Length > 2 * 1024 * 1024)
+        {
+            return Validation(new Dictionary<string, string[]>
+            {
+                ["form"] = ["Image must be 2 MB or smaller."],
+            });
+        }
+
+        var extension = file.ContentType switch
+        {
+            "image/jpeg" => ".jpg",
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            _ => null,
+        };
+        if (extension is null)
+        {
+            return Validation(new Dictionary<string, string[]>
+            {
+                ["form"] = ["Use a JPEG, PNG, or WebP image."],
+            });
+        }
+
+        var directory = Path.Combine(environment.ContentRootPath, "App_Data", "avatars");
+        Directory.CreateDirectory(directory);
+        var fileName = $"{current.UserId:D}{extension}";
+        var path = Path.Combine(directory, fileName);
+        await using (var stream = File.Create(path))
+        {
+            await file.CopyToAsync(stream, cancellationToken);
+        }
+
+        foreach (var oldExtension in new[] { ".jpg", ".png", ".webp" })
+        {
+            if (oldExtension == extension)
+            {
+                continue;
+            }
+
+            var oldPath = Path.Combine(directory, $"{current.UserId:D}{oldExtension}");
+            if (File.Exists(oldPath))
+            {
+                File.Delete(oldPath);
+            }
+        }
+
+        var url = $"/api/auth/avatars/{fileName}";
+        await repository.UpdateAvatarAsync(current.UserId, url, cancellationToken);
+        var user = await repository.FindUserByIdAsync(current.UserId, cancellationToken);
+        return user is null ? SignInAgain() : Results.Ok(ToUser(user));
+    }
+
+    private static IResult AvatarFile(string fileName, IWebHostEnvironment environment)
+    {
+        if (fileName != Path.GetFileName(fileName))
+        {
+            return Results.NotFound();
+        }
+
+        var extension = Path.GetExtension(fileName);
+        if (!Guid.TryParse(Path.GetFileNameWithoutExtension(fileName), out _)
+            || extension is not (".jpg" or ".png" or ".webp"))
+        {
+            return Results.NotFound();
+        }
+
+        var path = Path.Combine(environment.ContentRootPath, "App_Data", "avatars", fileName);
+        if (!File.Exists(path))
+        {
+            return Results.NotFound();
+        }
+
+        var contentType = extension switch
+        {
+            ".png" => "image/png",
+            ".jpg" => "image/jpeg",
+            _ => "image/webp",
+        };
+        return Results.File(path, contentType);
+    }
+
+    private static async Task<IResult> ExternalLoginsAsync(
+        HttpContext http,
+        AuthRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var current = await CurrentSessionAsync(http, repository, cancellationToken);
+        if (current is null)
+        {
+            return SignInAgain();
+        }
+
+        var logins = await repository.ListExternalLoginsAsync(current.UserId, cancellationToken);
+        return Results.Ok(logins.Select(login => new
+        {
+            provider = login.Provider,
+            emailAtLink = login.EmailAtLink,
+            createdAt = login.CreatedAt,
+        }));
+    }
+
+    private static async Task<IResult> LogoutOthersAsync(
+        HttpContext http,
+        AuthRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var current = await CurrentSessionAsync(http, repository, cancellationToken);
+        if (current is null)
+        {
+            return SignInAgain();
+        }
+
+        await repository.RevokeOtherSessionsAsync(current.UserId, current.Id, cancellationToken);
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> SessionsAsync(
         HttpContext http,
         AuthRepository repository,
@@ -293,7 +477,7 @@ public static class AuthEndpoints
             expiresAt - DateTimeOffset.UtcNow);
     }
 
-    private static async Task<SessionRow?> CurrentSessionAsync(
+    internal static async Task<SessionRow?> CurrentSessionAsync(
         HttpContext http,
         AuthRepository repository,
         CancellationToken cancellationToken)
@@ -354,7 +538,26 @@ public static class AuthEndpoints
         email = user.Email,
         displayName = user.DisplayName,
         emailVerified = user.EmailVerified,
+        firstName = user.FirstName,
+        lastName = user.LastName,
+        mobile = user.Mobile,
+        userAvatar = user.UserAvatar,
+        rewardPoints = user.RewardPoints,
+        role = user.Role,
     };
 
+    private static string? TrimToNull(string? value, int max)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length > max ? trimmed[..max] : trimmed;
+    }
+
     private sealed record CredentialRequest(string? Email, string? Password);
+
+    private sealed record ProfileRequest(string? DisplayName, string? FirstName, string? LastName, string? Mobile);
 }

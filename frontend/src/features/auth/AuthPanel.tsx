@@ -31,13 +31,19 @@ const authErrorMessages: Record<string, string> = {
   oauth_failed: "Sign-in with the provider could not be completed.",
 };
 
-export default function AuthPanel({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
+export default function AuthPanel({
+  onLoginSuccess,
+  initialMode = "login",
+}: {
+  onLoginSuccess?: () => void;
+  initialMode?: "login" | "register";
+}) {
   const dispatch = useDispatch<AppDispatch>();
   const status = useSelector((state: RootState) => state.auth.status);
   const user = useSelector((state: RootState) => state.auth.user);
   const sessions = useSelector((state: RootState) => state.auth.sessions);
   const sessionsStatus = useSelector((state: RootState) => state.auth.sessionsStatus);
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
