@@ -44,6 +44,7 @@ export default function AuthPanel({ onLoginSuccess }: { onLoginSuccess?: () => v
   const [formMessage, setFormMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<"error" | "success">("error");
   const [submitting, setSubmitting] = useState(false);
+  const [startingProvider, setStartingProvider] = useState<"google" | "github" | null>(null);
   const [pendingAction, setPendingAction] = useState<"logout" | "logout-all" | string | null>(null);
 
   useEffect(() => {
@@ -93,6 +94,30 @@ export default function AuthPanel({ onLoginSuccess }: { onLoginSuccess?: () => v
       }
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function startProvider(provider: "google" | "github") {
+    setFormMessage(null);
+    setStartingProvider(provider);
+    try {
+      const response = await fetch(providerStartUrl(provider), {
+        credentials: "include",
+        redirect: "manual",
+      });
+      if (response.type === "opaqueredirect" || response.status === 0) {
+        window.location.assign(providerStartUrl(provider));
+        return;
+      }
+
+      const body = (await response.json().catch(() => null)) as { errors?: FieldErrors } | null;
+      setMessageTone("error");
+      setFormMessage(body?.errors?.form?.[0] ?? authErrorMessages.oauth_failed);
+      setStartingProvider(null);
+    } catch {
+      setMessageTone("error");
+      setFormMessage(authErrorMessages.oauth_failed);
+      setStartingProvider(null);
     }
   }
 
@@ -257,14 +282,24 @@ export default function AuthPanel({ onLoginSuccess }: { onLoginSuccess?: () => v
         {mode === "login" ? "Sign in" : "Create account"}
       </Button>
       <div className="grid gap-2 sm:grid-cols-2">
-        <a className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-sm text-mist hover:bg-white/5" href={providerStartUrl("google")}>
+        <button
+          type="button"
+          disabled={startingProvider !== null}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-sm text-mist transition hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
+          onClick={() => void startProvider("google")}
+        >
           <GoogleIcon />
           Google
-        </a>
-        <a className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-sm text-mist hover:bg-white/5" href={providerStartUrl("github")}>
+        </button>
+        <button
+          type="button"
+          disabled={startingProvider !== null}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-sm text-mist transition hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
+          onClick={() => void startProvider("github")}
+        >
           <GitHubIcon />
           GitHub
-        </a>
+        </button>
       </div>
     </form>
   );

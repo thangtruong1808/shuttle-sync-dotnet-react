@@ -173,9 +173,11 @@ public static class AuthEndpoints
         var current = await CurrentSessionAsync(http, repository, cancellationToken);
         if (current is null)
         {
-            return http.Request.Cookies.ContainsKey(AuthCookies.Access)
-                ? SignInAgain()
-                : Results.NoContent();  //  as if the user is not logged in, return no content with code 204
+            // The access cookie expires with the JWT. The refresh cookie lasts for
+            // REFRESH_TOKEN_DAYS, so a 401 tells the browser to rotate and stay signed in.
+            var canRefresh = http.Request.Cookies.ContainsKey(AuthCookies.Access)
+                || http.Request.Cookies.ContainsKey(AuthCookies.Refresh);
+            return canRefresh ? SignInAgain() : Results.NoContent();
         }
 
         var user = await repository.FindUserByIdAsync(current.UserId, cancellationToken);

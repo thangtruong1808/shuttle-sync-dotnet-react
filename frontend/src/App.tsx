@@ -45,6 +45,13 @@ function App() {
     setViewState(next);
   }
 
+  useEffect(() => {
+    const authError = new URLSearchParams(window.location.search).get("authError");
+    if (authError) {
+      setView("login");
+    }
+  }, []);
+
   /**
    * Check the health of the API.
    */
