@@ -44,7 +44,7 @@ builder.Services.AddScoped<PaymentRepository>();
 builder.Services.AddScoped<BookingPayments>();
 builder.Services.AddHttpClient("oauth", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHttpClient("cloudinary", client => client.Timeout = TimeSpan.FromSeconds(30));
-builder.Services.AddHttpClient("gemini", client => client.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddHttpClient("gemini", client => client.Timeout = TimeSpan.FromSeconds(45));
 
 // Add authentication services to the container.
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(authSettings.JwtSigningKey));

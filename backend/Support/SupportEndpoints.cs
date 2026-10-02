@@ -56,6 +56,12 @@ public static class SupportEndpoints
             }
         }
 
+        var direct = DirectReply(schedule);
+        if (direct is not null)
+        {
+            return Results.Ok(new { reply = direct });
+        }
+
         var client = httpClientFactory.CreateClient("gemini");
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
@@ -69,6 +75,7 @@ public static class SupportEndpoints
                 role = turn.Role == "assistant" ? "model" : "user",
                 parts = new[] { new { text = turn.Text } },
             }),
+            generationConfig = new { thinkingConfig = new { thinkingBudget = 0 } },
         });
 
         HttpResponseMessage response;
@@ -76,7 +83,7 @@ public static class SupportEndpoints
         {
             response = await client.SendAsync(request, cancellationToken);
         }
-        catch (HttpRequestException)
+        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
         {
             return Form("Support chat could not answer just now.", StatusCodes.Status502BadGateway);
         }
@@ -216,6 +223,42 @@ public static class SupportEndpoints
         lines.Add(blocked.Count == 0 ? "Unavailable: none." : "Unavailable: " + string.Join("; ", blocked) + ".");
         lines.Add("Answer this window from the Available and Unavailable lines only.");
         return string.Join('\n', lines);
+    }
+
+    private static string? DirectReply(string schedule)
+    {
+        foreach (var line in schedule.Split('\n'))
+        {
+            if (line.StartsWith("That start time is already in the past", StringComparison.Ordinal))
+            {
+                return "That start time has already passed. Choose a later start with Book a court.";
+            }
+
+            if (line.StartsWith("That window is shorter than 30 minutes", StringComparison.Ordinal))
+            {
+                return "Please choose at least 30 minutes. You can set the time with Book a court.";
+            }
+        }
+
+        var available = schedule.Split('\n').FirstOrDefault(line => line.StartsWith("Available: ", StringComparison.Ordinal));
+        var window = schedule.Split('\n').FirstOrDefault(line => line.StartsWith("Checked window: ", StringComparison.Ordinal));
+        if (available is null || window is null)
+        {
+            return null;
+        }
+
+        var when = window["Checked window: ".Length..].Trim().TrimEnd('.');
+        var free = available["Available: ".Length..].Trim().TrimEnd('.');
+        var blockedLine = schedule.Split('\n').FirstOrDefault(line => line.StartsWith("Unavailable: ", StringComparison.Ordinal));
+        var busy = blockedLine is null ? "" : blockedLine["Unavailable: ".Length..].Trim().TrimEnd('.');
+        if (free == "none")
+        {
+            var why = busy is "" or "none" ? "" : $" {busy}.";
+            return $"No court is free from {when}.{why} Try another time with Book a court.";
+        }
+
+        var note = busy is "" or "none" ? "" : $" Not free: {busy}.";
+        return $"From {when}, you can book {free}.{note} Open Book a court to hold one.";
     }
 
     private static string CourtBlocks(PublicCourtRow court, SupportSessionRow[] sessions, PublicClosureRow[] closures, TimeZoneInfo zone)

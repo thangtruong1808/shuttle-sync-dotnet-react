@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { MessageCircle, SlidersHorizontal, Tag, X } from "lucide-react";
+import { SlidersHorizontal, Tag, X } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { Button, PickerInput, Skeleton } from "../../components/ui";
 import { CourtImage, EmptyState, ErrorState, Money, addDays, formatVenueRange, venueToday } from "../../components/format";
@@ -376,43 +376,77 @@ function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueS
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex w-[min(22rem,calc(100vw-2rem))] flex-col items-end gap-2">
+    <div className="fixed bottom-4 right-4 z-40 flex max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] flex-col items-end gap-3">
       {open ? (
-        <section className="flex max-h-[min(28rem,70vh)] w-full flex-col rounded-3xl border border-white/10 bg-pine p-4 shadow-xl" aria-label="Support chat">
-          <p className="font-display text-lg text-white">Ask Shuttle Sync</p>
-          <p className="text-sm text-mist/70">Help for {venueName}.</p>
-          <div className="mt-3 flex-1 space-y-2 overflow-y-auto">
-            {messages.length === 0 ? <p className="text-sm text-mist/75">Ask about booking, cancellations, points, or promotion codes.</p> : null}
+        <section className="flex h-[min(40rem,calc(100dvh-6.5rem))] min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-white/10 bg-pine p-4 shadow-2xl shadow-black/40" aria-label="Support chat">
+          <div className="flex items-center gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-ink text-line ring-1 ring-line/60">
+              <AssistantMark className="h-6 w-6" />
+            </span>
+            <div>
+              <p className="font-display text-lg leading-tight text-white">Shuttle Sync</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-line">AI assistant</p>
+            </div>
+          </div>
+          <p className="mt-3 text-sm text-mist/70">Help for {venueName}.</p>
+          <div className="mt-3 flex-1 space-y-3 overflow-y-auto">
+            {messages.length === 0 ? <p className="text-sm text-mist/75">Ask about booking, cancellations, points, or which courts are free.</p> : null}
             {messages.map((message, index) => (
-              <p key={index} className={`rounded-2xl px-3 py-2 text-sm ${message.role === "user" ? "bg-line/15 text-white" : "bg-black/25 text-mist"}`}>
-                {message.text}
-              </p>
+              <div key={index} className={message.role === "user" ? "flex justify-end" : "flex items-end gap-2"}>
+                {message.role === "assistant" ? (
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-ink text-line ring-1 ring-line/50">
+                    <AssistantMark className="h-4 w-4" />
+                  </span>
+                ) : null}
+                <p className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${message.role === "user" ? "bg-line/15 text-white" : "bg-black/25 text-mist"}`}>
+                  {message.text}
+                </p>
+              </div>
             ))}
           </div>
           {notice ? <p className="mt-2 text-sm text-mist" role="alert">{notice}</p> : null}
-          <form className="mt-3 flex gap-2" onSubmit={onSend}>
-            <input
+          <form className="mt-3 flex items-end gap-2" onSubmit={onSend}>
+            <textarea
+              rows={3}
               value={draft}
               disabled={sending}
-              placeholder="Type a question"
+              placeholder="Ask about a court or a time"
               aria-label="Question"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white disabled:opacity-60"
+              className="min-h-[5.25rem] w-full resize-none rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white disabled:opacity-60"
               onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
             />
             <Button type="submit" className="shrink-0" loading={sending} disabled={sending || draft.trim().length === 0}>Send</Button>
           </form>
+          <p className="mt-2 text-xs text-mist/55">Enter starts a new line.</p>
         </section>
       ) : null}
       <button
         type="button"
-        className="inline-flex items-center gap-2 rounded-full bg-line px-4 py-2.5 text-sm font-semibold text-ink"
+        className="inline-flex items-center gap-2.5 rounded-full bg-line py-2 pl-2 pr-4 text-sm font-semibold text-ink shadow-lg shadow-black/30"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <MessageCircle className="h-4 w-4" aria-hidden="true" />
+        <span className="grid h-9 w-9 place-items-center rounded-full bg-ink text-line">
+          <AssistantMark className="h-5 w-5" />
+        </span>
         {open ? "Close" : "Support"}
       </button>
     </div>
+  );
+}
+
+function AssistantMark({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
+      <path className="fill-current" d="M8 6.2h12.4a5.4 5.4 0 0 1 5.4 5.4v6.2a5.4 5.4 0 0 1-5.4 5.4H14.8l-4.7 3.5a.85.85 0 0 1-1.35-.68v-2.82H8a5.4 5.4 0 0 1-5.4-5.4v-6.2A5.4 5.4 0 0 1 8 6.2Z" />
+      <path className="fill-ink" d="m16.1 11.1 1.05 3.05 3.05 1.05-3.05 1.05-1.05 3.05-1.05-3.05-3.05-1.05 3.05-1.05 1.05-3.05Z" />
+    </svg>
   );
 }
 
