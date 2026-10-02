@@ -34,14 +34,33 @@ public static class SupportEndpoints
             return Form("Please wait a moment and try again.", StatusCodes.Status429TooManyRequests);
         }
 
-        var turns = (body.Messages ?? [])
-            .Where(turn => turn.Role is "user" or "assistant" && !string.IsNullOrWhiteSpace(turn.Text))
-            .TakeLast(8)
-            .Select(turn => new ChatTurn(turn.Role!, turn.Text!.Trim()[..Math.Min(turn.Text.Trim().Length, 800)]))
-            .ToArray();
+        var turns = ReadTurns(body.Messages);
+        string? transcript = null;
+        if (!string.IsNullOrWhiteSpace(body.AudioBase64))
+        {
+            if (body.AudioBase64.Length > 1_500_000)
+            {
+                return Form("That recording is too long. Try a shorter question.", StatusCodes.Status400BadRequest);
+            }
+
+            var mimeType = AudioMime(body.MimeType);
+            if (mimeType is null)
+            {
+                return Form("That recording format is not supported.", StatusCodes.Status400BadRequest);
+            }
+
+            transcript = await TranscribeAsync(httpClientFactory, settings, body.AudioBase64, mimeType, cancellationToken);
+            if (transcript is null)
+            {
+                return Form("I could not hear that. Move closer and try again.", StatusCodes.Status502BadGateway);
+            }
+
+            turns = ReadTurns([.. turns, new ChatTurn("user", transcript)]);
+        }
+
         if (turns.Length == 0 || turns[^1].Role != "user")
         {
-            return Form("Type a question first.", StatusCodes.Status400BadRequest);
+            return Form(transcript is null ? "Type a question first." : "I could not hear that. Move closer and try again.", StatusCodes.Status400BadRequest);
         }
 
         var venueName = "this venue";
@@ -59,15 +78,10 @@ public static class SupportEndpoints
         var direct = DirectReply(schedule);
         if (direct is not null)
         {
-            return Results.Ok(new { reply = direct });
+            return Results.Ok(new { reply = direct, transcript });
         }
 
-        var client = httpClientFactory.CreateClient("gemini");
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"https://generativelanguage.googleapis.com/v1beta/models/{settings.Model}:generateContent");
-        request.Headers.TryAddWithoutValidation("x-goog-api-key", settings.ApiKey);
-        request.Content = JsonContent.Create(new
+        var reply = await GenerateAsync(httpClientFactory, settings, new
         {
             systemInstruction = new { parts = new[] { new { text = Brief(venueName, schedule) } } },
             contents = turns.Select(turn => new
@@ -76,34 +90,82 @@ public static class SupportEndpoints
                 parts = new[] { new { text = turn.Text } },
             }),
             generationConfig = new { thinkingConfig = new { thinkingBudget = 0 } },
-        });
-
-        HttpResponseMessage response;
-        try
-        {
-            response = await client.SendAsync(request, cancellationToken);
-        }
-        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        }, cancellationToken);
+        if (string.IsNullOrWhiteSpace(reply))
         {
             return Form("Support chat could not answer just now.", StatusCodes.Status502BadGateway);
         }
 
-        using (response)
+        return Results.Ok(new { reply, transcript });
+    }
+
+    private static async Task<string?> TranscribeAsync(
+        IHttpClientFactory httpClientFactory,
+        GeminiSettings settings,
+        string audioBase64,
+        string mimeType,
+        CancellationToken cancellationToken)
+    {
+        var heard = await GenerateAsync(httpClientFactory, settings, new
         {
-            var payload = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            contents = new[]
             {
-                return Form("Support chat could not answer just now.", StatusCodes.Status502BadGateway);
-            }
-
-            var reply = ReadReply(payload);
-            if (string.IsNullOrWhiteSpace(reply))
-            {
-                return Form("Support chat could not answer just now.", StatusCodes.Status502BadGateway);
-            }
-
-            return Results.Ok(new { reply });
+                new
+                {
+                    role = "user",
+                    parts = new object[]
+                    {
+                        new { inlineData = new { mimeType, data = audioBase64 } },
+                        new { text = "Write only the words spoken in this recording. If there is no speech, reply with exactly [silence]." },
+                    },
+                },
+            },
+            generationConfig = new { thinkingConfig = new { thinkingBudget = 0 } },
+        }, cancellationToken);
+        if (string.IsNullOrWhiteSpace(heard))
+        {
+            return null;
         }
+
+        var transcript = heard.Trim().Trim('"');
+        return transcript.Equals("[silence]", StringComparison.OrdinalIgnoreCase) ? null : transcript;
+    }
+
+    private static async Task<string?> GenerateAsync(
+        IHttpClientFactory httpClientFactory,
+        GeminiSettings settings,
+        object payload,
+        CancellationToken cancellationToken)
+    {
+        var client = httpClientFactory.CreateClient("gemini");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"https://generativelanguage.googleapis.com/v1beta/models/{settings.Model}:generateContent");
+        request.Headers.TryAddWithoutValidation("x-goog-api-key", settings.ApiKey);
+        request.Content = JsonContent.Create(payload);
+        try
+        {
+            using var response = await client.SendAsync(request, cancellationToken);
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            return response.IsSuccessStatusCode ? ReadReply(json) : null;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    private static ChatTurn[] ReadTurns(IEnumerable<ChatTurn?>? messages) =>
+        (messages ?? [])
+            .Where(turn => turn?.Role is "user" or "assistant" && !string.IsNullOrWhiteSpace(turn.Text))
+            .TakeLast(8)
+            .Select(turn => new ChatTurn(turn!.Role!, turn.Text!.Trim()[..Math.Min(turn.Text.Trim().Length, 800)]))
+            .ToArray();
+
+    private static string? AudioMime(string? mimeType)
+    {
+        var mime = mimeType?.Split(';')[0].Trim().ToLowerInvariant();
+        return mime is "audio/webm" or "audio/mp4" or "audio/mpeg" or "audio/wav" or "audio/ogg" or "audio/aac" ? mime : null;
     }
 
     private static async Task<string> ScheduleAsync(
@@ -445,7 +507,7 @@ public static class SupportEndpoints
     private static IResult Form(string message, int status) =>
         Results.Json(new { errors = new Dictionary<string, string[]> { ["form"] = [message] } }, statusCode: status);
 
-    private sealed record ChatBody(string? VenueSlug, string? Date, ChatTurn[]? Messages);
+    private sealed record ChatBody(string? VenueSlug, string? Date, ChatTurn[]? Messages, string? AudioBase64 = null, string? MimeType = null);
 
     private sealed record ChatTurn(string? Role, string? Text);
 }

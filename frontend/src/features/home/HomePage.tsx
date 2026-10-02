@@ -1,7 +1,7 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { SlidersHorizontal, Tag, X } from "lucide-react";
+import { Mic, SlidersHorizontal, Tag, X } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { Button, PickerInput, Skeleton } from "../../components/ui";
 import { CourtImage, EmptyState, ErrorState, Money, addDays, formatVenueRange, venueToday } from "../../components/format";
@@ -342,10 +342,97 @@ export default function HomePage() {
 
 function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueSlug: string; date: string }) {
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"text" | "voice">("text");
+  const [replyMode, setReplyMode] = useState<"text" | "voice">("text");
+  const replyModeRef = useRef(replyMode);
+  replyModeRef.current = replyMode;
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const sendingRef = useRef(false);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  useEffect(() => {
+    window.speechSynthesis?.getVoices();
+    const loadVoices = () => window.speechSynthesis?.getVoices();
+    window.speechSynthesis?.addEventListener("voiceschanged", loadVoices);
+    return () => {
+      window.speechSynthesis?.removeEventListener("voiceschanged", loadVoices);
+      stopRecording();
+    };
+  }, []);
+
+  function stopSpeaking() {
+    window.speechSynthesis?.cancel();
+    setSpeaking(false);
+  }
+
+  function speak(text: string) {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-AU";
+    const voices = window.speechSynthesis.getVoices();
+    const voice = voices.find((item) => item.lang.toLowerCase().startsWith("en-au")) ?? voices.find((item) => item.lang.toLowerCase().startsWith("en"));
+    if (voice) utterance.voice = voice;
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => {
+      setSpeaking(false);
+      setNotice("This browser could not play the voice. The answer is still written above.");
+    };
+    setSpeaking(true);
+    window.speechSynthesis.resume();
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function stopRecording() {
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    recorder?.stream.getTracks().forEach((track) => track.stop());
+    setRecording(false);
+  }
+
+  async function ask(next: { role: "user" | "assistant"; text: string }[], audio?: { audioBase64: string; mimeType: string }) {
+    setNotice(null);
+    sendingRef.current = true;
+    setSending(true);
+    try {
+      const response = await apiFetch("/api/support/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          venueSlug,
+          date,
+          messages: next.slice(-8),
+          audioBase64: audio?.audioBase64,
+          mimeType: audio?.mimeType,
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as { reply?: string; transcript?: string; errors?: { form?: string[] } } | null;
+      if (!response.ok) {
+        setNotice(body?.errors?.form?.[0] ?? "Support chat could not answer just now.");
+        return;
+      }
+      const reply = body?.reply ?? "I could not answer that.";
+      const heard = body?.transcript?.trim();
+      setMessages(audio
+        ? [...messagesRef.current, ...(heard ? [{ role: "user" as const, text: heard }] : []), { role: "assistant" as const, text: reply }]
+        : [...next, { role: "assistant" as const, text: reply }]);
+      if (replyModeRef.current === "voice" && body?.reply) speak(body.reply);
+    } catch (reason) {
+      setNotice(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "Support chat could not answer just now." : "Support chat could not answer just now.");
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+  }
 
   async function onSend(event: FormEvent) {
     event.preventDefault();
@@ -354,24 +441,56 @@ function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueS
     const next = [...messages, { role: "user" as const, text }];
     setMessages(next);
     setDraft("");
-    setNotice(null);
-    setSending(true);
+    stopSpeaking();
+    await ask(next);
+  }
+
+  async function finishRecording() {
+    const recorder = recorderRef.current;
+    if (!recorder || sendingRef.current) return;
+    const mimeType = recorder.mimeType || "audio/webm";
+    const blob = await new Promise<Blob>((resolve) => {
+      recorder.onstop = () => resolve(new Blob(chunksRef.current, { type: mimeType }));
+      stopRecording();
+    });
+    if (blob.size < 800) {
+      setNotice("I could not hear that. Move closer and try again.");
+      return;
+    }
+    const audioBase64 = await blobToBase64(blob);
+    stopSpeaking();
+    await ask(messagesRef.current, { audioBase64, mimeType });
+  }
+
+  async function onVoice() {
+    if (sendingRef.current) return;
+    if (recorderRef.current) {
+      await finishRecording();
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setNotice("Voice needs Chrome or Edge so the microphone can be used.");
+      return;
+    }
+
     try {
-      const response = await apiFetch("/api/support/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ venueSlug, date, messages: next.slice(-8) }),
-      });
-      const body = (await response.json().catch(() => null)) as { reply?: string; errors?: { form?: string[] } } | null;
-      if (!response.ok) {
-        setNotice(body?.errors?.form?.[0] ?? "Support chat could not answer just now.");
-        return;
-      }
-      setMessages([...next, { role: "assistant", text: body?.reply ?? "I could not answer that." }]);
-    } catch (reason) {
-      setNotice(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "Support chat could not answer just now." : "Support chat could not answer just now.");
-    } finally {
-      setSending(false);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4";
+      const recorder = new MediaRecorder(stream, { mimeType });
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+      setNotice(null);
+      window.setTimeout(() => {
+        if (recorderRef.current === recorder) void finishRecording();
+      }, 20000);
+    } catch {
+      setNotice("Allow the microphone for this site, then try again.");
     }
   }
 
@@ -383,10 +502,24 @@ function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueS
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-ink text-line ring-1 ring-line/60">
               <AssistantMark className="h-6 w-6" />
             </span>
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="font-display text-lg leading-tight text-white">Shuttle Sync</p>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-line">AI assistant</p>
             </div>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <ChatChoice
+              label="You"
+              value={mode}
+              onText={() => { stopRecording(); setMode("text"); }}
+              onVoice={() => { setMode("voice"); setReplyMode("voice"); }}
+            />
+            <ChatChoice
+              label="Reply"
+              value={replyMode}
+              onText={() => { stopSpeaking(); setReplyMode("text"); }}
+              onVoice={() => setReplyMode("voice")}
+            />
           </div>
           <p className="mt-3 text-sm text-mist/70">Help for {venueName}.</p>
           <div className="mt-3 flex-1 space-y-3 overflow-y-auto">
@@ -405,32 +538,47 @@ function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueS
             ))}
           </div>
           {notice ? <p className="mt-2 text-sm text-mist" role="alert">{notice}</p> : null}
-          <form className="mt-3 flex items-end gap-2" onSubmit={onSend}>
-            <textarea
-              rows={3}
-              value={draft}
-              disabled={sending}
-              placeholder="Ask about a court or a time"
-              aria-label="Question"
-              className="min-h-[5.25rem] w-full resize-none rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white disabled:opacity-60"
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-            />
-            <Button type="submit" className="shrink-0" loading={sending} disabled={sending || draft.trim().length === 0}>Send</Button>
-          </form>
-          <p className="mt-2 text-xs text-mist/55">Enter starts a new line.</p>
+          {mode === "text" ? (
+            <form className="mt-3 flex items-end gap-2" onSubmit={onSend}>
+              <textarea
+                rows={3}
+                value={draft}
+                disabled={sending}
+                placeholder="Ask about a court or a time"
+                aria-label="Question"
+                className="min-h-[5.25rem] w-full resize-none rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white disabled:opacity-60"
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+              />
+              <Button type="submit" className="shrink-0" loading={sending} disabled={sending || draft.trim().length === 0}>Send</Button>
+            </form>
+          ) : (
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Button type="button" className="w-full sm:w-auto" icon={recording ? undefined : <Mic className="h-4 w-4" aria-hidden="true" />} loading={sending} disabled={sending} onClick={() => void onVoice()}>
+                {recording ? "Send voice" : "Tap to talk"}
+              </Button>
+            </div>
+          )}
+          {speaking ? <button type="button" className="mt-2 self-start text-sm font-semibold text-line" onClick={stopSpeaking}>Stop speaking</button> : null}
+          <p className="mt-2 text-xs text-mist/55">{mode === "text" ? "Enter starts a new line." : recording ? "Listening… tap Send voice when you finish. It stops after 20 seconds." : "Tap to talk, then tap again to send."}{replyMode === "voice" ? " Replies are read aloud." : ""}</p>
         </section>
       ) : null}
       <button
         type="button"
         className="inline-flex items-center gap-2.5 rounded-full bg-line py-2 pl-2 pr-4 text-sm font-semibold text-ink shadow-lg shadow-black/30"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (open) {
+            stopRecording();
+            stopSpeaking();
+          }
+          setOpen((value) => !value);
+        }}
       >
         <span className="grid h-9 w-9 place-items-center rounded-full bg-ink text-line">
           <AssistantMark className="h-5 w-5" />
@@ -439,6 +587,27 @@ function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueS
       </button>
     </div>
   );
+}
+
+function ChatChoice({ label, value, onText, onVoice }: { label: string; value: "text" | "voice"; onText: () => void; onVoice: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-full bg-black/30 p-1 pl-3">
+      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-mist/70">{label}</span>
+      <div className="grid grid-cols-2 rounded-full text-xs font-semibold" role="group" aria-label={label}>
+        <button type="button" className={`rounded-full px-3 py-1.5 ${value === "text" ? "bg-line text-ink" : "text-mist"}`} aria-pressed={value === "text"} onClick={onText}>Text</button>
+        <button type="button" className={`rounded-full px-3 py-1.5 ${value === "voice" ? "bg-line text-ink" : "text-mist"}`} aria-pressed={value === "voice"} onClick={onVoice}>Voice</button>
+      </div>
+    </div>
+  );
+}
+
+function blobToBase64(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 function AssistantMark({ className = "h-5 w-5" }: { className?: string }) {
