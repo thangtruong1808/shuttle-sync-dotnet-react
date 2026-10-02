@@ -700,7 +700,11 @@ public static class DashboardEndpoints
         catch (TimeZoneNotFoundException) { error = "Choose a valid timezone."; return false; }
         var currency = string.IsNullOrWhiteSpace(body.Currency) ? "AUD" : body.Currency.Trim().ToUpperInvariant();
         if (currency.Length is < 3 or > 10) { error = "Enter a currency code."; return false; }
-        write = new DashVenueWrite(id, name, slug, Trim(body.Description, 1000), Trim(body.Address, 300), Trim(body.Suburb, 100), Trim(body.State, 50), Trim(body.Postcode, 20), string.IsNullOrWhiteSpace(body.Country) ? "AU" : body.Country.Trim().ToUpperInvariant(), body.Latitude, body.Longitude, Trim(body.Phone, 32), Trim(body.Email, 256), Trim(body.ImageUrl, 500), zone, currency, body.IsActive);
+        var fee = body.LateCancelFeePercent ?? 0;
+        if (fee < 0 || fee > 100) { error = "Enter a late cancel fee from 0 to 100."; return false; }
+        var pointsPerDollar = body.PointsPerDollar ?? 100;
+        if (pointsPerDollar < 1) { error = "Enter at least 1 point per dollar."; return false; }
+        write = new DashVenueWrite(id, name, slug, Trim(body.Description, 1000), Trim(body.Address, 300), Trim(body.Suburb, 100), Trim(body.State, 50), Trim(body.Postcode, 20), string.IsNullOrWhiteSpace(body.Country) ? "AU" : body.Country.Trim().ToUpperInvariant(), body.Latitude, body.Longitude, Trim(body.Phone, 32), Trim(body.Email, 256), Trim(body.ImageUrl, 500), zone, currency, fee, pointsPerDollar, body.IsActive);
         error = "";
         return true;
     }
@@ -793,6 +797,8 @@ public static class DashboardEndpoints
         imageUrl = venue.ImageUrl,
         timeZone = venue.TimeZone,
         currency = venue.Currency,
+        lateCancelFeePercent = venue.LateCancelFeePercent,
+        pointsPerDollar = venue.PointsPerDollar,
         isActive = venue.IsActive,
     };
 
@@ -834,7 +840,7 @@ public static class DashboardEndpoints
 
     private sealed record ScopeResult(DashActor? Actor, IReadOnlyCollection<Guid> Allowed, IResult? Error);
 
-    private sealed record VenueBody(string? Name, string? Slug, string? Description, string? Address, string? Suburb, string? State, string? Postcode, string? Country, decimal? Latitude, decimal? Longitude, string? Phone, string? Email, string? ImageUrl, string? TimeZone, string? Currency, bool IsActive);
+    private sealed record VenueBody(string? Name, string? Slug, string? Description, string? Address, string? Suburb, string? State, string? Postcode, string? Country, decimal? Latitude, decimal? Longitude, string? Phone, string? Email, string? ImageUrl, string? TimeZone, string? Currency, bool IsActive, decimal? LateCancelFeePercent = null, int? PointsPerDollar = null);
 
     private sealed record CourtBody(string? CourtName, int CourtNumber, string? Description, string? SurfaceType, string? ImageUrl, bool IsActive);
 

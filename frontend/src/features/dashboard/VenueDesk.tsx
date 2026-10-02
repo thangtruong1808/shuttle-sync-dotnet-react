@@ -198,6 +198,35 @@ function Details({ venue, admin, onSaved }: { venue: DashVenue; admin: boolean; 
       <Field label="Currency">
         <input className={control} value={form.currency} disabled={!admin || busy !== null} onChange={(event) => set("currency", event.target.value)} />
       </Field>
+      <Field label="Late cancel fee %">
+        <input
+          className={control}
+          type="number"
+          min={0}
+          max={100}
+          step="0.01"
+          value={form.lateCancelFeePercent ?? 0}
+          disabled={!admin || busy !== null}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            if (Number.isFinite(next)) set("lateCancelFeePercent", next);
+          }}
+        />
+      </Field>
+      <Field label="Points per $1">
+        <input
+          className={control}
+          type="number"
+          min={1}
+          step={1}
+          value={form.pointsPerDollar ?? 100}
+          disabled={!admin || busy !== null}
+          onChange={(event) => {
+            const next = Math.floor(Number(event.target.value));
+            if (Number.isFinite(next)) set("pointsPerDollar", next);
+          }}
+        />
+      </Field>
       <Field label="Latitude">
         <input className={control} value={form.latitude ?? ""} disabled={!admin || busy !== null} onChange={(event) => set("latitude", event.target.value ? Number(event.target.value) : null)} />
       </Field>
@@ -525,7 +554,7 @@ function Slots({ venueId }: { venueId: string }) {
                 price: Number(draft.price),
               });
               setRows(await listSessions(venueId, date));
-              setSuccess("Booking added.");
+              setSuccess("Slot added. Players can book it from the homepage.");
             } catch (reason) {
               setMessage(reason instanceof DashError ? reason.message : "The slot could not be created.");
             }
@@ -555,7 +584,7 @@ function Slots({ venueId }: { venueId: string }) {
           <Notice message={message} />
           <Success message={success} />
           <Button type="submit" loading={busy === "create"} disabled={busy !== null && busy !== "create" || !draft.courtId}>
-            Add booking
+            Add slot
           </Button>
         </div>
       </form>
@@ -564,7 +593,7 @@ function Slots({ venueId }: { venueId: string }) {
       ) : rows === null ? (
         <div aria-busy="true"><span className="sr-only">Loading slots</span><Skeleton className="h-24" /></div>
       ) : rows.length === 0 ? (
-        <EmptyState title="No bookings" body="Add a court, date, start, and end to book that time." />
+        <EmptyState title="No slots" body="Add a court, date, start, and end. Players book that time from the homepage." />
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2">
           {rows.map((row) => (

@@ -9,6 +9,7 @@ public static class ProfileEndpoints
     {
         var me = app.MapGroup("/api/me").RequireAuthorization();
         me.MapGet("/bookings", BookingsAsync);
+        me.MapGet("/bookings/{id:guid}", BookingAsync);
         me.MapPost("/bookings/{id:guid}/cancel", CancelAsync);
         me.MapGet("/rewards", RewardsAsync);
         me.MapGet("/payments", PaymentsAsync);
@@ -56,11 +57,12 @@ public static class ProfileEndpoints
         });
     }
 
-    private static async Task<IResult> CancelAsync(
+    private static async Task<IResult> BookingAsync(
         Guid id,
         HttpContext http,
         AuthRepository authRepository,
-        BookingRepository repository,
+        PaymentRepository payments,
+        BookingPayments bookingPayments,
         CancellationToken cancellationToken)
     {
         var userId = await RequireUserAsync(http, authRepository, cancellationToken);
@@ -69,39 +71,64 @@ public static class ProfileEndpoints
             return SignInAgain();
         }
 
-        var booking = await repository.FindOwnedBookingAsync(userId.Value, id, cancellationToken);
+        try
+        {
+            await bookingPayments.SyncAsync(userId.Value, id, cancellationToken);
+        }
+        catch (Stripe.StripeException)
+        {
+            // The stored status is still returned when Stripe cannot be reached.
+        }
+
+        var booking = await payments.FindOwnedPaymentAsync(userId.Value, id, cancellationToken);
         if (booking is null)
         {
             return Results.NotFound();
         }
 
-        if (booking.Status is not ("pending" or "confirmed") || booking.StartTime <= DateTime.UtcNow)
+        return Results.Ok(new
         {
-            return Results.Json(new
-            {
-                errors = new Dictionary<string, string[]>
-                {
-                    ["form"] = ["This booking can no longer be cancelled."],
-                },
-            }, statusCode: StatusCodes.Status409Conflict);
+            id = booking.Id,
+            status = booking.Status,
+            paymentStatus = booking.PaymentStatus,
+            currency = booking.Currency,
+            cashAmount = booking.TotalAmount,
+            pointsRedeemed = booking.PointsRedeemed,
+            pointsValue = booking.PointsValue,
+        });
+    }
+
+    private static async Task<IResult> CancelAsync(
+        Guid id,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingPayments bookingPayments,
+        CancellationToken cancellationToken)
+    {
+        var userId = await RequireUserAsync(http, authRepository, cancellationToken);
+        if (userId is null)
+        {
+            return SignInAgain();
         }
 
-        var cancelled = await repository.CancelBookingAsync(userId.Value, id, cancellationToken);
-        if (!cancelled)
+        var result = await bookingPayments.CancelAsync(userId.Value, id, cancellationToken);
+        if (result.Error is not null)
         {
             return Results.Json(new
             {
                 errors = new Dictionary<string, string[]>
                 {
-                    ["form"] = ["This booking can no longer be cancelled."],
+                    ["form"] = [result.Error],
                 },
-            }, statusCode: StatusCodes.Status409Conflict);
+            }, statusCode: result.StatusCode);
         }
 
         return Results.Ok(new
         {
-            refundAmount = 0m,
-            currency = booking.Currency,
+            refundAmount = result.RefundAmount,
+            feePercent = result.FeePercent,
+            pointsRestored = result.PointsRestored,
+            currency = result.Currency,
         });
     }
 

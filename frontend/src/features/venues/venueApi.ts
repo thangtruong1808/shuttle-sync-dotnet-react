@@ -18,12 +18,22 @@ export type Venue = {
   imageUrl: string | null;
   timeZone: string;
   currency: string;
+  lateCancelFeePercent: number;
+  pointsPerDollar: number;
 };
 
 export type ScheduleBooking = {
   id: string;
   startTime: string;
   endTime: string;
+};
+
+export type OpenSlot = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  price: number;
+  incentivePoints: number | null;
 };
 
 export type ScheduleClosure = {
@@ -41,6 +51,7 @@ export type AvailableCourt = {
   imageUrl: string | null;
   description: string | null;
   bookings: ScheduleBooking[];
+  slots?: OpenSlot[];
 };
 
 export type VenueIncentive = {
@@ -79,8 +90,8 @@ export type CourtSlotDetail = {
   incentivePoints: number | null;
 };
 
-async function readJson<T>(path: string, cache?: RequestCache): Promise<T> {
-  const response = await apiFetch(path, cache ? { cache } : {});
+async function readJson<T>(path: string, cache?: RequestCache, init?: RequestInit): Promise<T> {
+  const response = await apiFetch(path, { ...(cache ? { cache } : {}), ...init });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { errors?: FieldErrors } | null;
     throw new AuthRequestError(body?.errors ?? { form: ["The request could not be completed."] });
@@ -109,6 +120,26 @@ export function venuePromotions(slug: string): Promise<Promotion[]> {
 
 export function venueSlot(slug: string, sessionId: string): Promise<CourtSlotDetail> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/slots/${sessionId}`);
+}
+
+export type CheckoutResult = {
+  bookingId: string;
+  status: string;
+  checkoutUrl: string | null;
+  currency: string;
+  subtotal: number;
+  discountAmount: number;
+  pointsRedeemed: number;
+  pointsValue: number;
+  cashAmount: number;
+};
+
+export function startCheckout(slug: string, sessionId: string, points: number, promotionCode: string): Promise<CheckoutResult> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/sessions/${sessionId}/checkout`, "no-store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ points, promotionCode: promotionCode || null }),
+  });
 }
 
 export function dashboardVenues(): Promise<Venue[]> {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { formatVenueRange } from "../../components/format";
-import type { Availability, ScheduleBooking } from "../venues/venueApi";
+import { Link } from "react-router-dom";
+import { Money, formatVenueRange } from "../../components/format";
+import type { Availability, OpenSlot, ScheduleBooking } from "../venues/venueApi";
 
 function clock(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -19,6 +20,29 @@ export function useNow(): number {
   }, []);
 
   return now;
+}
+
+export function OpenSlots({ slug, slots, timeZone, currency, now }: { slug: string; slots: OpenSlot[]; timeZone: string; currency: string; now: number }) {
+  const open = slots.filter((slot) => new Date(slot.endTime).getTime() > now);
+  if (open.length === 0) {
+    return <p className="mt-3 text-sm text-mist/65">No open times to book.</p>;
+  }
+
+  return (
+    <div className="mt-3">
+      <p className="text-sm font-semibold text-white">Book a time</p>
+      <ul className="mt-2 grid grid-cols-2 gap-2">
+        {open.map((slot) => (
+          <li key={slot.id} className="min-w-0">
+            <Link to={`/${slug}/book/${slot.id}`} className="block rounded-2xl border border-line/40 px-3 py-2 hover:bg-white/5">
+              <p className="text-sm text-white">{formatVenueRange(slot.startTime, slot.endTime, timeZone)}</p>
+              <p className="text-sm font-semibold text-line"><Money amount={slot.price} currency={currency} /> · Book</p>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export function upcomingBookings<T extends { startTime: string; endTime: string }>(bookings: T[], now: number): T[] {

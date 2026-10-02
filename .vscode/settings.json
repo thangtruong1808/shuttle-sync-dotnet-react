@@ -1,0 +1,4 @@
+{
+  "dotnet.projects.enableFileBasedProgramsWhenAmbiguous": false,
+  "dotnet.fileBasedApps.enableAutomaticDiscovery": false
+}

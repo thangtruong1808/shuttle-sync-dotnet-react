@@ -55,6 +55,7 @@ public static class VenueEndpoints
 
         var incentives = await repository.ListPublicIncentivesAsync(venue.Id, DateOnly.Parse(window.Date), cancellationToken);
         var bookings = await repository.ListConfirmedBookingsAsync(venue.Id, window.StartUtc, window.EndUtc, cancellationToken);
+        var openSlots = await repository.ListAvailableSlotsAsync(venue.Id, window.StartUtc, window.EndUtc, cancellationToken);
         var closures = await repository.ListPublicClosuresAsync(venue.Id, window.StartUtc, window.EndUtc, cancellationToken);
         var courtRows = await repository.ListPublicCourtsAsync(venue.Id, cancellationToken);
         var courts = courtRows.Select(court => new
@@ -70,6 +71,14 @@ public static class VenueEndpoints
                 id = booking.BookingId,
                 startTime = VenueClock.AsUtc(booking.StartTime),
                 endTime = VenueClock.AsUtc(booking.EndTime),
+            }),
+            slots = openSlots.Where(slot => slot.CourtId == court.Id).Select(slot => new
+            {
+                id = slot.SessionId,
+                startTime = VenueClock.AsUtc(slot.StartTime),
+                endTime = VenueClock.AsUtc(slot.EndTime),
+                price = slot.Price,
+                incentivePoints = slot.IncentivePoints,
             }),
         });
 
@@ -193,5 +202,7 @@ public static class VenueEndpoints
         imageUrl = venue.ImageUrl,
         timeZone = venue.TimeZone,
         currency = venue.Currency,
+        lateCancelFeePercent = venue.LateCancelFeePercent,
+        pointsPerDollar = venue.PointsPerDollar,
     };
 }

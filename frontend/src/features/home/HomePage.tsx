@@ -1,11 +1,11 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { SlidersHorizontal, X } from "lucide-react";
+import { SlidersHorizontal, Tag, X } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { Button, PickerInput, Skeleton } from "../../components/ui";
 import { CourtImage, EmptyState, ErrorState, Money, addDays, formatVenueRange, venueToday } from "../../components/format";
-import { DayChart, SessionClock, upcomingBookings, useNow } from "../courts/CourtSchedule";
+import { DayChart, OpenSlots, SessionClock, upcomingBookings, useNow } from "../courts/CourtSchedule";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
 import {
   rememberVenueSlug,
@@ -106,7 +106,7 @@ export default function HomePage() {
       <PageSection>
         <section className="rounded-3xl border border-white/10 bg-pine/90 p-6 sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-line">Badminton booking</p>
-          <h1 className="mt-3 max-w-2xl font-display text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+          <h1 className="mt-3 max-w-4xl font-display text-4xl font-semibold tracking-tight text-white sm:text-5xl">
             Find a court at {venue?.name ?? "your venue"}.
           </h1>
           <p className="mt-3 max-w-xl text-mist/75">Pick a day to see who is booked on each court.</p>
@@ -130,10 +130,35 @@ export default function HomePage() {
               ) : null}
             </div>
           </form>
+          <section id="promotions" className="mt-6 border-t border-white/10 pt-5" aria-labelledby="promotions-heading">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 id="promotions-heading" className="flex items-center gap-2 font-display text-lg text-white">
+                <Tag className="h-4 w-4 text-line" aria-hidden="true" />
+                Promotions
+              </h2>
+            </div>
+            {promotions && promotions.length > 0 ? (
+              <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                {promotions.map((promotion) => (
+                  <li key={promotion.id} className="flex items-center justify-between gap-3 rounded-2xl border border-line/25 bg-black/25 px-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="break-all font-semibold tracking-wide text-white">{promotion.code}</p>
+                      <p className="text-sm text-line">
+                        {promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={venue?.currency ?? "AUD"} />}
+                        {promotion.venueId ? "" : " · all venues"}
+                      </p>
+                    </div>
+                    <CopyCode code={promotion.code} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm text-mist/70">No active promotion codes right now.</p>
+            )}
+          </section>
         </section>
 
         <section className="mt-10" aria-labelledby="available-courts">
-          <h2 id="available-courts" className="font-display text-2xl font-semibold text-white">On the courts</h2>
           {venueError ? <div className="mt-4"><ErrorState message={venueError} onRetry={reload} /></div> : null}
           {loading ? (
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
@@ -151,24 +176,25 @@ export default function HomePage() {
                 {availability.courts.map((court) => {
                   const bookings = upcomingBookings(court.bookings, now);
                   return (
-                  <li key={court.id} className="rounded-3xl border border-white/10 bg-pine/70 p-4">
-                    <CourtImage src={court.imageUrl} alt={`${court.courtName} court`} />
-                    <h3 className="mt-4 font-display text-xl text-white">{court.courtName}</h3>
-                    <p className="text-sm text-mist/65">Court {court.courtNumber}{court.surfaceType ? ` · ${court.surfaceType}` : ""}</p>
-                    {(availability.incentives ?? []).map((incentive) => (
-                      <p key={incentive.id} className="mt-2 text-sm font-semibold text-line">+{incentive.points} pts · {incentive.startsOn} to {incentive.endsOn}</p>
-                    ))}
-                    {bookings.length === 0 ? <p className="mt-3 text-sm text-mist/65">Nothing else is booked today.</p> : (
-                      <ul className="mt-3 grid grid-cols-2 gap-2">
-                        {bookings.map((booking) => (
-                          <li key={booking.id} className="min-w-0 rounded-2xl border border-white/15 px-3 py-2">
-                            <p className="text-sm text-white">{formatVenueRange(booking.startTime, booking.endTime, availability.venue.timeZone)}</p>
-                            <SessionClock start={booking.startTime} end={booking.endTime} />
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
+                    <li key={court.id} className="rounded-3xl border border-white/10 bg-pine/70 p-4">
+                      <CourtImage src={court.imageUrl} alt={`${court.courtName} court`} />
+                      <h3 className="mt-4 font-display text-xl text-white">{court.courtName}</h3>
+                      <p className="text-sm text-mist/65">Court {court.courtNumber}{court.surfaceType ? ` · ${court.surfaceType}` : ""}</p>
+                      {(availability.incentives ?? []).map((incentive) => (
+                        <p key={incentive.id} className="mt-2 text-sm font-semibold text-line">+{incentive.points} pts · {incentive.startsOn} to {incentive.endsOn}</p>
+                      ))}
+                      {bookings.length === 0 ? <p className="mt-3 text-sm text-mist/65">Nothing else is booked today.</p> : (
+                        <ul className="mt-3 grid grid-cols-2 gap-2">
+                          {bookings.map((booking) => (
+                            <li key={booking.id} className="min-w-0 rounded-2xl border border-white/15 px-3 py-2">
+                              <p className="text-sm text-white">{formatVenueRange(booking.startTime, booking.endTime, availability.venue.timeZone)}</p>
+                              <SessionClock start={booking.startTime} end={booking.endTime} />
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <OpenSlots slug={slug} slots={court.slots ?? []} timeZone={availability.venue.timeZone} currency={availability.venue.currency} now={now} />
+                    </li>
                   );
                 })}
               </ul>
@@ -185,28 +211,6 @@ export default function HomePage() {
                 }}>See {nextDay}</Button>
               ) : null}
             </div>
-          )}
-        </section>
-
-        <section id="promotions" className="mt-10 rounded-3xl border border-line/30 bg-line/10 p-5">
-          <h2 className="font-display text-2xl text-white">Promotions</h2>
-          {promotions && promotions.length > 0 ? (
-            <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-              {promotions.map((promotion) => (
-                <li key={promotion.id} className="flex items-center justify-between gap-3 rounded-2xl bg-ink/50 px-4 py-3">
-                  <div>
-                    <p className="font-semibold text-white">{promotion.code}</p>
-                    <p className="text-sm text-mist/70">
-                      {promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={venue?.currency ?? "AUD"} />}
-                      {promotion.venueId ? "" : " · all venues"}
-                    </p>
-                  </div>
-                  <CopyCode code={promotion.code} />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-3 text-sm text-mist/70">No active promotion codes right now.</p>
           )}
         </section>
 
@@ -257,7 +261,7 @@ export default function HomePage() {
             </div>
             <div>
               <dt className="font-medium text-white">Can I cancel?</dt>
-              <dd className="mt-1 text-mist/70">Future pending or confirmed bookings can be cancelled. The refund amount is calculated by the server.</dd>
+              <dd className="mt-1 text-mist/70">You can cancel before the session starts. More than 24 hours before the start, the payment is refunded in full. Within 24 hours, the venue keeps its late-cancel percent and refunds the rest.</dd>
             </div>
           </dl>
         </section>

@@ -4,7 +4,7 @@ import { CourtImage, EmptyState, ErrorState, formatVenueRange, venueToday } from
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
 import { PickerInput, Skeleton } from "../../components/ui";
 import { venueAvailability, type Availability } from "../venues/venueApi";
-import { DayChart, SessionClock, upcomingBookings, useNow } from "./CourtSchedule";
+import { DayChart, OpenSlots, SessionClock, upcomingBookings, useNow } from "./CourtSchedule";
 
 export default function CourtsPage() {
   const { slug = "" } = useParams();
@@ -89,6 +89,7 @@ export default function CourtsPage() {
                         ))}
                       </ul>
                     )}
+                    <OpenSlots slug={slug} slots={court.slots ?? []} timeZone={availability.venue.timeZone} currency={availability.venue.currency} now={now} />
                   </div>
                 </li>
                 );

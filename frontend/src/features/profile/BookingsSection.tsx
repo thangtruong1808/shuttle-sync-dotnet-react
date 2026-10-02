@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import { useDispatch } from "react-redux";
+import type { AppDispatch } from "../../app/store";
 import { Button, Skeleton, Spinner } from "../../components/ui";
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
-import { cancelBooking, myBookings, type BookingRow, type Page } from "./profileApi";
+import { loadCurrentUser } from "../auth/authSlice";
+import { cancelBooking, myBookings, type BookingRow, type CancelResult, type Page } from "./profileApi";
 
 const tabs = [
   { id: "upcoming", label: "Upcoming" },
@@ -9,7 +12,20 @@ const tabs = [
   { id: "cancelled", label: "Cancelled" },
 ] as const;
 
+function cancelNotice(result: CancelResult) {
+  const money = new Intl.NumberFormat("en-AU", { style: "currency", currency: result.currency }).format(result.refundAmount);
+  const parts = [`Cancelled. Refund amount: ${money}.`];
+  if (result.feePercent > 0) {
+    parts.push(`A ${Number(result.feePercent.toFixed(2))}% late fee was kept.`);
+  }
+  if (result.pointsRestored > 0) {
+    parts.push(`${result.pointsRestored} points were returned.`);
+  }
+  return parts.join(" ");
+}
+
 export function BookingsSection() {
+  const dispatch = useDispatch<AppDispatch>();
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("upcoming");
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Page<BookingRow> | null>(null);
@@ -50,7 +66,8 @@ export function BookingsSection() {
     setNotice(null);
     try {
       const result = await cancelBooking(id);
-      setNotice(`Cancelled. Refund amount: ${new Intl.NumberFormat("en-AU", { style: "currency", currency: result.currency }).format(result.refundAmount)}.`);
+      setNotice(cancelNotice(result));
+      void dispatch(loadCurrentUser());
       setConfirmId(null);
       setAttempt((value) => value + 1);
     } catch {

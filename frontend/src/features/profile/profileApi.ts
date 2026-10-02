@@ -58,13 +58,34 @@ export function myBookings(status: string, page: number): Promise<Page<BookingRo
   return readPage(`/api/me/bookings?${params}`);
 }
 
-export async function cancelBooking(id: string): Promise<{ refundAmount: number; currency: string }> {
+export type CancelResult = {
+  refundAmount: number;
+  feePercent: number;
+  pointsRestored: number;
+  currency: string;
+};
+
+export type BookingPayment = {
+  id: string;
+  status: string;
+  paymentStatus: string | null;
+  currency: string;
+  cashAmount: number;
+  pointsRedeemed: number;
+  pointsValue: number;
+};
+
+export async function cancelBooking(id: string): Promise<CancelResult> {
   const response = await apiFetch(`/api/me/bookings/${id}/cancel`, { method: "POST" });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { errors?: FieldErrors } | null;
     throw new AuthRequestError(body?.errors ?? { form: ["The request could not be completed."] });
   }
-  return (await response.json()) as { refundAmount: number; currency: string };
+  return (await response.json()) as CancelResult;
+}
+
+export function bookingPayment(id: string): Promise<BookingPayment> {
+  return readPage(`/api/me/bookings/${id}`);
 }
 
 export function myRewards(page: number): Promise<Page<RewardRow> & { balance: number }> {

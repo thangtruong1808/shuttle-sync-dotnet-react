@@ -218,7 +218,8 @@ public sealed class BookingRepository(IConfiguration configuration)
               """
             : $"""
               SELECT v.Id, v.Name, v.Slug, v.Description, v.Address, v.Suburb, v.State, v.Postcode,
-                     v.Country, v.Latitude, v.Longitude, v.Phone, v.Email, v.ImageUrl, v.TimeZone, v.Currency
+                     v.Country, v.Latitude, v.Longitude, v.Phone, v.Email, v.ImageUrl, v.TimeZone, v.Currency,
+                     v.LateCancelFeePercent, v.PointsPerDollar
               FROM Venues v
               JOIN UserVenues uv ON uv.VenueId = v.Id
               WHERE uv.UserId = @UserId AND v.IsDeleted = 0
@@ -400,7 +401,8 @@ public sealed class BookingRepository(IConfiguration configuration)
 
     private const string VenueColumns = """
         Id, Name, Slug, Description, Address, Suburb, State, Postcode, Country,
-        Latitude, Longitude, Phone, Email, ImageUrl, TimeZone, Currency
+        Latitude, Longitude, Phone, Email, ImageUrl, TimeZone, Currency,
+        LateCancelFeePercent, PointsPerDollar
         """;
 }
 
@@ -422,6 +424,8 @@ public sealed class VenueRow
     public string? ImageUrl { get; init; }
     public string TimeZone { get; init; } = "Australia/Melbourne";
     public string Currency { get; init; } = "AUD";
+    public decimal LateCancelFeePercent { get; init; }
+    public int PointsPerDollar { get; init; } = 100;
 }
 
 public sealed class PublicCourtRow

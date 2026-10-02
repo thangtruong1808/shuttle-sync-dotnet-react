@@ -37,7 +37,8 @@ public sealed class DashboardRepository(IConfiguration configuration)
             new CommandDefinition(
                 """
                 SELECT Id, Name, Slug, Description, Address, Suburb, State, Postcode, Country,
-                       Latitude, Longitude, Phone, Email, ImageUrl, TimeZone, Currency, IsActive
+                       Latitude, Longitude, Phone, Email, ImageUrl, TimeZone, Currency,
+                       LateCancelFeePercent, PointsPerDollar, IsActive
                 FROM Venues
                 WHERE Id = @Id AND IsDeleted = 0
                 """,
@@ -56,11 +57,13 @@ public sealed class DashboardRepository(IConfiguration configuration)
                 """
                 INSERT INTO Venues
                     (Id, Name, Slug, Description, Address, Suburb, State, Postcode, Country,
-                     Latitude, Longitude, Phone, Email, ImageUrl, TimeZone, Currency, IsActive,
+                     Latitude, Longitude, Phone, Email, ImageUrl, TimeZone, Currency,
+                     LateCancelFeePercent, PointsPerDollar, IsActive,
                      IsDeleted, CreatedAt, UpdatedAt)
                 VALUES
                     (@Id, @Name, @Slug, @Description, @Address, @Suburb, @State, @Postcode, @Country,
-                     @Latitude, @Longitude, @Phone, @Email, @ImageUrl, @TimeZone, @Currency, @IsActive,
+                     @Latitude, @Longitude, @Phone, @Email, @ImageUrl, @TimeZone, @Currency,
+                     @LateCancelFeePercent, @PointsPerDollar, @IsActive,
                      0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
                 """,
                 write with { Id = id }, tx, cancellationToken: cancellationToken));
@@ -85,7 +88,9 @@ public sealed class DashboardRepository(IConfiguration configuration)
               SET Name = @Name, Slug = @Slug, Description = @Description, Address = @Address,
                   Suburb = @Suburb, State = @State, Postcode = @Postcode, Country = @Country,
                   Latitude = @Latitude, Longitude = @Longitude, Phone = @Phone, Email = @Email,
-                  ImageUrl = @ImageUrl, TimeZone = @TimeZone, Currency = @Currency, IsActive = @IsActive,
+                  ImageUrl = @ImageUrl, TimeZone = @TimeZone, Currency = @Currency,
+                  LateCancelFeePercent = @LateCancelFeePercent, PointsPerDollar = @PointsPerDollar,
+                  IsActive = @IsActive,
                   UpdatedAt = UTC_TIMESTAMP(6)
               WHERE Id = @Id AND IsDeleted = 0
               """
@@ -233,15 +238,9 @@ public sealed class DashboardRepository(IConfiguration configuration)
                    si.Points AS IncentivePoints, si.IsActive AS IncentiveActive
             FROM CourtSessions cs
             JOIN Courts c ON c.Id = cs.CourtId AND c.VenueId = cs.VenueId
-            JOIN Bookings b ON b.CourtSessionId = cs.Id AND b.VenueId = cs.VenueId
-              AND b.IsDeleted = 0 AND b.Status = 'confirmed'
             LEFT JOIN SessionIncentives si ON si.CourtSessionId = cs.Id
             WHERE cs.VenueId = @VenueId AND cs.IsDeleted = 0
               AND cs.StartTime < @EndUtc AND cs.EndTime > @StartUtc
-              AND (
-                    EXISTS (SELECT 1 FROM Payments p WHERE p.BookingId = b.Id AND p.Status = 'succeeded')
-                    OR NOT EXISTS (SELECT 1 FROM Payments p WHERE p.BookingId = b.Id)
-                  )
             ORDER BY c.CourtNumber, cs.StartTime
             """,
             new { VenueId = venueId, StartUtc = startUtc, EndUtc = endUtc }, cancellationToken: cancellationToken));
@@ -303,22 +302,8 @@ public sealed class DashboardRepository(IConfiguration configuration)
                 return "That start time is already used on this court.";
             }
 
-            var bookingId = Guid.NewGuid();
-            await connection.ExecuteAsync(new CommandDefinition(
-                """
-                INSERT INTO Bookings
-                    (Id, VenueId, UserId, CourtSessionId, Status, SubtotalAmount, DiscountAmount, TotalAmount,
-                     ConfirmedAt, IsDeleted, CreatedAt, UpdatedAt)
-                VALUES
-                    (@Id, @VenueId, @UserId, @SessionId, 'confirmed', @Price, 0, @Price,
-                     UTC_TIMESTAMP(6), 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
-                """,
-                new { Id = bookingId, VenueId = venueId, UserId = actorId, SessionId = id, Price = slot.Price },
-                tx, cancellationToken: cancellationToken));
-
             await SyncSessionIncentiveAsync(connection, tx, venueId, id, localDay, actorId, cancellationToken);
             await AuditAsync(connection, tx, actorId, venueId, "create", "CourtSession", id, slot, ip, cancellationToken);
-            await AuditAsync(connection, tx, actorId, venueId, "create", "Booking", bookingId, new { sessionId = id, status = "confirmed" }, ip, cancellationToken);
         }
 
         await tx.CommitAsync(cancellationToken);
@@ -373,7 +358,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
 
         var discount = await connection.ExecuteScalarAsync<decimal>(new CommandDefinition(
             """
-            SELECT COALESCE(MAX(DiscountAmount), 0) FROM Bookings
+            SELECT COALESCE(MAX(DiscountAmount + PointsValue), 0) FROM Bookings
             WHERE CourtSessionId = @Id AND VenueId = @VenueId AND IsDeleted = 0 AND Status = 'confirmed'
             """,
             new { Id = sessionId, VenueId = venueId }, tx, cancellationToken: cancellationToken));
@@ -401,7 +386,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
         await connection.ExecuteAsync(new CommandDefinition(
             """
             UPDATE Bookings
-            SET SubtotalAmount = @Price, TotalAmount = @Price - DiscountAmount, UpdatedAt = UTC_TIMESTAMP(6)
+            SET SubtotalAmount = @Price, TotalAmount = @Price - DiscountAmount - PointsValue, UpdatedAt = UTC_TIMESTAMP(6)
             WHERE CourtSessionId = @Id AND VenueId = @VenueId AND IsDeleted = 0 AND Status = 'confirmed'
             """,
             new { Id = sessionId, VenueId = venueId, Price = price }, tx, cancellationToken: cancellationToken));
@@ -1323,6 +1308,36 @@ public sealed class DashboardRepository(IConfiguration configuration)
         }
     }
 
+    public async Task SnapshotBookingIncentiveAsync(Guid venueId, Guid sessionId, Guid actorId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        var zoneId = await connection.ExecuteScalarAsync<string>(new CommandDefinition(
+            "SELECT TimeZone FROM Venues WHERE Id = @VenueId",
+            new { VenueId = venueId }, tx, cancellationToken: cancellationToken));
+        var start = await connection.ExecuteScalarAsync<DateTime?>(new CommandDefinition(
+            "SELECT StartTime FROM CourtSessions WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0",
+            new { Id = sessionId, VenueId = venueId }, tx, cancellationToken: cancellationToken));
+        if (start is null || string.IsNullOrWhiteSpace(zoneId))
+        {
+            return;
+        }
+
+        TimeZoneInfo zone;
+        try
+        {
+            zone = TimeZoneInfo.FindSystemTimeZoneById(zoneId);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return;
+        }
+
+        var local = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(start.Value, DateTimeKind.Utc), zone));
+        await SyncSessionIncentiveAsync(connection, tx, venueId, sessionId, local, actorId, cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+    }
+
     private static async Task SyncSessionIncentiveAsync(
         MySqlConnection connection,
         MySqlTransaction tx,
@@ -1452,6 +1467,8 @@ public sealed record DashVenueWrite(
     string? ImageUrl,
     string TimeZone,
     string Currency,
+    decimal LateCancelFeePercent,
+    int PointsPerDollar,
     bool IsActive);
 
 public sealed class DashVenueRow
@@ -1472,6 +1489,8 @@ public sealed class DashVenueRow
     public string? ImageUrl { get; init; }
     public string TimeZone { get; init; } = "";
     public string Currency { get; init; } = "";
+    public decimal LateCancelFeePercent { get; init; }
+    public int PointsPerDollar { get; init; } = 100;
     public bool IsActive { get; init; }
 }
 

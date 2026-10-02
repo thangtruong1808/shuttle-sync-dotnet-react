@@ -41,7 +41,7 @@ export function ContactPage() {
 export function CancellationPage() {
   return (
     <StaticPage title="Cancellation policy">
-      You can cancel a pending or confirmed booking before the session starts. The server calculates any refund. Stripe refunds are not processed in this version.
+      You can cancel a pending or confirmed booking before the session starts. More than 24 hours before the start, the payment is refunded in full, including any reward points used. Within 24 hours, the venue keeps the late-cancel percent set in the dashboard and refunds the rest. The same percent of points used is kept.
     </StaticPage>
   );
 }

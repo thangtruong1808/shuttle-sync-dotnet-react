@@ -14,6 +14,12 @@ public sealed class CsrfMiddleware(RequestDelegate next)
 
     public async Task InvokeAsync(HttpContext context)
     {
+        if (context.Request.Path.StartsWithSegments("/api/stripe/webhook"))
+        {
+            await next(context);
+            return;
+        }
+
         if (context.Request.Path.StartsWithSegments("/api")
             && ProtectedMethods.Contains(context.Request.Method)
             && !IsValid(context))

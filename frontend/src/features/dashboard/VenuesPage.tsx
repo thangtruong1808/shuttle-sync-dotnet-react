@@ -24,6 +24,8 @@ const blank = {
   imageUrl: "",
   timeZone: "Australia/Melbourne",
   currency: "AUD",
+  lateCancelFeePercent: 0,
+  pointsPerDollar: 100,
   isActive: true,
 };
 

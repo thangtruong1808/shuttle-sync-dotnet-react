@@ -26,6 +26,8 @@ export type DashVenue = {
   imageUrl: string | null;
   timeZone: string;
   currency: string;
+  lateCancelFeePercent: number;
+  pointsPerDollar: number;
   isActive: boolean;
 };
 
