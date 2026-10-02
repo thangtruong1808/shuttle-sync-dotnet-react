@@ -38,7 +38,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
                 """
                 SELECT Id, Name, Slug, Description, Address, Suburb, State, Postcode, Country,
                        Latitude, Longitude, Phone, Email, ImageUrl, TimeZone, Currency,
-                       LateCancelFeePercent, PointsPerDollar, IsActive
+                       LateCancelFeePercent, PointsPerDollar, HourlyRate, IsActive
                 FROM Venues
                 WHERE Id = @Id AND IsDeleted = 0
                 """,
@@ -58,12 +58,12 @@ public sealed class DashboardRepository(IConfiguration configuration)
                 INSERT INTO Venues
                     (Id, Name, Slug, Description, Address, Suburb, State, Postcode, Country,
                      Latitude, Longitude, Phone, Email, ImageUrl, TimeZone, Currency,
-                     LateCancelFeePercent, PointsPerDollar, IsActive,
+                     LateCancelFeePercent, PointsPerDollar, HourlyRate, IsActive,
                      IsDeleted, CreatedAt, UpdatedAt)
                 VALUES
                     (@Id, @Name, @Slug, @Description, @Address, @Suburb, @State, @Postcode, @Country,
                      @Latitude, @Longitude, @Phone, @Email, @ImageUrl, @TimeZone, @Currency,
-                     @LateCancelFeePercent, @PointsPerDollar, @IsActive,
+                     @LateCancelFeePercent, @PointsPerDollar, @HourlyRate, @IsActive,
                      0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
                 """,
                 write with { Id = id }, tx, cancellationToken: cancellationToken));
@@ -90,6 +90,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
                   Latitude = @Latitude, Longitude = @Longitude, Phone = @Phone, Email = @Email,
                   ImageUrl = @ImageUrl, TimeZone = @TimeZone, Currency = @Currency,
                   LateCancelFeePercent = @LateCancelFeePercent, PointsPerDollar = @PointsPerDollar,
+                  HourlyRate = @HourlyRate,
                   IsActive = @IsActive,
                   UpdatedAt = UTC_TIMESTAMP(6)
               WHERE Id = @Id AND IsDeleted = 0
@@ -1469,6 +1470,7 @@ public sealed record DashVenueWrite(
     string Currency,
     decimal LateCancelFeePercent,
     int PointsPerDollar,
+    decimal HourlyRate,
     bool IsActive);
 
 public sealed class DashVenueRow
@@ -1491,6 +1493,7 @@ public sealed class DashVenueRow
     public string Currency { get; init; } = "";
     public decimal LateCancelFeePercent { get; init; }
     public int PointsPerDollar { get; init; } = 100;
+    public decimal HourlyRate { get; init; }
     public bool IsActive { get; init; }
 }
 

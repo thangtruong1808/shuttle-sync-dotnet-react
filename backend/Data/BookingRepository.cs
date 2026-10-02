@@ -155,6 +155,154 @@ public sealed class BookingRepository(IConfiguration configuration)
         return rows.ToArray();
     }
 
+    public async Task<(Guid SessionId, decimal Price, string? Error)> OpenPlayerSessionAsync(
+        Guid venueId,
+        Guid courtId,
+        decimal hourlyRate,
+        DateTime startUtc,
+        DateTime endUtc,
+        CancellationToken cancellationToken)
+    {
+        if (endUtc <= startUtc)
+        {
+            return (Guid.Empty, 0, "The end time must be later than the start time.");
+        }
+
+        if (startUtc <= DateTime.UtcNow)
+        {
+            return (Guid.Empty, 0, "Choose a time that has not started.");
+        }
+
+        if (endUtc - startUtc < TimeSpan.FromMinutes(30))
+        {
+            return (Guid.Empty, 0, "Choose at least 30 minutes.");
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        var court = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT COUNT(*) FROM Courts
+            WHERE Id = @CourtId AND VenueId = @VenueId AND IsDeleted = 0 AND IsActive = 1
+            FOR UPDATE
+            """,
+            new { CourtId = courtId, VenueId = venueId },
+            tx,
+            cancellationToken: cancellationToken));
+        if (court == 0)
+        {
+            return (Guid.Empty, 0, "This court is not available.");
+        }
+
+        var closed = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT COUNT(*)
+            FROM CourtClosures
+            WHERE VenueId = @VenueId
+              AND (CourtId = @CourtId OR CourtId IS NULL)
+              AND StartTime < @EndTime AND EndTime > @StartTime
+            """,
+            new { VenueId = venueId, CourtId = courtId, StartTime = startUtc, EndTime = endUtc },
+            tx,
+            cancellationToken: cancellationToken));
+        if (closed > 0)
+        {
+            return (Guid.Empty, 0, "This slot is not available.");
+        }
+
+        var overlaps = (await connection.QueryAsync<OverlapSessionRow>(new CommandDefinition(
+            """
+            SELECT Id, StartTime, EndTime
+            FROM CourtSessions
+            WHERE CourtId = @CourtId AND IsDeleted = 0
+              AND StartTime < @EndTime AND EndTime > @StartTime
+            FOR UPDATE
+            """,
+            new { CourtId = courtId, StartTime = startUtc, EndTime = endUtc },
+            tx,
+            cancellationToken: cancellationToken))).ToArray();
+        if (overlaps.Length == 1 && SameInstant(overlaps[0].StartTime, startUtc) && SameInstant(overlaps[0].EndTime, endUtc))
+        {
+            var taken = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                """
+                SELECT COUNT(*)
+                FROM Bookings
+                WHERE CourtSessionId = @Id AND IsDeleted = 0
+                  AND Status NOT IN ('cancelled', 'expired')
+                  AND NOT (
+                      Status = 'pending'
+                      AND HoldExpiresAt IS NOT NULL
+                      AND HoldExpiresAt <= UTC_TIMESTAMP(6)
+                  )
+                """,
+                new { Id = overlaps[0].Id },
+                tx,
+                cancellationToken: cancellationToken));
+            if (taken > 0)
+            {
+                return (Guid.Empty, 0, "This slot is not available.");
+            }
+
+            var existingPrice = await connection.ExecuteScalarAsync<decimal>(new CommandDefinition(
+                "SELECT Price FROM CourtSessions WHERE Id = @Id",
+                new { Id = overlaps[0].Id },
+                tx,
+                cancellationToken: cancellationToken));
+            await tx.CommitAsync(cancellationToken);
+            return (overlaps[0].Id, existingPrice, null);
+        }
+
+        if (overlaps.Length > 0)
+        {
+            return (Guid.Empty, 0, "This slot is not available.");
+        }
+
+        if (hourlyRate <= 0)
+        {
+            hourlyRate = await connection.ExecuteScalarAsync<decimal>(new CommandDefinition(
+                """
+                SELECT COALESCE(ROUND(Price / (TIMESTAMPDIFF(MINUTE, StartTime, EndTime) / 60), 2), 0)
+                FROM CourtSessions
+                WHERE VenueId = @VenueId AND IsDeleted = 0 AND Price > 0
+                  AND TIMESTAMPDIFF(MINUTE, StartTime, EndTime) >= 30
+                ORDER BY UpdatedAt DESC
+                LIMIT 1
+                """,
+                new { VenueId = venueId },
+                tx,
+                cancellationToken: cancellationToken));
+        }
+
+        if (hourlyRate <= 0)
+        {
+            return (Guid.Empty, 0, "This venue has not set an hourly rate yet.");
+        }
+
+        var minutes = (decimal)(endUtc - startUtc).TotalMinutes;
+        var price = decimal.Round(hourlyRate * minutes / 60m, 2, MidpointRounding.AwayFromZero);
+        var sessionId = Guid.NewGuid();
+        try
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO CourtSessions
+                    (Id, VenueId, CourtId, StartTime, EndTime, Price, IsDeleted, CreatedAt, UpdatedAt)
+                VALUES
+                    (@Id, @VenueId, @CourtId, @StartTime, @EndTime, @Price, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+                """,
+                new { Id = sessionId, VenueId = venueId, CourtId = courtId, StartTime = startUtc, EndTime = endUtc, Price = price },
+                tx,
+                cancellationToken: cancellationToken));
+        }
+        catch (MySqlException exception) when (exception.Number == 1062)
+        {
+            return (Guid.Empty, 0, "This slot is not available.");
+        }
+
+        await tx.CommitAsync(cancellationToken);
+        return (sessionId, price, null);
+    }
+
     public async Task<SlotRow?> FindSlotAsync(Guid venueId, Guid sessionId, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -219,7 +367,7 @@ public sealed class BookingRepository(IConfiguration configuration)
             : $"""
               SELECT v.Id, v.Name, v.Slug, v.Description, v.Address, v.Suburb, v.State, v.Postcode,
                      v.Country, v.Latitude, v.Longitude, v.Phone, v.Email, v.ImageUrl, v.TimeZone, v.Currency,
-                     v.LateCancelFeePercent, v.PointsPerDollar
+                     v.LateCancelFeePercent, v.PointsPerDollar, v.HourlyRate
               FROM Venues v
               JOIN UserVenues uv ON uv.VenueId = v.Id
               WHERE uv.UserId = @UserId AND v.IsDeleted = 0
@@ -399,10 +547,13 @@ public sealed class BookingRepository(IConfiguration configuration)
         return connection;
     }
 
+    private static bool SameInstant(DateTime left, DateTime right) =>
+        Math.Abs(left.Ticks - right.Ticks) < TimeSpan.TicksPerSecond;
+
     private const string VenueColumns = """
         Id, Name, Slug, Description, Address, Suburb, State, Postcode, Country,
         Latitude, Longitude, Phone, Email, ImageUrl, TimeZone, Currency,
-        LateCancelFeePercent, PointsPerDollar
+        LateCancelFeePercent, PointsPerDollar, HourlyRate
         """;
 }
 
@@ -426,6 +577,14 @@ public sealed class VenueRow
     public string Currency { get; init; } = "AUD";
     public decimal LateCancelFeePercent { get; init; }
     public int PointsPerDollar { get; init; } = 100;
+    public decimal HourlyRate { get; init; }
+}
+
+public sealed class OverlapSessionRow
+{
+    public Guid Id { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
 }
 
 public sealed class PublicCourtRow

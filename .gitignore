@@ -8,6 +8,8 @@ node_modules/
 # database
 database/
 
+# scripts
+scripts/
 
 #documentation
 documentation/

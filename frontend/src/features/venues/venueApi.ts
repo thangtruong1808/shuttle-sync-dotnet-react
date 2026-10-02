@@ -20,6 +20,7 @@ export type Venue = {
   currency: string;
   lateCancelFeePercent: number;
   pointsPerDollar: number;
+  hourlyRate: number;
 };
 
 export type ScheduleBooking = {
@@ -116,6 +117,14 @@ export function venueAvailability(slug: string, date: string, from: string, to: 
 
 export function venuePromotions(slug: string): Promise<Promotion[]> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/promotions`);
+}
+
+export function openPlayerSession(slug: string, courtId: string, date: string, start: string, end: string): Promise<{ sessionId: string; price: number; currency: string }> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/sessions`, "no-store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ courtId, date, start, end }),
+  });
 }
 
 export function venueSlot(slug: string, sessionId: string): Promise<CourtSlotDetail> {

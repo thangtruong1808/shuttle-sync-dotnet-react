@@ -28,6 +28,7 @@ export type DashVenue = {
   currency: string;
   lateCancelFeePercent: number;
   pointsPerDollar: number;
+  hourlyRate: number;
   isActive: boolean;
 };
 

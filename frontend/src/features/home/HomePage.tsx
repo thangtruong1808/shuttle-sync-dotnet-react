@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { SlidersHorizontal, Tag, X } from "lucide-react";
 import type { RootState } from "../../app/store";
@@ -7,7 +7,9 @@ import { Button, PickerInput, Skeleton } from "../../components/ui";
 import { CourtImage, EmptyState, ErrorState, Money, addDays, formatVenueRange, venueToday } from "../../components/format";
 import { DayChart, OpenSlots, SessionClock, upcomingBookings, useNow } from "../courts/CourtSchedule";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
+import { AuthRequestError } from "../auth/authApi";
 import {
+  openPlayerSession,
   rememberVenueSlug,
   venueAvailability,
   venuePromotions,
@@ -30,6 +32,11 @@ export default function HomePage() {
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [bookForm, setBookForm] = useState({ courtId: "", date: "", start: "", end: "" });
+  const [bookBusy, setBookBusy] = useState(false);
+  const [bookError, setBookError] = useState<string | null>(null);
+  const navigate = useNavigate();
   const now = useNow();
 
   useEffect(() => {
@@ -37,6 +44,7 @@ export default function HomePage() {
       const today = venueToday(venue.timeZone);
       setDraft((current) => ({ ...current, date: current.date || today }));
       setApplied((current) => (current.date ? current : { date: today, from: "", to: "" }));
+      setBookForm((current) => ({ ...current, date: current.date || today }));
       rememberVenueSlug(venue.slug);
     }
   }, [venue]);
@@ -75,6 +83,24 @@ export default function HomePage() {
     setBusy("filter");
     setApplied({ date: draft.date, from: draft.from, to: draft.to });
     setAttempt((value) => value + 1);
+  }
+
+  async function onBook(event: FormEvent) {
+    event.preventDefault();
+    if (status !== "authenticated") {
+      navigate(`/login?next=${encodeURIComponent(`/${slug}`)}`);
+      return;
+    }
+    setBookError(null);
+    setBookBusy(true);
+    try {
+      const opened = await openPlayerSession(slug, bookForm.courtId, bookForm.date, bookForm.start, bookForm.end);
+      navigate(`/${slug}/book/${opened.sessionId}`);
+    } catch (reason) {
+      setBookError(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "This slot is not available." : "This slot is not available.");
+    } finally {
+      setBookBusy(false);
+    }
   }
 
   function onClear() {
@@ -125,11 +151,54 @@ export default function HomePage() {
             </label>
             <div className="flex flex-wrap items-center gap-2 sm:col-span-2 lg:col-span-3">
               <Button type="submit" className="w-full sm:w-auto" icon={<SlidersHorizontal className="h-4 w-4" aria-hidden="true" />} loading={busy === "filter"} disabled={!draft.date || (busy !== null && busy !== "filter")}>Filter</Button>
+              <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => { setBookingOpen((open) => !open); setBookError(null); }}>Book a court</Button>
               {filtered || busy === "clear" ? (
                 <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<X className="h-4 w-4" aria-hidden="true" />} loading={busy === "clear"} disabled={busy !== null && busy !== "clear"} onClick={onClear}>Clear</Button>
               ) : null}
             </div>
           </form>
+          {bookingOpen ? (
+            <form className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 sm:grid-cols-2" onSubmit={onBook}>
+              <label className="text-sm sm:col-span-2">
+                <span className="mb-1 block text-mist/70">Court</span>
+                <select
+                  required
+                  value={bookForm.courtId}
+                  disabled={bookBusy || loading}
+                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist disabled:opacity-60"
+                  onChange={(event) => setBookForm({ ...bookForm, courtId: event.target.value })}
+                >
+                  <option value="">Choose a court</option>
+                  {(availability?.courts ?? []).map((court) => (
+                    <option key={court.id} value={court.id}>{court.courtName} · Court {court.courtNumber}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block text-mist/70">Date</span>
+                <PickerInput type="date" required value={bookForm.date} disabled={bookBusy} onChange={(event) => setBookForm({ ...bookForm, date: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-sm">
+                  <span className="mb-1 block text-mist/70">Start</span>
+                  <PickerInput type="time" required value={bookForm.start} disabled={bookBusy} onChange={(event) => setBookForm({ ...bookForm, start: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-mist/70">End</span>
+                  <PickerInput type="time" required value={bookForm.end} disabled={bookBusy} onChange={(event) => setBookForm({ ...bookForm, end: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
+                </label>
+              </div>
+              <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-mist/75">
+                  {hourlyPreview(bookForm.start, bookForm.end, venue?.hourlyRate ?? availability?.venue.hourlyRate ?? 0, venue?.currency ?? availability?.venue.currency ?? "AUD") ?? "At least 30 minutes. The price uses the venue hourly rate."}
+                </p>
+                <Button type="submit" className="w-full sm:w-auto" loading={bookBusy} disabled={bookBusy || !bookForm.courtId || !bookForm.date || !bookForm.start || !bookForm.end}>
+                  Continue
+                </Button>
+              </div>
+              {bookError ? <p className="text-sm text-mist sm:col-span-2" role="alert">{bookError}</p> : null}
+            </form>
+          ) : null}
           <section id="promotions" className="mt-6 border-t border-white/10 pt-5" aria-labelledby="promotions-heading">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 id="promotions-heading" className="flex items-center gap-2 font-display text-lg text-white">
@@ -268,6 +337,16 @@ export default function HomePage() {
       </PageSection>
     </main>
   );
+}
+
+function hourlyPreview(start: string, end: string, rate: number, currency: string) {
+  if (!start || !end || rate <= 0) return null;
+  const [startHour, startMinute] = start.split(":").map(Number);
+  const [endHour, endMinute] = end.split(":").map(Number);
+  const minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
+  if (!Number.isFinite(minutes) || minutes < 30) return null;
+  const amount = Math.round(rate * minutes / 60 * 100) / 100;
+  return `About ${currency} ${amount.toFixed(2)} before points or a promotion code.`;
 }
 
 function CopyCode({ code }: { code: string }) {

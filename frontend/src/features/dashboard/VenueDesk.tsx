@@ -213,6 +213,20 @@ function Details({ venue, admin, onSaved }: { venue: DashVenue; admin: boolean; 
           }}
         />
       </Field>
+      <Field label="Hourly rate">
+        <input
+          className={control}
+          type="number"
+          min={0}
+          step="0.01"
+          value={form.hourlyRate ?? 0}
+          disabled={!admin || busy !== null}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            if (Number.isFinite(next)) set("hourlyRate", next);
+          }}
+        />
+      </Field>
       <Field label="Points per $1">
         <input
           className={control}

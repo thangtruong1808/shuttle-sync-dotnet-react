@@ -704,7 +704,9 @@ public static class DashboardEndpoints
         if (fee < 0 || fee > 100) { error = "Enter a late cancel fee from 0 to 100."; return false; }
         var pointsPerDollar = body.PointsPerDollar ?? 100;
         if (pointsPerDollar < 1) { error = "Enter at least 1 point per dollar."; return false; }
-        write = new DashVenueWrite(id, name, slug, Trim(body.Description, 1000), Trim(body.Address, 300), Trim(body.Suburb, 100), Trim(body.State, 50), Trim(body.Postcode, 20), string.IsNullOrWhiteSpace(body.Country) ? "AU" : body.Country.Trim().ToUpperInvariant(), body.Latitude, body.Longitude, Trim(body.Phone, 32), Trim(body.Email, 256), Trim(body.ImageUrl, 500), zone, currency, fee, pointsPerDollar, body.IsActive);
+        var hourlyRate = body.HourlyRate ?? 0;
+        if (hourlyRate < 0) { error = "Enter an hourly rate of 0 or more."; return false; }
+        write = new DashVenueWrite(id, name, slug, Trim(body.Description, 1000), Trim(body.Address, 300), Trim(body.Suburb, 100), Trim(body.State, 50), Trim(body.Postcode, 20), string.IsNullOrWhiteSpace(body.Country) ? "AU" : body.Country.Trim().ToUpperInvariant(), body.Latitude, body.Longitude, Trim(body.Phone, 32), Trim(body.Email, 256), Trim(body.ImageUrl, 500), zone, currency, fee, pointsPerDollar, hourlyRate, body.IsActive);
         error = "";
         return true;
     }
@@ -735,7 +737,7 @@ public static class DashboardEndpoints
             return false;
         }
 
-        write = new DashPromoWrite(id, body.VenueId, code, body.DiscountType, body.DiscountValue, body.MaxUses, body.MaxUsesPerUser < 1 ? 1 : body.MaxUsesPerUser, from, to, body.IsActive);
+        write = new DashPromoWrite(id, body.VenueId, code, body.DiscountType, body.DiscountValue, null, 1000000, from, to, body.IsActive);
         error = "";
         return true;
     }
@@ -799,6 +801,7 @@ public static class DashboardEndpoints
         currency = venue.Currency,
         lateCancelFeePercent = venue.LateCancelFeePercent,
         pointsPerDollar = venue.PointsPerDollar,
+        hourlyRate = venue.HourlyRate,
         isActive = venue.IsActive,
     };
 
@@ -840,7 +843,7 @@ public static class DashboardEndpoints
 
     private sealed record ScopeResult(DashActor? Actor, IReadOnlyCollection<Guid> Allowed, IResult? Error);
 
-    private sealed record VenueBody(string? Name, string? Slug, string? Description, string? Address, string? Suburb, string? State, string? Postcode, string? Country, decimal? Latitude, decimal? Longitude, string? Phone, string? Email, string? ImageUrl, string? TimeZone, string? Currency, bool IsActive, decimal? LateCancelFeePercent = null, int? PointsPerDollar = null);
+    private sealed record VenueBody(string? Name, string? Slug, string? Description, string? Address, string? Suburb, string? State, string? Postcode, string? Country, decimal? Latitude, decimal? Longitude, string? Phone, string? Email, string? ImageUrl, string? TimeZone, string? Currency, bool IsActive, decimal? LateCancelFeePercent = null, int? PointsPerDollar = null, decimal? HourlyRate = null);
 
     private sealed record CourtBody(string? CourtName, int CourtNumber, string? Description, string? SurfaceType, string? ImageUrl, bool IsActive);
 

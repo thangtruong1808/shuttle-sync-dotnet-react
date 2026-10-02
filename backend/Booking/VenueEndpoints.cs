@@ -13,6 +13,7 @@ public static class VenueEndpoints
         venues.MapGet("/{slug}/availability", AvailabilityAsync);
         venues.MapGet("/{slug}/promotions", PromotionsAsync);
         venues.MapGet("/{slug}/slots/{sessionId:guid}", SlotAsync);
+        venues.MapPost("/{slug}/sessions", OpenSessionAsync).RequireAuthorization();
 
         app.MapGet("/api/dashboard/venues", DashboardVenuesAsync).RequireAuthorization();
     }
@@ -204,5 +205,68 @@ public static class VenueEndpoints
         currency = venue.Currency,
         lateCancelFeePercent = venue.LateCancelFeePercent,
         pointsPerDollar = venue.PointsPerDollar,
+        hourlyRate = venue.HourlyRate,
     };
+
+    private static async Task<IResult> OpenSessionAsync(
+        string slug,
+        OpenSessionBody body,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        DashboardRepository dashboard,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, authRepository, cancellationToken);
+        if (current is null)
+        {
+            return Form("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        if (body.CourtId == Guid.Empty)
+        {
+            return Form("Choose a court.", StatusCodes.Status400BadRequest);
+        }
+
+        if (string.IsNullOrWhiteSpace(body.Start) || string.IsNullOrWhiteSpace(body.End))
+        {
+            return Form("Choose a start and end time.", StatusCodes.Status400BadRequest);
+        }
+
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Form("That venue was not found.", StatusCodes.Status404NotFound);
+        }
+
+        if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var clockError))
+        {
+            return Form(clockError, StatusCodes.Status400BadRequest);
+        }
+
+        var opened = await repository.OpenPlayerSessionAsync(venue.Id, body.CourtId, venue.HourlyRate, window.StartUtc, window.EndUtc, cancellationToken);
+        if (opened.Error is not null)
+        {
+            var status = opened.Error == "This slot is not available."
+                ? StatusCodes.Status409Conflict
+                : StatusCodes.Status400BadRequest;
+            return Form(opened.Error, status);
+        }
+
+        try
+        {
+            await dashboard.SnapshotBookingIncentiveAsync(venue.Id, opened.SessionId, current.UserId, cancellationToken);
+        }
+        catch (Exception)
+        {
+            // The time is already saved. Checkout can still take payment.
+        }
+
+        return Results.Ok(new { sessionId = opened.SessionId, price = opened.Price, currency = venue.Currency });
+    }
+
+    private static IResult Form(string message, int status) =>
+        Results.Json(new { errors = new Dictionary<string, string[]> { ["form"] = [message] } }, statusCode: status);
+
+    private sealed record OpenSessionBody(Guid CourtId, string? Date, string? Start, string? End);
 }

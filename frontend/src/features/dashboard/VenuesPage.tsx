@@ -26,6 +26,7 @@ const blank = {
   currency: "AUD",
   lateCancelFeePercent: 0,
   pointsPerDollar: 100,
+  hourlyRate: 0,
   isActive: true,
 };
 

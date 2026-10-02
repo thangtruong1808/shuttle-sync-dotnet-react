@@ -262,7 +262,7 @@ public sealed class PaymentRepository(IConfiguration configuration)
                 """
                 UPDATE PromotionCodes
                 SET UsedCount = UsedCount + 1, UpdatedAt = UTC_TIMESTAMP(6)
-                WHERE Id = @Id AND (MaxUses IS NULL OR UsedCount < MaxUses)
+                WHERE Id = @Id
                 """,
                 new { Id = promoId },
                 tx,
@@ -825,25 +825,6 @@ public sealed class PaymentRepository(IConfiguration configuration)
         if (promo is null)
         {
             return (null, 0, "That promotion code is not valid.");
-        }
-
-        if (promo.MaxUses is not null && promo.UsedCount >= promo.MaxUses)
-        {
-            return (null, 0, "That promotion code has been used up.");
-        }
-
-        var usedByUser = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
-            """
-            SELECT COUNT(*)
-            FROM PromotionRedemptions
-            WHERE PromotionCodeId = @Id AND UserId = @UserId
-            """,
-            new { promo.Id, UserId = userId },
-            tx,
-            cancellationToken: cancellationToken));
-        if (usedByUser >= promo.MaxUsesPerUser)
-        {
-            return (null, 0, "You have already used that promotion code.");
         }
 
         var discount = promo.DiscountType == "percent"
