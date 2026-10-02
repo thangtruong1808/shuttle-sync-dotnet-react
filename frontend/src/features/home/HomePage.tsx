@@ -1,13 +1,13 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { SlidersHorizontal, Tag, X } from "lucide-react";
+import { MessageCircle, SlidersHorizontal, Tag, X } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { Button, PickerInput, Skeleton } from "../../components/ui";
 import { CourtImage, EmptyState, ErrorState, Money, addDays, formatVenueRange, venueToday } from "../../components/format";
 import { DayChart, OpenSlots, SessionClock, upcomingBookings, useNow } from "../courts/CourtSchedule";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
-import { AuthRequestError } from "../auth/authApi";
+import { apiFetch, AuthRequestError } from "../auth/authApi";
 import {
   openPlayerSession,
   rememberVenueSlug,
@@ -335,7 +335,84 @@ export default function HomePage() {
           </dl>
         </section>
       </PageSection>
+      <SupportChat venueName={venue?.name ?? "this venue"} venueSlug={slug} date={applied.date} />
     </main>
+  );
+}
+
+function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueSlug: string; date: string }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
+
+  async function onSend(event: FormEvent) {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text || sending) return;
+    const next = [...messages, { role: "user" as const, text }];
+    setMessages(next);
+    setDraft("");
+    setNotice(null);
+    setSending(true);
+    try {
+      const response = await apiFetch("/api/support/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ venueSlug, date, messages: next.slice(-8) }),
+      });
+      const body = (await response.json().catch(() => null)) as { reply?: string; errors?: { form?: string[] } } | null;
+      if (!response.ok) {
+        setNotice(body?.errors?.form?.[0] ?? "Support chat could not answer just now.");
+        return;
+      }
+      setMessages([...next, { role: "assistant", text: body?.reply ?? "I could not answer that." }]);
+    } catch (reason) {
+      setNotice(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "Support chat could not answer just now." : "Support chat could not answer just now.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="fixed bottom-4 right-4 z-40 flex w-[min(22rem,calc(100vw-2rem))] flex-col items-end gap-2">
+      {open ? (
+        <section className="flex max-h-[min(28rem,70vh)] w-full flex-col rounded-3xl border border-white/10 bg-pine p-4 shadow-xl" aria-label="Support chat">
+          <p className="font-display text-lg text-white">Ask Shuttle Sync</p>
+          <p className="text-sm text-mist/70">Help for {venueName}.</p>
+          <div className="mt-3 flex-1 space-y-2 overflow-y-auto">
+            {messages.length === 0 ? <p className="text-sm text-mist/75">Ask about booking, cancellations, points, or promotion codes.</p> : null}
+            {messages.map((message, index) => (
+              <p key={index} className={`rounded-2xl px-3 py-2 text-sm ${message.role === "user" ? "bg-line/15 text-white" : "bg-black/25 text-mist"}`}>
+                {message.text}
+              </p>
+            ))}
+          </div>
+          {notice ? <p className="mt-2 text-sm text-mist" role="alert">{notice}</p> : null}
+          <form className="mt-3 flex gap-2" onSubmit={onSend}>
+            <input
+              value={draft}
+              disabled={sending}
+              placeholder="Type a question"
+              aria-label="Question"
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white disabled:opacity-60"
+              onChange={(event) => setDraft(event.target.value)}
+            />
+            <Button type="submit" className="shrink-0" loading={sending} disabled={sending || draft.trim().length === 0}>Send</Button>
+          </form>
+        </section>
+      ) : null}
+      <button
+        type="button"
+        className="inline-flex items-center gap-2 rounded-full bg-line px-4 py-2.5 text-sm font-semibold text-ink"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <MessageCircle className="h-4 w-4" aria-hidden="true" />
+        {open ? "Close" : "Support"}
+      </button>
+    </div>
   );
 }
 
@@ -346,7 +423,7 @@ function hourlyPreview(start: string, end: string, rate: number, currency: strin
   const minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
   if (!Number.isFinite(minutes) || minutes < 30) return null;
   const amount = Math.round(rate * minutes / 60 * 100) / 100;
-  return `About ${currency} ${amount.toFixed(2)} before points or a promotion code.`;
+  return `About ${currency} $${amount.toFixed(2)} before points or a promotion code.`;
 }
 
 function CopyCode({ code }: { code: string }) {

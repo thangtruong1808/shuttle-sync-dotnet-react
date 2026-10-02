@@ -105,6 +105,41 @@ public sealed class BookingRepository(IConfiguration configuration)
         return rows.ToArray();
     }
 
+    public async Task<SupportSessionRow[]> ListSupportSessionsAsync(
+        Guid venueId,
+        DateTime rangeStartUtc,
+        DateTime rangeEndUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<SupportSessionRow>(new CommandDefinition(
+            """
+            SELECT c.Id AS CourtId, c.CourtName, c.CourtNumber, cs.StartTime, cs.EndTime, cs.Price,
+                   CASE WHEN EXISTS (
+                       SELECT 1
+                       FROM Bookings b
+                       WHERE b.CourtSessionId = cs.Id
+                         AND b.IsDeleted = 0
+                         AND b.Status NOT IN ('cancelled', 'expired')
+                         AND NOT (
+                             b.Status = 'pending'
+                             AND b.HoldExpiresAt IS NOT NULL
+                             AND b.HoldExpiresAt <= UTC_TIMESTAMP(6)
+                         )
+                   ) THEN 1 ELSE 0 END AS Taken
+            FROM CourtSessions cs
+            JOIN Courts c ON c.Id = cs.CourtId AND c.VenueId = cs.VenueId AND c.IsActive = 1 AND c.IsDeleted = 0
+            WHERE cs.VenueId = @VenueId
+              AND cs.IsDeleted = 0
+              AND cs.StartTime < @RangeEndUtc
+              AND cs.EndTime > @RangeStartUtc
+            ORDER BY c.CourtNumber, cs.StartTime
+            """,
+            new { VenueId = venueId, RangeStartUtc = rangeStartUtc, RangeEndUtc = rangeEndUtc },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
     public async Task<AvailabilityRow[]> ListAvailableSlotsAsync(
         Guid venueId,
         DateTime dayStartUtc,
@@ -611,6 +646,17 @@ public sealed class PublicClosureRow
     public Guid? CourtId { get; init; }
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
+}
+
+public sealed class SupportSessionRow
+{
+    public Guid CourtId { get; init; }
+    public string CourtName { get; init; } = "";
+    public int CourtNumber { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public decimal Price { get; init; }
+    public int Taken { get; init; }
 }
 
 public sealed class AvailabilityRow

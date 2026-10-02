@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch } from "../../app/store";
 import { Link, Navigate, useLocation, useParams } from "react-router-dom";
+import { CalendarDays, CircleCheck } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { ErrorState, Money, formatVenueDateTime } from "../../components/format";
 import { PageSection } from "../../components/layout/SiteLayout";
@@ -290,13 +291,20 @@ export default function BookingStubPage() {
 function Outcome({ row }: { row: BookingPayment }) {
   if (row.status === "confirmed") {
     return (
-      <div className="mt-6 space-y-3" role="status">
-        <p className="text-sm font-semibold text-line">You are booked.</p>
-        <p className="text-sm text-mist/75">
-          {row.pointsRedeemed > 0 ? `${row.pointsRedeemed} points were used. ` : ""}
-          {row.cashAmount > 0 ? "The card or bank payment is confirmed." : "No card payment was needed."}
+      <div className="mt-6 space-y-3 rounded-2xl border border-line/30 bg-line/10 p-4" role="status">
+        <p className="flex items-center gap-2 text-base font-semibold text-line">
+          <CircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
+          You're booked. Have a good game.
         </p>
-        <Link to="/profile/bookings" className="inline-flex text-sm text-line hover:underline">View my bookings</Link>
+        <p className="text-sm text-mist/80">
+          The court is held for you. Arrive a few minutes early.
+          {row.pointsRedeemed > 0 ? ` ${row.pointsRedeemed} points were used.` : ""}
+          {row.cashAmount > 0 ? " Your payment is confirmed." : " No card payment was needed."}
+        </p>
+        <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-line hover:underline">
+          <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
+          View my bookings
+        </Link>
       </div>
     );
   }

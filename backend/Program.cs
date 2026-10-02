@@ -7,6 +7,7 @@ using ShuttleSync.Api.Booking;
 using ShuttleSync.Api.Configuration;
 using ShuttleSync.Api.Data;
 using ShuttleSync.Api.Media;
+using ShuttleSync.Api.Support;
 
 // Load the development file.
 EnvLoader.LoadDevelopmentFile();
@@ -18,6 +19,7 @@ var builder = WebApplication.CreateBuilder(args);
 var authSettings = AuthSettings.FromConfiguration(builder.Configuration);
 var cloudinarySettings = CloudinarySettings.FromConfiguration(builder.Configuration);
 var stripeSettings = StripeSettings.FromConfiguration(builder.Configuration);
+var geminiSettings = GeminiSettings.FromConfiguration(builder.Configuration);
 
 var port = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrWhiteSpace(port))
@@ -29,6 +31,8 @@ if (!string.IsNullOrWhiteSpace(port))
 builder.Services.AddSingleton(authSettings);
 builder.Services.AddSingleton(cloudinarySettings);
 builder.Services.AddSingleton(stripeSettings);
+builder.Services.AddSingleton(geminiSettings);
+builder.Services.AddSingleton<SupportChatLimiter>();
 builder.Services.AddSingleton<CloudinaryImages>();
 builder.Services.AddSingleton<AccessTokens>();
 builder.Services.AddSingleton<AuthRateLimiter>();
@@ -40,6 +44,7 @@ builder.Services.AddScoped<PaymentRepository>();
 builder.Services.AddScoped<BookingPayments>();
 builder.Services.AddHttpClient("oauth", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHttpClient("cloudinary", client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient("gemini", client => client.Timeout = TimeSpan.FromSeconds(20));
 
 // Add authentication services to the container.
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(authSettings.JwtSigningKey));
@@ -113,5 +118,6 @@ app.MapVenueEndpoints();
 app.MapProfileEndpoints();
 app.MapDashboardEndpoints();
 app.MapCheckoutEndpoints();
+app.MapSupportEndpoints();
 
 app.Run();
