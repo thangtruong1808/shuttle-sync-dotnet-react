@@ -1120,25 +1120,50 @@ public sealed class DashboardRepository(IConfiguration configuration)
             return new DashPage<DashBookingRow>([], pageNumber, size, 0);
         }
 
-        var venueClause = admin
+        var bookingVenue = admin
             ? "(@VenueId IS NULL OR b.VenueId = @VenueId)"
             : "b.VenueId IN @Allowed AND (@VenueId IS NULL OR b.VenueId = @VenueId)";
-        var statusClause = string.IsNullOrWhiteSpace(status) ? "" : " AND b.Status = @Status";
+        var socialVenue = admin
+            ? "(@VenueId IS NULL OR r.VenueId = @VenueId)"
+            : "r.VenueId IN @Allowed AND (@VenueId IS NULL OR r.VenueId = @VenueId)";
+        var bookingStatus = string.IsNullOrWhiteSpace(status) ? "" : " AND b.Status = @Status";
+        var socialStatus = string.IsNullOrWhiteSpace(status) ? "" : " AND r.Status = @Status";
         await using var connection = await OpenAsync(cancellationToken);
         var total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
-            $"SELECT COUNT(*) FROM Bookings b WHERE b.IsDeleted = 0 AND {venueClause}{statusClause}",
+            $"""
+            SELECT
+                (SELECT COUNT(*) FROM Bookings b WHERE b.IsDeleted = 0 AND {bookingVenue}{bookingStatus})
+                +
+                (SELECT COUNT(*)
+                 FROM PublicSocialRegistrations r
+                 JOIN PublicSocials s ON s.Id = r.SocialId
+                 WHERE s.IsDeleted = 0 AND {socialVenue}{socialStatus})
+            """,
             new { VenueId = venueId, Allowed = allowed, Status = status }, cancellationToken: cancellationToken));
         var rows = await connection.QueryAsync<DashBookingRow>(new CommandDefinition(
             $"""
-            SELECT b.Id, b.VenueId, v.Name AS VenueName, v.TimeZone, c.CourtName, b.Status,
-                   b.TotalAmount, v.Currency, cs.StartTime, cs.EndTime, u.Email AS UserEmail
-            FROM Bookings b
-            JOIN Venues v ON v.Id = b.VenueId
-            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
-            JOIN Courts c ON c.Id = cs.CourtId
-            JOIN Users u ON u.Id = b.UserId
-            WHERE b.IsDeleted = 0 AND {venueClause}{statusClause}
-            ORDER BY cs.StartTime DESC
+            SELECT * FROM (
+                SELECT b.Id, b.VenueId, v.Name AS VenueName, v.TimeZone, c.CourtName, b.Status,
+                       b.TotalAmount, v.Currency, cs.StartTime, cs.EndTime, u.Email AS UserEmail,
+                       'Court' AS Kind
+                FROM Bookings b
+                JOIN Venues v ON v.Id = b.VenueId
+                JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+                JOIN Courts c ON c.Id = cs.CourtId
+                JOIN Users u ON u.Id = b.UserId
+                WHERE b.IsDeleted = 0 AND {bookingVenue}{bookingStatus}
+                UNION ALL
+                SELECT r.Id, r.VenueId, v.Name AS VenueName, v.TimeZone, c.CourtName, r.Status,
+                       r.Amount AS TotalAmount, v.Currency, s.StartTime, s.EndTime, u.Email AS UserEmail,
+                       'Drop-in social' AS Kind
+                FROM PublicSocialRegistrations r
+                JOIN PublicSocials s ON s.Id = r.SocialId
+                JOIN Venues v ON v.Id = r.VenueId
+                JOIN Courts c ON c.Id = r.CourtId
+                JOIN Users u ON u.Id = r.UserId
+                WHERE s.IsDeleted = 0 AND {socialVenue}{socialStatus}
+            ) entries
+            ORDER BY StartTime DESC
             LIMIT @Take OFFSET @Skip
             """,
             new { VenueId = venueId, Allowed = allowed, Status = status, Take = size, Skip = skip }, cancellationToken: cancellationToken));
@@ -1191,21 +1216,51 @@ public sealed class DashboardRepository(IConfiguration configuration)
             return new DashPage<DashPaymentRow>([], pageNumber, size, 0);
         }
 
-        var venueClause = admin
+        var bookingVenue = admin
             ? "(@VenueId IS NULL OR b.VenueId = @VenueId)"
             : "b.VenueId IN @Allowed AND (@VenueId IS NULL OR b.VenueId = @VenueId)";
+        var socialVenue = admin
+            ? "(@VenueId IS NULL OR r.VenueId = @VenueId)"
+            : "r.VenueId IN @Allowed AND (@VenueId IS NULL OR r.VenueId = @VenueId)";
         await using var connection = await OpenAsync(cancellationToken);
         var total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
-            $"SELECT COUNT(*) FROM Payments p JOIN Bookings b ON b.Id = p.BookingId WHERE {venueClause}",
+            $"""
+            SELECT
+                (SELECT COUNT(*) FROM Payments p JOIN Bookings b ON b.Id = p.BookingId WHERE {bookingVenue})
+                +
+                (SELECT COUNT(*)
+                 FROM PublicSocialPayments p
+                 JOIN PublicSocialRegistrations r ON r.Id = p.RegistrationId
+                 WHERE {socialVenue})
+            """,
             new { VenueId = venueId, Allowed = allowed }, cancellationToken: cancellationToken));
         var rows = await connection.QueryAsync<DashPaymentRow>(new CommandDefinition(
             $"""
-            SELECT p.Id, 'payment' AS Kind, v.Name AS VenueName, p.Amount, p.Currency, p.Status, p.CreatedAt AS OccurredAt
-            FROM Payments p
-            JOIN Bookings b ON b.Id = p.BookingId
-            JOIN Venues v ON v.Id = b.VenueId
-            WHERE {venueClause}
-            ORDER BY p.CreatedAt DESC
+            SELECT * FROM (
+                SELECT p.Id, 'Court' AS Kind, v.Name AS VenueName, p.Amount, p.Currency, p.Status, p.CreatedAt AS OccurredAt,
+                       u.Email AS UserEmail, v.TimeZone, c.CourtName, cs.StartTime, cs.EndTime, 1 AS SessionCount
+                FROM Payments p
+                JOIN Bookings b ON b.Id = p.BookingId
+                JOIN Venues v ON v.Id = b.VenueId
+                JOIN Users u ON u.Id = b.UserId
+                JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+                JOIN Courts c ON c.Id = cs.CourtId
+                WHERE {bookingVenue}
+                UNION ALL
+                SELECT p.Id, 'Drop-in social', v.Name, p.Amount, p.Currency, p.Status, p.CreatedAt,
+                       u.Email, v.TimeZone, c.CourtName, s.StartTime, s.EndTime,
+                       CASE WHEN r.CheckoutGroupId IS NULL THEN 1
+                            ELSE (SELECT COUNT(*) FROM PublicSocialRegistrations g WHERE g.CheckoutGroupId = r.CheckoutGroupId)
+                       END
+                FROM PublicSocialPayments p
+                JOIN PublicSocialRegistrations r ON r.Id = p.RegistrationId
+                JOIN PublicSocials s ON s.Id = r.SocialId
+                JOIN Venues v ON v.Id = r.VenueId
+                JOIN Users u ON u.Id = r.UserId
+                JOIN Courts c ON c.Id = r.CourtId
+                WHERE {socialVenue}
+            ) entries
+            ORDER BY OccurredAt DESC
             LIMIT @Take OFFSET @Skip
             """,
             new { VenueId = venueId, Allowed = allowed, Take = size, Skip = skip }, cancellationToken: cancellationToken));
@@ -1227,18 +1282,29 @@ public sealed class DashboardRepository(IConfiguration configuration)
             ? "(@VenueId IS NULL OR reg.VenueId = @VenueId)"
             : "reg.VenueId IN @Allowed AND (@VenueId IS NULL OR reg.VenueId = @VenueId)";
         const string listed = """
-            SELECT r.Id, 'refund' AS Kind, v.Name AS VenueName, r.Amount, p.Currency, r.Status, r.CreatedAt AS OccurredAt
+            SELECT r.Id, 'Court' AS Kind, v.Name AS VenueName, r.Amount, p.Currency, r.Status, r.CreatedAt AS OccurredAt,
+                   u.Email AS UserEmail, v.TimeZone, c.CourtName, cs.StartTime, cs.EndTime, 1 AS SessionCount
             FROM Refunds r
             JOIN Payments p ON p.Id = r.PaymentId
             JOIN Bookings b ON b.Id = p.BookingId
             JOIN Venues v ON v.Id = b.VenueId
+            JOIN Users u ON u.Id = b.UserId
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+            JOIN Courts c ON c.Id = cs.CourtId
             WHERE {0}
             UNION ALL
-            SELECT sr.Id, 'refund', v.Name, sr.Amount, p.Currency, sr.Status, sr.CreatedAt
+            SELECT sr.Id, 'Drop-in social', v.Name, sr.Amount, p.Currency, sr.Status, sr.CreatedAt,
+                   u.Email, v.TimeZone, c.CourtName, s.StartTime, s.EndTime,
+                   CASE WHEN reg.CheckoutGroupId IS NULL THEN 1
+                        ELSE (SELECT COUNT(*) FROM PublicSocialRegistrations g WHERE g.CheckoutGroupId = reg.CheckoutGroupId)
+                   END
             FROM PublicSocialRefunds sr
             JOIN PublicSocialPayments p ON p.Id = sr.PaymentId
             JOIN PublicSocialRegistrations reg ON reg.Id = p.RegistrationId
+            JOIN PublicSocials s ON s.Id = reg.SocialId
             JOIN Venues v ON v.Id = reg.VenueId
+            JOIN Users u ON u.Id = reg.UserId
+            JOIN Courts c ON c.Id = reg.CourtId
             WHERE {1}
             """;
         var combined = string.Format(listed, venueClause, socialVenueClause);
@@ -1248,7 +1314,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
             new { VenueId = venueId, Allowed = allowed }, cancellationToken: cancellationToken));
         var rows = await connection.QueryAsync<DashPaymentRow>(new CommandDefinition(
             $"""
-            SELECT Id, Kind, VenueName, Amount, Currency, Status, OccurredAt
+            SELECT Id, Kind, VenueName, Amount, Currency, Status, OccurredAt, UserEmail, TimeZone, CourtName, StartTime, EndTime, SessionCount
             FROM ({combined}) entries
             ORDER BY OccurredAt DESC
             LIMIT @Take OFFSET @Skip
@@ -1810,6 +1876,7 @@ public sealed class DashBookingRow
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
     public string UserEmail { get; init; } = "";
+    public string Kind { get; init; } = "Court";
 }
 
 public sealed class DashPaymentRow
@@ -1821,6 +1888,12 @@ public sealed class DashPaymentRow
     public string Currency { get; init; } = "";
     public string Status { get; init; } = "";
     public DateTime OccurredAt { get; init; }
+    public string UserEmail { get; init; } = "";
+    public string TimeZone { get; init; } = "";
+    public string CourtName { get; init; } = "";
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public int SessionCount { get; init; } = 1;
 }
 
 public sealed class DashWebhookRow

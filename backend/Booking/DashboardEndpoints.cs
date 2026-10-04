@@ -573,6 +573,7 @@ public static class DashboardEndpoints
             startTime = Utc(row.StartTime),
             endTime = Utc(row.EndTime),
             userEmail = row.UserEmail,
+            kind = row.Kind,
         }));
     }
 
@@ -884,6 +885,12 @@ public static class DashboardEndpoints
         currency = row.Currency,
         status = row.Status,
         occurredAt = Utc(row.OccurredAt),
+        userEmail = row.UserEmail,
+        timeZone = row.TimeZone,
+        courtName = row.CourtName,
+        startTime = Utc(row.StartTime),
+        endTime = Utc(row.EndTime),
+        sessionCount = row.SessionCount,
     };
 
     private static object Page<TIn, TOut>(DashPage<TIn> page, Func<TIn, TOut> map) => new

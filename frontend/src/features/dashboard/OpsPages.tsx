@@ -205,6 +205,7 @@ export function BookingsPage() {
       columns={[
         { label: "Player", cell: (row) => <span className="text-white">{row.userEmail}</span> },
         { label: "Venue", cell: (row) => row.venueName },
+        { label: "Type", cell: (row) => <Tag value={row.kind || "Court"} /> },
         { label: "Court", className: "whitespace-nowrap", cell: (row) => row.courtName },
         { label: "When", cell: (row) => <span className="whitespace-nowrap">{formatVenueDay(row.startTime, row.timeZone)}<span className="mt-0.5 block text-mist/70">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span></span> },
         { label: "Status", cell: (row) => <Tag value={row.status} /> },
@@ -218,7 +219,8 @@ export function BookingsPage() {
 function BookingActions({ row, onChanged }: { row: DashBooking; onChanged: (message: string) => void }) {
   const [message, setMessage] = useState<string | null>(null);
   const { busy, run } = useBusy();
-  const next = row.status === "pending" || row.status === "confirmed"
+  const courtBooking = (row.kind || "Court") === "Court";
+  const next = courtBooking && (row.status === "pending" || row.status === "confirmed")
     ? ["cancelled", ...(row.status === "confirmed" ? ["completed", "no_show"] : [])]
     : [];
   if (next.length === 0) return <span className="text-mist/50">—</span>;
@@ -396,11 +398,23 @@ function MoneyList({ title, load, locked = false, onSettled }: { title: string; 
       onSettled={onSettled}
       rowKey={(row) => row.id}
       columns={[
-        { label: "Venue", cell: (row) => <span className="text-white">{row.venueName}</span> },
-        { label: "Type", cell: (row) => <Tag value={row.kind || "payment"} /> },
+        { label: "Player", cell: (row) => <span className="text-white">{row.userEmail || "—"}</span> },
+        { label: "Venue", cell: (row) => row.venueName },
+        { label: "Type", cell: (row) => <Tag value={row.kind || "Court"} /> },
+        { label: "Court", className: "whitespace-nowrap", cell: (row) => row.courtName || "—" },
+        {
+          label: "Session",
+          cell: (row) => row.startTime ? (
+            <span className="whitespace-nowrap">
+              {formatVenueDay(row.startTime, row.timeZone)}
+              <span className="mt-0.5 block text-mist/70">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span>
+              {row.sessionCount > 1 ? <span className="mt-0.5 block text-mist/55">{row.sessionCount} sessions paid together</span> : null}
+            </span>
+          ) : "—",
+        },
         { label: "Status", cell: (row) => <Tag value={row.status} /> },
         { label: "Amount", className: "whitespace-nowrap", cell: (row) => <Money amount={row.amount} currency={row.currency} /> },
-        { label: "When", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.occurredAt, "UTC") },
+        { label: "Recorded", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.occurredAt, row.timeZone || "UTC") },
       ]}
     />
   );

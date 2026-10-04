@@ -120,6 +120,7 @@ export type DashBooking = {
   startTime: string;
   endTime: string;
   userEmail: string;
+  kind: string;
 };
 
 export type DashPayment = {
@@ -130,6 +131,12 @@ export type DashPayment = {
   currency: string;
   status: string;
   occurredAt: string;
+  userEmail: string;
+  timeZone: string;
+  courtName: string;
+  startTime: string;
+  endTime: string;
+  sessionCount: number;
 };
 
 export type DashWebhook = { id: string; eventType: string; status: string; createdAt: string };

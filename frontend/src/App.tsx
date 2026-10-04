@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useNavigate, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import type { RootState } from "./app/store";
+import { DocumentTitle } from "./components/DocumentTitle";
 import { PageSection, SiteLayout, useVenues } from "./components/layout/SiteLayout";
 import { EmptyState, ErrorState } from "./components/format";
 import { Skeleton } from "./components/ui";
@@ -91,6 +92,7 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <DocumentTitle />
       <Routes>
         <Route path="/dashboard" element={<DashboardLayout />}>
           <Route index element={<DashboardPage />} />
