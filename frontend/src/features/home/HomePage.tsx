@@ -16,7 +16,6 @@ export default function HomePage() {
   const { slug = "" } = useParams();
   const { venues, error: venueError, reload } = useVenues();
   const dispatch = useDispatch<AppDispatch>();
-  const user = useSelector((state: RootState) => state.auth.user);
   const status = useSelector((state: RootState) => state.auth.status);
   const venue = venues?.find((item) => item.slug === slug) ?? null;
   const [draft, setDraft] = useState({ date: "", from: "", to: "" });
@@ -216,17 +215,7 @@ export default function HomePage() {
           )}
         </section>
 
-        <section className="mt-10 grid gap-4 rounded-3xl border border-white/10 bg-pine/70 p-6 md:grid-cols-[1.4fr_0.6fr] md:items-center">
-          <div>
-            <h2 className="font-display text-2xl text-white">Play more, earn points</h2>
-            <p className="mt-2 text-mist/75">Book on a day that shows points on the court. Those points are added after the session ends.</p>
-          </div>
-          {status === "authenticated" && user ? (
-            <p className="text-lg font-semibold text-line">{user.rewardPoints} points</p>
-          ) : (
-            <Link to="/register" className="inline-flex justify-center rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink">Sign up</Link>
-          )}
-        </section>
+        <hr className="my-10 border-white/10" />
 
         {others.length > 0 ? (
           <section className="mt-10" aria-labelledby="other-venues">
@@ -244,29 +233,6 @@ export default function HomePage() {
             </ul>
           </section>
         ) : null}
-
-        <section className="mt-10 grid gap-4 md:grid-cols-3">
-          {["Pick a venue", "Choose a slot", "Pay with Stripe"].map((step, index) => (
-            <article key={step} className="rounded-2xl border border-white/10 p-4">
-              <p className="text-sm font-semibold text-line">Step {index + 1}</p>
-              <h2 className="mt-2 font-display text-xl text-white">{step}</h2>
-            </article>
-          ))}
-        </section>
-
-        <section className="mt-10" aria-labelledby="faq">
-          <h2 id="faq" className="font-display text-2xl text-white">FAQ</h2>
-          <dl className="mt-4 space-y-3 text-sm">
-            <div>
-              <dt className="font-medium text-white">When do I earn points?</dt>
-              <dd className="mt-1 text-mist/70">After the booked session ends, when that day is inside the points range shown on the court.</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-white">Can I cancel?</dt>
-              <dd className="mt-1 text-mist/70">You can cancel before the session starts. More than 24 hours before the start, the payment is refunded in full. Within 24 hours, the venue keeps its late-cancel percent and refunds the rest.</dd>
-            </div>
-          </dl>
-        </section>
       </PageSection>
       <SupportChat venueName={venue?.name ?? "this venue"} venueSlug={slug} date={applied.date} />
     </main>

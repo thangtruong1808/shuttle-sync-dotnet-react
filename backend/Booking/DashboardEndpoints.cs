@@ -471,12 +471,12 @@ public static class DashboardEndpoints
         return error is null ? Results.NoContent() : Form(error);
     }
 
-    private static async Task<IResult> ListUsersAsync(string? q, int? page, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> ListUsersAsync(string? q, int? page, int? pageSize, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
         if (!actor.IsAdmin) return Forbidden();
-        var result = await repo.ListUsersAsync(q, page ?? 1, cancellationToken);
+        var result = await repo.ListUsersAsync(q, page ?? 1, pageSize ?? 20, cancellationToken);
         return Results.Ok(new
         {
             items = result.Items.Select(UserJson),
@@ -553,13 +553,13 @@ public static class DashboardEndpoints
         return Results.NoContent();
     }
 
-    private static async Task<IResult> ListBookingsAsync(Guid? venueId, string? status, int? page, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> ListBookingsAsync(Guid? venueId, string? status, int? page, int? pageSize, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
         if (!actor.IsStaff) return Forbidden();
         var allowed = actor.IsAdmin ? [] : await repo.AssignedVenueIdsAsync(actor.UserId, cancellationToken);
-        var result = await repo.ListOperationalBookingsAsync(venueId, allowed, actor.IsAdmin, status, page ?? 1, cancellationToken);
+        var result = await repo.ListOperationalBookingsAsync(venueId, allowed, actor.IsAdmin, status, page ?? 1, pageSize ?? 20, cancellationToken);
         return Results.Ok(Page(result, row => new
         {
             id = row.Id,
@@ -585,35 +585,35 @@ public static class DashboardEndpoints
         return error is null ? Results.NoContent() : Form(error);
     }
 
-    private static async Task<IResult> ListPaymentsAsync(Guid? venueId, int? page, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> ListPaymentsAsync(Guid? venueId, int? page, int? pageSize, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var scoped = await Scope(http, auth, repo, cancellationToken);
         if (scoped.Error is not null) return scoped.Error;
-        var result = await repo.ListPaymentsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, cancellationToken);
+        var result = await repo.ListPaymentsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 20, cancellationToken);
         return Results.Ok(Page(result, PaymentJson));
     }
 
-    private static async Task<IResult> ListRefundsAsync(Guid? venueId, int? page, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> ListRefundsAsync(Guid? venueId, int? page, int? pageSize, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var scoped = await Scope(http, auth, repo, cancellationToken);
         if (scoped.Error is not null) return scoped.Error;
-        var result = await repo.ListRefundsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, cancellationToken);
+        var result = await repo.ListRefundsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 20, cancellationToken);
         return Results.Ok(Page(result, PaymentJson));
     }
 
-    private static async Task<IResult> ListWebhooksAsync(int? page, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> ListWebhooksAsync(int? page, int? pageSize, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var scoped = await Scope(http, auth, repo, cancellationToken);
         if (scoped.Error is not null) return scoped.Error;
-        var result = await repo.ListWebhooksAsync(scoped.Actor!.IsAdmin, scoped.Allowed, page ?? 1, cancellationToken);
+        var result = await repo.ListWebhooksAsync(scoped.Actor!.IsAdmin, scoped.Allowed, page ?? 1, pageSize ?? 20, cancellationToken);
         return Results.Ok(Page(result, row => new { id = row.Id, eventType = row.EventType, status = row.Status, createdAt = Utc(row.CreatedAt) }));
     }
 
-    private static async Task<IResult> ListRedemptionsAsync(Guid? venueId, int? page, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> ListRedemptionsAsync(Guid? venueId, int? page, int? pageSize, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var scoped = await Scope(http, auth, repo, cancellationToken);
         if (scoped.Error is not null) return scoped.Error;
-        var result = await repo.ListRedemptionsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, cancellationToken);
+        var result = await repo.ListRedemptionsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 20, cancellationToken);
         return Results.Ok(Page(result, row => new
         {
             id = row.Id,
@@ -625,11 +625,11 @@ public static class DashboardEndpoints
         }));
     }
 
-    private static async Task<IResult> ListAwardsAsync(Guid? venueId, int? page, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> ListAwardsAsync(Guid? venueId, int? page, int? pageSize, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var scoped = await Scope(http, auth, repo, cancellationToken);
         if (scoped.Error is not null) return scoped.Error;
-        var result = await repo.ListAwardsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, cancellationToken);
+        var result = await repo.ListAwardsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 20, cancellationToken);
         return Results.Ok(Page(result, row => new
         {
             id = row.Id,
@@ -659,7 +659,7 @@ public static class DashboardEndpoints
         }));
     }
 
-    private static async Task<IResult> ListActivityAsync(Guid? userId, string? from, string? to, int? page, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> ListActivityAsync(Guid? userId, string? from, string? to, int? page, int? pageSize, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
@@ -667,7 +667,7 @@ public static class DashboardEndpoints
         if (!TryDate(from, false, out var fromUtc, out var error) || !TryDate(to, true, out var toUtc, out error)) return Form(error);
         var only = actor.IsAdmin ? (Guid?)null : actor.UserId;
         var filter = actor.IsAdmin ? userId : null;
-        var result = await repo.ListActivityAsync(only, filter, fromUtc, toUtc, page ?? 1, cancellationToken);
+        var result = await repo.ListActivityAsync(only, filter, fromUtc, toUtc, page ?? 1, pageSize ?? 20, cancellationToken);
         return Results.Ok(Page(result, row => new
         {
             id = row.Id,

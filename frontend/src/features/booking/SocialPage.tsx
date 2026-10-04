@@ -99,7 +99,7 @@ export default function SocialPage() {
                   const locked = social.yourStatus === "confirmed" || social.full === true;
                   const pressed = selected.includes(social.id);
                   return (
-                    <div key={social.id} className={`rounded-2xl border px-3 py-2 ${pressed ? "border-line/60 bg-line/10" : "border-white/10"}`}>
+                    <div key={social.id} className={`rounded-2xl border px-3 py-2 ${pressed ? "border-line/60 bg-line/10" : "border-white/10 hover:border-line/40"}`}>
                       <button
                         type="button"
                         className="w-full text-left disabled:cursor-not-allowed disabled:opacity-60"

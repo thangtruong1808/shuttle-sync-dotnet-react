@@ -1,12 +1,11 @@
 import { Link, useParams } from "react-router-dom";
 import { useVenues } from "./SiteLayout";
 
-const columns = [
+const columns: { title: string; links: { label: string; href: (slug: string) => string }[] }[] = [
   {
     title: "Book",
     links: [
-      { label: "Courts", href: (slug: string) => `/${slug}/courts` },
-      { label: "Promotions", href: (slug: string) => `/${slug}#promotions` },
+      { label: "Promotions", href: () => "/promotions" },
       { label: "Rewards", href: () => "/rewards" },
     ],
   },

@@ -19,7 +19,7 @@ import { UserDesk, UsersPage } from "./features/dashboard/UsersDesk";
 import VenueDesk from "./features/dashboard/VenueDesk";
 import VenuesPage from "./features/dashboard/VenuesPage";
 import HomePage from "./features/home/HomePage";
-import { CancellationPage, ContactPage, FaqPage, NotFoundPage, PrivacyPage, RewardsPage, TermsPage } from "./features/pages/StaticPages";
+import { CancellationPage, ContactPage, FaqPage, NotFoundPage, PrivacyPage, PromotionsPage as PublicPromotionsPage, RewardsPage, TermsPage } from "./features/pages/StaticPages";
 import { BookingsSection } from "./features/profile/BookingsSection";
 import ProfileLayout from "./features/profile/ProfileLayout";
 import { DetailsSection, OverviewSection } from "./features/profile/ProfileBasics";
@@ -110,6 +110,7 @@ export default function App() {
           <Route path="/" element={<HomeRedirect />} />
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/register" element={<AuthPage mode="register" />} />
+          <Route path="/promotions" element={<PublicPromotionsPage />} />
           <Route path="/rewards" element={<RewardsPage />} />
           <Route path="/faq" element={<FaqPage />} />
           <Route path="/contact" element={<ContactPage />} />

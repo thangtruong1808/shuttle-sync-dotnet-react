@@ -15,7 +15,7 @@ import {
   type DashUser,
   type DashUserDetail,
 } from "./dashboardApi";
-import { control, Field, Notice, Pager, Success, useBusy } from "./dashboardUi";
+import { control, DataTable, Field, Notice, PageSummary, Pager, Success, Tag, useBusy, type PageMove } from "./dashboardUi";
 
 export function UsersPage() {
   const location = useLocation();
@@ -30,27 +30,33 @@ export function UsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);
-  const { busy, run } = useBusy();
+  const [filtering, setFiltering] = useState(false);
+  const [pending, setPending] = useState<PageMove | null>(null);
+  const [pendingSize, setPendingSize] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
-    listUsers(applied, page)
+    setError(null);
+    listUsers(applied, page, pageSize)
       .then((result) => {
         if (!active) return;
         setRows(result.items);
         setTotal(result.total);
-        setPageSize(result.pageSize);
       })
       .catch((reason: unknown) => {
         if (active) setError(reason instanceof DashError ? reason.message : "Users could not be loaded.");
       })
       .finally(() => {
-        if (active) setRetrying(false);
+        if (!active) return;
+        setRetrying(false);
+        setFiltering(false);
+        setPending(null);
+        setPendingSize(null);
       });
     return () => {
       active = false;
     };
-  }, [applied, attempt, page]);
+  }, [applied, attempt, page, pageSize]);
 
   return (
     <div>
@@ -60,17 +66,33 @@ export function UsersPage() {
         className="mt-4 flex flex-wrap gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          void run("filter", async () => {
-            setPage(1);
-            setApplied(query.trim());
-            setSuccess("Search updated.");
-            setAttempt((value) => value + 1);
-          });
+          setFiltering(true);
+          setPending(null);
+          setPage(1);
+          setApplied(query.trim());
+          setSuccess("Search updated.");
+          setAttempt((value) => value + 1);
         }}
       >
-        <input className={`${control} max-w-sm`} placeholder="Name or email" value={query} onChange={(event) => setQuery(event.target.value)} />
-        <Button type="submit" variant="secondary" loading={busy === "filter"}>Search</Button>
+        <input className={`${control} max-w-sm`} placeholder="Name or email" value={query} disabled={filtering} onChange={(event) => setQuery(event.target.value)} />
+        <Button type="submit" variant="secondary" loading={filtering} disabled={pending !== null || pendingSize !== null}>Search</Button>
       </form>
+      {rows && !error ? (
+        <PageSummary
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          pendingSize={pendingSize}
+          locked={filtering || pending !== null}
+          onPageSize={(size) => {
+            if (size === pageSize || pendingSize !== null || pending !== null || filtering) return;
+            setPendingSize(size);
+            setPending(null);
+            setPage(1);
+            setPageSize(size);
+          }}
+        />
+      ) : null}
       {error ? (
         <div className="mt-6"><ErrorState message={error} loading={retrying} onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }} /></div>
       ) : rows === null ? (
@@ -78,18 +100,36 @@ export function UsersPage() {
       ) : rows.length === 0 ? (
         <div className="mt-6"><EmptyState title="No users" body="Try another name or email." /></div>
       ) : (
-        <ul className="mt-6 grid gap-2">
-          {rows.map((user) => (
-            <li key={user.id}>
-              <Link to={`/dashboard/users/${user.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 px-4 py-3 hover:bg-white/5">
-                <span className="text-white">{user.displayName || user.email}</span>
-                <span className="text-sm text-mist/65">{user.role} · {user.rewardPoints} pts</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <DataTable
+          busy={filtering || pending !== null || pendingSize !== null}
+          rows={rows}
+          rowKey={(user) => user.id}
+          columns={[
+            { label: "Name", cell: (user) => <Link to={`/dashboard/users/${user.id}`} className="font-medium text-white hover:text-line">{user.displayName || "—"}</Link> },
+            { label: "Email", cell: (user) => user.email },
+            { label: "Mobile", cell: (user) => user.mobile || "—" },
+            { label: "Role", cell: (user) => <Tag value={user.role} /> },
+            { label: "Points", className: "whitespace-nowrap", cell: (user) => `${user.rewardPoints} pts` },
+            { label: "Verified", cell: (user) => (user.emailVerified ? "Yes" : "No") },
+            { label: "Open", cell: (user) => <Link to={`/dashboard/users/${user.id}`} className="font-medium text-line hover:text-lime-200">View</Link> },
+          ]}
+        />
       )}
-      {rows ? <Pager page={page} pageSize={pageSize} total={total} busy={busy} onPage={(next, key) => { void run(key, async () => setPage(next)); }} /> : null}
+      {rows && total > 0 ? (
+        <Pager
+          numbered
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          pending={pending}
+          locked={filtering || pendingSize !== null}
+          onPage={(next, key) => {
+            if (next === page || pending !== null || pendingSize !== null || filtering) return;
+            setPending(key === "page" ? next : key);
+            setPage(next);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

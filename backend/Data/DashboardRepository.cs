@@ -924,9 +924,9 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return null;
     }
 
-    public async Task<DashPage<DashUserRow>> ListUsersAsync(string? query, int page, CancellationToken cancellationToken)
+    public async Task<DashPage<DashUserRow>> ListUsersAsync(string? query, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var (pageNumber, size, skip) = PageOf(page);
+        var (pageNumber, size, skip) = PageOf(page, pageSize);
         var like = string.IsNullOrWhiteSpace(query) ? null : $"%{query.Trim()}%";
         await using var connection = await OpenAsync(cancellationToken);
         var total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
@@ -1112,9 +1112,9 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return rows.ToArray();
     }
 
-    public async Task<DashPage<DashBookingRow>> ListOperationalBookingsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowed, bool admin, string? status, int page, CancellationToken cancellationToken)
+    public async Task<DashPage<DashBookingRow>> ListOperationalBookingsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowed, bool admin, string? status, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var (pageNumber, size, skip) = PageOf(page);
+        var (pageNumber, size, skip) = PageOf(page, pageSize);
         if (Blocked(admin, allowed, venueId))
         {
             return new DashPage<DashBookingRow>([], pageNumber, size, 0);
@@ -1183,9 +1183,9 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return null;
     }
 
-    public async Task<DashPage<DashPaymentRow>> ListPaymentsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowed, bool admin, int page, CancellationToken cancellationToken)
+    public async Task<DashPage<DashPaymentRow>> ListPaymentsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowed, bool admin, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var (pageNumber, size, skip) = PageOf(page);
+        var (pageNumber, size, skip) = PageOf(page, pageSize);
         if (Blocked(admin, allowed, venueId))
         {
             return new DashPage<DashPaymentRow>([], pageNumber, size, 0);
@@ -1212,9 +1212,9 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return new DashPage<DashPaymentRow>(rows.ToArray(), pageNumber, size, total);
     }
 
-    public async Task<DashPage<DashPaymentRow>> ListRefundsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowed, bool admin, int page, CancellationToken cancellationToken)
+    public async Task<DashPage<DashPaymentRow>> ListRefundsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowed, bool admin, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var (pageNumber, size, skip) = PageOf(page);
+        var (pageNumber, size, skip) = PageOf(page, pageSize);
         if (Blocked(admin, allowed, venueId))
         {
             return new DashPage<DashPaymentRow>([], pageNumber, size, 0);
@@ -1257,9 +1257,9 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return new DashPage<DashPaymentRow>(rows.ToArray(), pageNumber, size, total);
     }
 
-    public async Task<DashPage<DashWebhookRow>> ListWebhooksAsync(bool admin, IReadOnlyCollection<Guid> allowed, int page, CancellationToken cancellationToken)
+    public async Task<DashPage<DashWebhookRow>> ListWebhooksAsync(bool admin, IReadOnlyCollection<Guid> allowed, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var (pageNumber, size, skip) = PageOf(page);
+        var (pageNumber, size, skip) = PageOf(page, pageSize);
         if (!admin && allowed.Count == 0)
         {
             return new DashPage<DashWebhookRow>([], pageNumber, size, 0);
@@ -1290,9 +1290,9 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return new DashPage<DashWebhookRow>(rows.ToArray(), pageNumber, size, total);
     }
 
-    public async Task<DashPage<DashAwardRow>> ListAwardsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowed, bool admin, int page, CancellationToken cancellationToken)
+    public async Task<DashPage<DashAwardRow>> ListAwardsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowed, bool admin, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var (pageNumber, size, skip) = PageOf(page);
+        var (pageNumber, size, skip) = PageOf(page, pageSize);
         if (Blocked(admin, allowed, venueId))
         {
             return new DashPage<DashAwardRow>([], pageNumber, size, 0);
@@ -1336,9 +1336,9 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return new DashPage<DashAwardRow>(rows.ToArray(), pageNumber, size, total);
     }
 
-    public async Task<DashPage<DashRedemptionRow>> ListRedemptionsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowed, bool admin, int page, CancellationToken cancellationToken)
+    public async Task<DashPage<DashRedemptionRow>> ListRedemptionsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowed, bool admin, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var (pageNumber, size, skip) = PageOf(page);
+        var (pageNumber, size, skip) = PageOf(page, pageSize);
         if (Blocked(admin, allowed, venueId))
         {
             return new DashPage<DashRedemptionRow>([], pageNumber, size, 0);
@@ -1407,9 +1407,9 @@ public sealed class DashboardRepository(IConfiguration configuration)
         await AuditAsync(connection, null, userId, venueId, "page.view", "Page", id, new { path, title }, ip, cancellationToken);
     }
 
-    public async Task<DashPage<DashAuditRow>> ListActivityAsync(Guid? onlyUserId, Guid? filterUserId, DateTime? from, DateTime? to, int page, CancellationToken cancellationToken)
+    public async Task<DashPage<DashAuditRow>> ListActivityAsync(Guid? onlyUserId, Guid? filterUserId, DateTime? from, DateTime? to, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var (pageNumber, size, skip) = PageOf(page);
+        var (pageNumber, size, skip) = PageOf(page, pageSize);
         await using var connection = await OpenAsync(cancellationToken);
         var filter = new { OnlyUserId = onlyUserId, FilterUserId = filterUserId, From = from, To = to, Take = size, Skip = skip };
         const string where = """
@@ -1609,10 +1609,10 @@ public sealed class DashboardRepository(IConfiguration configuration)
     private static bool Blocked(bool admin, IReadOnlyCollection<Guid> allowed, Guid? venueId) =>
         !admin && (allowed.Count == 0 || (venueId is not null && !allowed.Contains(venueId.Value)));
 
-    private static (int Page, int Size, int Skip) PageOf(int page)
+    private static (int Page, int Size, int Skip) PageOf(int page, int pageSize = 20)
     {
         var number = page < 1 ? 1 : page;
-        const int size = 20;
+        var size = pageSize is 10 or 20 or 50 ? pageSize : 20;
         return (number, size, (number - 1) * size);
     }
 

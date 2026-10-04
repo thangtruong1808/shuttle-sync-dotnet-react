@@ -324,8 +324,8 @@ export function savePromotion(body: Omit<DashPromo, "id" | "usedCount">, id?: st
   return send(id ? `/api/dashboard/promotions/${id}` : "/api/dashboard/promotions", id ? "PUT" : "POST", body);
 }
 
-export function listUsers(q: string, page: number): Promise<DashPage<DashUser>> {
-  const params = new URLSearchParams({ page: String(page) });
+export function listUsers(q: string, page: number, pageSize: number): Promise<DashPage<DashUser>> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (q) params.set("q", q);
   return read(`/api/dashboard/users?${params}`);
 }
@@ -354,8 +354,8 @@ export function revokeDevice(userId: string, sessionId: string): Promise<void> {
   return send(`/api/dashboard/users/${userId}/sessions/${sessionId}`, "DELETE");
 }
 
-export function listBookings(venueId: string, status: string, page: number): Promise<DashPage<DashBooking>> {
-  const params = new URLSearchParams({ page: String(page) });
+export function listBookings(venueId: string, status: string, page: number, pageSize: number): Promise<DashPage<DashBooking>> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (venueId) params.set("venueId", venueId);
   if (status) params.set("status", status);
   return read(`/api/dashboard/bookings?${params}`);
@@ -365,30 +365,30 @@ export function updateBookingStatus(id: string, status: string): Promise<void> {
   return send(`/api/dashboard/bookings/${id}/status`, "PUT", { status });
 }
 
-export function listPayments(venueId: string, page: number): Promise<DashPage<DashPayment>> {
-  const params = new URLSearchParams({ page: String(page) });
+export function listPayments(venueId: string, page: number, pageSize: number): Promise<DashPage<DashPayment>> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (venueId) params.set("venueId", venueId);
   return read(`/api/dashboard/payments?${params}`);
 }
 
-export function listRefunds(venueId: string, page: number): Promise<DashPage<DashPayment>> {
-  const params = new URLSearchParams({ page: String(page) });
+export function listRefunds(venueId: string, page: number, pageSize: number): Promise<DashPage<DashPayment>> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (venueId) params.set("venueId", venueId);
   return read(`/api/dashboard/refunds?${params}`);
 }
 
-export function listWebhooks(page: number): Promise<DashPage<DashWebhook>> {
-  return read(`/api/dashboard/webhooks?page=${page}`);
+export function listWebhooks(page: number, pageSize: number): Promise<DashPage<DashWebhook>> {
+  return read(`/api/dashboard/webhooks?page=${page}&pageSize=${pageSize}`);
 }
 
-export function listAwards(venueId: string, page: number): Promise<DashPage<DashAward>> {
-  const params = new URLSearchParams({ page: String(page) });
+export function listAwards(venueId: string, page: number, pageSize: number): Promise<DashPage<DashAward>> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (venueId) params.set("venueId", venueId);
   return read(`/api/dashboard/awards?${params}`);
 }
 
-export function listRedemptions(venueId: string, page: number): Promise<DashPage<DashRedemption>> {
-  const params = new URLSearchParams({ page: String(page) });
+export function listRedemptions(venueId: string, page: number, pageSize: number): Promise<DashPage<DashRedemption>> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (venueId) params.set("venueId", venueId);
   return read(`/api/dashboard/redemptions?${params}`);
 }
@@ -397,8 +397,8 @@ export function listRecommendations(page: number): Promise<DashPage<DashRecommen
   return read(`/api/dashboard/recommendations?page=${page}`);
 }
 
-export function listActivity(userId: string, from: string, to: string, page: number): Promise<DashPage<DashActivity>> {
-  const params = new URLSearchParams({ page: String(page) });
+export function listActivity(userId: string, from: string, to: string, page: number, pageSize: number): Promise<DashPage<DashActivity>> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (userId) params.set("userId", userId);
   if (from) params.set("from", from);
   if (to) params.set("to", to);
