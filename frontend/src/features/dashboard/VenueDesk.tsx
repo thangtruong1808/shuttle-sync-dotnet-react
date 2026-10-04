@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { NavLink, useNavigate, useParams } from "react-router-dom";
 import type { RootState } from "../../app/store";
-import { CourtImage, EmptyState, ErrorState, Money, formatVenueRange } from "../../components/format";
+import { CourtImage, EmptyState, ErrorState, Money, formatVenueDay, formatVenueRange } from "../../components/format";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import {
   createClosure,
@@ -526,12 +526,12 @@ function Slots({ venueId, currency }: { venueId: string; currency: string }) {
   const [success, setSuccess] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);
-  const [draft, setDraft] = useState({ start: "18:00", end: "20:00", price: "" });
+  const [draft, setDraft] = useState({ start: "18:00", end: "20:00", price: "", repeatWeekly: false });
   const { busy, run } = useBusy();
 
   useEffect(() => {
     let active = true;
-    listSocials(venueId, date)
+    listSocials(venueId)
       .then((socials) => {
         if (active) setRows(socials);
       })
@@ -544,7 +544,7 @@ function Slots({ venueId, currency }: { venueId: string; currency: string }) {
     return () => {
       active = false;
     };
-  }, [attempt, date, venueId]);
+  }, [attempt, venueId]);
 
   return (
     <div className="grid gap-4">
@@ -556,9 +556,12 @@ function Slots({ venueId, currency }: { venueId: string; currency: string }) {
           setSuccess(null);
           void run("create", async () => {
             try {
-              await createSocial(venueId, { date, start: draft.start, end: draft.end, price: Number(draft.price) });
-              setRows(await listSocials(venueId, date));
-              setSuccess("Drop-in social added. Players register from the homepage, starting on court 1.");
+              await createSocial(venueId, { date, start: draft.start, end: draft.end, price: Number(draft.price), repeatWeekly: draft.repeatWeekly });
+              setRows(await listSocials(venueId));
+              setDraft((current) => ({ ...current, repeatWeekly: false }));
+              setSuccess(draft.repeatWeekly
+                ? "Drop-in social added. This slot repeats weekly after the session ends."
+                : "Drop-in social added. Players register from the homepage, starting on court 1.");
             } catch (reason) {
               setMessage(reason instanceof DashError ? reason.message : "The social could not be created.");
             }
@@ -577,6 +580,16 @@ function Slots({ venueId, currency }: { venueId: string; currency: string }) {
         <Field label="Session price">
           <input className={control} type="number" min={0.01} step="0.01" required value={draft.price} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, price: event.target.value })} />
         </Field>
+        <label className="flex items-start gap-2 text-sm text-mist sm:col-span-2 lg:col-span-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-line"
+            checked={draft.repeatWeekly}
+            disabled={busy !== null}
+            onChange={(event) => setDraft({ ...draft, repeatWeekly: event.target.checked })}
+          />
+          <span>Repeat this slot weekly. After this session ends, the same hours and price are added for the next week.</span>
+        </label>
         <p className="text-sm text-mist/70 sm:col-span-2 lg:col-span-3">Players pay this session price. Court bookings still use the hourly rate. Eight players fill court 1, then court 2, and so on.</p>
         <div className="sm:col-span-2 lg:col-span-3 flex flex-wrap items-center gap-2">
           <Notice message={message} />
@@ -610,13 +623,16 @@ function SocialRow({ venueId, currency, row, onChanged }: { venueId: string; cur
     start: venueLocalTime(row.startTime, row.timeZone),
     end: venueLocalTime(row.endTime, row.timeZone),
     price: String(row.price ?? ""),
+    repeatWeekly: row.repeatWeekly,
   });
   const [message, setMessage] = useState<string | null>(null);
   const { busy, run } = useBusy();
   return (
     <li className="grid gap-3 rounded-2xl border border-white/10 p-3 text-sm text-mist">
-      <div className="flex flex-wrap items-center gap-2">
-        <span>{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span>
+      <div className="grid gap-1">
+        <p className="font-semibold text-white">{formatVenueDay(row.startTime, row.timeZone)}</p>
+        <div className="flex flex-wrap items-center gap-2">
+        <span className="whitespace-nowrap">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span>
         <span className="font-semibold text-white"><Money amount={row.price} currency={currency} /></span>
         <span className="text-white">{row.playerCount} player{row.playerCount === 1 ? "" : "s"}</span>
         <Button variant="secondary" disabled={busy !== null} onClick={() => { setMessage(null); setEditing((open) => !open); }}>Edit</Button>
@@ -630,6 +646,8 @@ function SocialRow({ venueId, currency, row, onChanged }: { venueId: string; cur
             }
           });
         }}>Delete</Button>
+        </div>
+        {row.repeatWeekly ? <p className="text-sm font-medium text-line">This slot repeats weekly.</p> : null}
       </div>
       {editing ? (
         <div className="grid gap-2 sm:grid-cols-2">
@@ -645,11 +663,15 @@ function SocialRow({ venueId, currency, row, onChanged }: { venueId: string; cur
           <Field label="Session price">
             <input className={control} type="number" min={0.01} step="0.01" required value={form.price} disabled={busy !== null} onChange={(event) => setForm({ ...form, price: event.target.value })} />
           </Field>
+          <label className="flex items-start gap-2 text-sm text-mist sm:col-span-2">
+            <input type="checkbox" className="mt-0.5 accent-line" checked={form.repeatWeekly} disabled={busy !== null} onChange={(event) => setForm({ ...form, repeatWeekly: event.target.checked })} />
+            <span>Repeat this slot weekly</span>
+          </label>
           <div className="flex items-end">
             <Button loading={busy === "save"} disabled={busy !== null && busy !== "save"} onClick={() => {
               void run("save", async () => {
                 try {
-                  await updateSocial(venueId, row.id, { date: form.date, start: form.start, end: form.end, price: Number(form.price) });
+                  await updateSocial(venueId, row.id, { date: form.date, start: form.start, end: form.end, price: Number(form.price), repeatWeekly: form.repeatWeekly });
                   setEditing(false);
                   onChanged("Drop-in social saved.");
                 } catch (reason) {

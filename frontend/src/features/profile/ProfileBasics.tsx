@@ -5,10 +5,11 @@ import type { AppDispatch, RootState } from "../../app/store";
 import { formatVenueRange } from "../../components/format";
 import { Button, Skeleton, Spinner } from "../../components/ui";
 import { AuthRequestError, updateProfile, uploadAvatar } from "../auth/authApi";
-import { logout, signedIn } from "../auth/authSlice";
+import { loadCurrentUser, logout, signedIn } from "../auth/authSlice";
 import { myBookings, type BookingRow } from "./profileApi";
 
 export function OverviewSection() {
+  const dispatch = useDispatch<AppDispatch>();
   const user = useSelector((state: RootState) => state.auth.user);
   const [nextBooking, setNextBooking] = useState<BookingRow | null>(null);
   const [loadingNext, setLoadingNext] = useState(true);
@@ -16,10 +17,13 @@ export function OverviewSection() {
   useEffect(() => {
     setLoadingNext(true);
     myBookings("upcoming", 1)
-      .then((page) => setNextBooking(page.items[0] ?? null))
+      .then((page) => {
+        setNextBooking(page.items[0] ?? null);
+        void dispatch(loadCurrentUser());
+      })
       .catch(() => setNextBooking(null))
       .finally(() => setLoadingNext(false));
-  }, []);
+  }, [dispatch]);
 
   if (!user) {
     return null;

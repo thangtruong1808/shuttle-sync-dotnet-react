@@ -35,6 +35,7 @@ export function SocialTimes({ times, timeZone, now }: { times: CourtSocial[]; ti
           <li key={time.id} className="rounded-2xl border border-line/40 px-3 py-2">
             <p className="whitespace-nowrap text-sm text-white">{formatVenueRange(time.startTime, time.endTime, timeZone)}</p>
             <p className="text-sm text-mist/80">{time.players === 0 ? "Be the first to join" : `${time.players} of 8 players`}</p>
+            <SessionClock start={time.startTime} end={time.endTime} />
           </li>
         ))}
       </ul>
@@ -140,7 +141,8 @@ function axisMarks(windowStart: number, windowEnd: number, timeZone: string) {
   return marks;
 }
 
-export function DayChart({ schedule, now, compact = false }: { schedule: Availability; now: number; compact?: boolean }) {
+export function DayChart({ schedule, now, compact = false, collapsible = false }: { schedule: Availability; now: number; compact?: boolean; collapsible?: boolean }) {
+  const [open, setOpen] = useState(!collapsible);
   const windowStart = new Date(schedule.windowStart).getTime();
   const windowEnd = new Date(schedule.windowEnd).getTime();
   const span = Math.max(windowEnd - windowStart, 1);
@@ -148,7 +150,24 @@ export function DayChart({ schedule, now, compact = false }: { schedule: Availab
 
   return (
     <section className="mt-6" aria-labelledby="day-chart">
-      <h2 id="day-chart" className="font-display text-2xl font-semibold text-white">Day at a glance</h2>
+      {collapsible ? (
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 px-4 py-3 text-left hover:bg-white/5"
+          aria-expanded={open}
+          aria-controls="day-chart-panel"
+          onClick={() => setOpen((value) => !value)}
+        >
+          <span id="day-chart" className="font-display text-2xl font-semibold text-white">Day at a glance</span>
+          <span className="shrink-0 text-sm font-semibold text-line">{open ? "Hide chart" : "Show chart"}</span>
+        </button>
+      ) : (
+        <h2 id="day-chart" className="font-display text-2xl font-semibold text-white">Day at a glance</h2>
+      )}
+      {collapsible && !open ? (
+        <p className="mt-2 text-sm text-mist/70">Show the chart to see which times are booked and which are still open.</p>
+      ) : (
+      <div id={collapsible ? "day-chart-panel" : undefined}>
       <p className="mt-1 text-sm text-mist/70">Each booking shows its time above the lime block. The pale track is still open. Amber is closed.</p>
       <div className="mt-4 grid text-[11px] text-mist/55 sm:grid-cols-[9rem_1fr]">
         <span className="hidden sm:block" />
@@ -234,6 +253,8 @@ export function DayChart({ schedule, now, compact = false }: { schedule: Availab
           );
         })}
       </ul>
+      </div>
+      )}
     </section>
   );
 }

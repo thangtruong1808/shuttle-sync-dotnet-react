@@ -774,6 +774,90 @@ public sealed class BookingPayments(
         return SocialCheckoutResponse.From(hold, session.Url);
     }
 
+    public async Task<SocialCheckoutResponse> SocialBatchCheckoutAsync(
+        Guid venueId,
+        IReadOnlyCollection<Guid> socialIds,
+        Guid userId,
+        string currency,
+        int requestedPoints,
+        string? promotionCode,
+        string successUrl,
+        string cancelUrl,
+        CancellationToken cancellationToken)
+    {
+        if (settings.IsConfigured)
+        {
+            StripeConfiguration.ApiKey = settings.SecretKey;
+        }
+
+        await bookings.ExpirePublicSocialHoldsAsync(cancellationToken);
+        var hold = await bookings.BeginPublicSocialBatchCheckoutAsync(venueId, socialIds, userId, currency, requestedPoints, promotionCode, cancellationToken);
+        if (hold.Error is not null)
+        {
+            return SocialCheckoutResponse.Fail(hold.Error, hold.StatusCode);
+        }
+
+        if (!hold.NeedsPayment || hold.CheckoutGroupId is null)
+        {
+            return SocialCheckoutResponse.From(hold, null);
+        }
+
+        if (hold.Amount > 0 && !settings.IsConfigured)
+        {
+            await bookings.ReleaseSocialGroupAsync(hold.CheckoutGroupId.Value, cancellationToken);
+            return SocialCheckoutResponse.Fail("Card payments are not configured yet.", StatusCodes.Status503ServiceUnavailable);
+        }
+
+        if (!string.IsNullOrWhiteSpace(hold.ExistingIntentId))
+        {
+            await CancelIntentsAsync([hold.ExistingIntentId], cancellationToken);
+        }
+
+        var customerId = await CustomerIdAsync(hold.StripeCustomerId, hold.Email, userId, cancellationToken);
+        Session session;
+        try
+        {
+            session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: true, hold.Requoted, cancellationToken);
+        }
+        catch (StripeException exception) when (MentionsPayTo(exception))
+        {
+            try
+            {
+                session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: false, hold.Requoted, cancellationToken);
+            }
+            catch (StripeException retry)
+            {
+                await bookings.ReleaseSocialGroupAsync(hold.CheckoutGroupId.Value, cancellationToken);
+                return SocialCheckoutResponse.Fail(retry.StripeError?.Message ?? "The payment could not be started.", StatusCodes.Status502BadGateway);
+            }
+        }
+        catch (StripeException exception)
+        {
+            await bookings.ReleaseSocialGroupAsync(hold.CheckoutGroupId.Value, cancellationToken);
+            return SocialCheckoutResponse.Fail(exception.StripeError?.Message ?? "The payment could not be started.", StatusCodes.Status502BadGateway);
+        }
+
+        if (string.IsNullOrWhiteSpace(session.Url))
+        {
+            await CancelIntentsAsync([session.Id], cancellationToken);
+            await bookings.ReleaseSocialGroupAsync(hold.CheckoutGroupId.Value, cancellationToken);
+            return SocialCheckoutResponse.Fail("The payment page could not be opened.", StatusCodes.Status502BadGateway);
+        }
+
+        try
+        {
+            await bookings.AttachSocialPaymentAsync(hold.RegistrationId, userId, customerId, session.Id, hold.Amount, hold.Currency, cancellationToken);
+        }
+        catch
+        {
+            await CancelIntentsAsync([session.Id], cancellationToken);
+            await bookings.ReleaseSocialGroupAsync(hold.CheckoutGroupId.Value, cancellationToken);
+            return SocialCheckoutResponse.Fail("The payment could not be started.", StatusCodes.Status502BadGateway);
+        }
+
+        return SocialCheckoutResponse.From(hold, session.Url);
+    }
+
     public async Task<CancelResponse> CancelSocialAsync(Guid userId, Guid registrationId, CancellationToken cancellationToken)
     {
         var context = await bookings.LoadSocialCancelAsync(userId, registrationId, cancellationToken);

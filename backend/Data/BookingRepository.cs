@@ -516,22 +516,33 @@ public sealed class BookingRepository(IConfiguration configuration)
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
+        const string awards = """
+            SELECT a.Id, a.Points, a.AwardedAt, v.Name AS VenueName, v.TimeZone,
+                   c.CourtName, cs.StartTime, cs.EndTime
+            FROM RewardPointAwards a
+            JOIN Venues v ON v.Id = a.VenueId
+            JOIN CourtSessions cs ON cs.Id = a.CourtSessionId
+            JOIN Courts c ON c.Id = cs.CourtId
+            WHERE a.UserId = @UserId
+            UNION ALL
+            SELECT r.Id, r.IncentivePoints, r.IncentiveAwardedAt, v.Name, v.TimeZone,
+                   'Drop-in social', s.StartTime, s.EndTime
+            FROM PublicSocialRegistrations r
+            JOIN PublicSocials s ON s.Id = r.SocialId
+            JOIN Venues v ON v.Id = r.VenueId
+            WHERE r.UserId = @UserId AND r.IncentiveAwardedAt IS NOT NULL AND r.IncentivePoints > 0
+            """;
         var total = await connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
-                "SELECT COUNT(*) FROM RewardPointAwards WHERE UserId = @UserId",
+                $"SELECT COUNT(*) FROM ({awards}) awards",
                 new { UserId = userId },
                 cancellationToken: cancellationToken));
         var rows = await connection.QueryAsync<RewardAwardRow>(
             new CommandDefinition(
-                """
-                SELECT a.Id, a.Points, a.AwardedAt, v.Name AS VenueName, v.TimeZone,
-                       c.CourtName, cs.StartTime, cs.EndTime
-                FROM RewardPointAwards a
-                JOIN Venues v ON v.Id = a.VenueId
-                JOIN CourtSessions cs ON cs.Id = a.CourtSessionId
-                JOIN Courts c ON c.Id = cs.CourtId
-                WHERE a.UserId = @UserId
-                ORDER BY a.AwardedAt DESC
+                $"""
+                SELECT Id, Points, AwardedAt, VenueName, TimeZone, CourtName, StartTime, EndTime
+                FROM ({awards}) awards
+                ORDER BY AwardedAt DESC
                 LIMIT @Take OFFSET @Skip
                 """,
                 new { UserId = userId, Take = pageSize, Skip = offset },
@@ -731,6 +742,115 @@ public sealed class BookingRepository(IConfiguration configuration)
         }
 
         await tx.CommitAsync(cancellationToken);
+        await RollWeeklySocialsAsync(cancellationToken);
+    }
+
+    public async Task RollWeeklySocialsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var due = (await connection.QueryAsync<WeeklySocialRow>(new CommandDefinition(
+            """
+            SELECT s.Id, s.VenueId, s.StartTime, s.EndTime, s.Price, v.TimeZone
+            FROM PublicSocials s
+            JOIN Venues v ON v.Id = s.VenueId
+            WHERE s.RepeatWeekly = 1 AND s.IsDeleted = 0 AND s.SuccessorId IS NULL
+              AND s.EndTime <= UTC_TIMESTAMP(6)
+            """,
+            cancellationToken: cancellationToken))).ToArray();
+        foreach (var row in due)
+        {
+            DateTime nextStart = default;
+            DateTime nextEnd = default;
+            var placed = false;
+            for (var weeks = 1; weeks <= 52; weeks++)
+            {
+                if (!ShuttleSync.Api.Booking.VenueClock.TryShiftDays(row.TimeZone, row.StartTime, row.EndTime, 7 * weeks, out nextStart, out nextEnd))
+                {
+                    break;
+                }
+
+                if (nextEnd > DateTime.UtcNow)
+                {
+                    placed = true;
+                    break;
+                }
+            }
+
+            if (!placed)
+            {
+                continue;
+            }
+
+            await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+            var open = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                """
+                SELECT COUNT(*) FROM PublicSocials
+                WHERE Id = @Id AND SuccessorId IS NULL AND IsDeleted = 0
+                FOR UPDATE
+                """,
+                new { Id = row.Id },
+                tx,
+                cancellationToken: cancellationToken));
+            if (open == 0)
+            {
+                await tx.CommitAsync(cancellationToken);
+                continue;
+            }
+
+            var existingId = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                """
+                SELECT Id FROM PublicSocials
+                WHERE VenueId = @VenueId AND IsDeleted = 0
+                  AND StartTime < @EndTime AND EndTime > @StartTime
+                LIMIT 1
+                """,
+                new { row.VenueId, StartTime = nextStart, EndTime = nextEnd },
+                tx,
+                cancellationToken: cancellationToken));
+            var successorId = existingId ?? Guid.NewGuid();
+            if (existingId is null)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO PublicSocials
+                        (Id, VenueId, StartTime, EndTime, Price, RepeatWeekly, IsDeleted, CreatedAt, UpdatedAt)
+                    VALUES
+                        (@Id, @VenueId, @StartTime, @EndTime, @Price, 1, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+                    """,
+                    new { Id = successorId, row.VenueId, StartTime = nextStart, EndTime = nextEnd, row.Price },
+                    tx,
+                    cancellationToken: cancellationToken));
+            }
+
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE PublicSocials
+                SET SuccessorId = @SuccessorId, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id AND SuccessorId IS NULL
+                """,
+                new { Id = row.Id, SuccessorId = successorId },
+                tx,
+                cancellationToken: cancellationToken));
+            await tx.CommitAsync(cancellationToken);
+        }
+    }
+
+    public async Task<OpenSocialRow[]> ListOpenSocialsAsync(Guid venueId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<OpenSocialRow>(new CommandDefinition(
+            """
+            SELECT s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly, COUNT(r.Id) AS PlayerCount
+            FROM PublicSocials s
+            LEFT JOIN PublicSocialRegistrations r ON r.SocialId = s.Id AND r.Status = 'confirmed'
+            WHERE s.VenueId = @VenueId AND s.IsDeleted = 0
+              AND s.StartTime > UTC_TIMESTAMP(6)
+            GROUP BY s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly
+            ORDER BY s.StartTime
+            """,
+            new { VenueId = venueId },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
     }
 
     public async Task<SocialMineRow[]> ListMySocialStatesAsync(Guid userId, IReadOnlyCollection<Guid> socialIds, CancellationToken cancellationToken)
@@ -1067,6 +1187,403 @@ public sealed class BookingRepository(IConfiguration configuration)
         };
     }
 
+    public async Task<SocialCheckoutHold> BeginPublicSocialBatchCheckoutAsync(
+        Guid venueId,
+        IReadOnlyCollection<Guid> socialIds,
+        Guid userId,
+        string currency,
+        int requestedPoints,
+        string? promotionCode,
+        CancellationToken cancellationToken)
+    {
+        var ids = socialIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return SocialCheckoutHold.Fail("Choose a drop-in time.", StatusCodes.Status400BadRequest);
+        }
+
+        if (ids.Length > 8)
+        {
+            return SocialCheckoutHold.Fail("Choose up to 8 drop-in times.", StatusCodes.Status400BadRequest);
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        var socials = (await connection.QueryAsync<PublicSocialRow>(new CommandDefinition(
+            """
+            SELECT Id, StartTime, EndTime, Price
+            FROM PublicSocials
+            WHERE VenueId = @VenueId AND IsDeleted = 0 AND Id IN @Ids
+            ORDER BY StartTime
+            FOR UPDATE
+            """,
+            new { VenueId = venueId, Ids = ids },
+            tx,
+            cancellationToken: cancellationToken))).ToArray();
+        if (socials.Length != ids.Length)
+        {
+            return SocialCheckoutHold.Fail("One of those drop-in times was not found.", StatusCodes.Status404NotFound);
+        }
+
+        if (socials.Any(social => social.StartTime <= DateTime.UtcNow))
+        {
+            return SocialCheckoutHold.Fail("One of these drop-in times has already started.", StatusCodes.Status409Conflict);
+        }
+
+        if (socials.Any(social => social.Price <= 0))
+        {
+            return SocialCheckoutHold.Fail("One of these drop-in times does not have a session price yet.", StatusCodes.Status400BadRequest);
+        }
+
+        var account = await connection.QuerySingleOrDefaultAsync<SocialAccountRow>(new CommandDefinition(
+            """
+            SELECT u.Email, u.StripeCustomerId, u.RewardPoints, v.PointsPerDollar, v.TimeZone
+            FROM Users u
+            JOIN Venues v ON v.Id = @VenueId
+            WHERE u.Id = @Id AND u.IsDeleted = 0
+            FOR UPDATE
+            """,
+            new { Id = userId, VenueId = venueId },
+            tx,
+            cancellationToken: cancellationToken));
+        if (account is null)
+        {
+            return SocialCheckoutHold.Fail("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        var confirmed = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT COUNT(*) FROM PublicSocialRegistrations
+            WHERE UserId = @UserId AND SocialId IN @Ids AND Status = 'confirmed'
+            """,
+            new { UserId = userId, Ids = ids },
+            tx,
+            cancellationToken: cancellationToken));
+        if (confirmed > 0)
+        {
+            return SocialCheckoutHold.Fail("You are already registered for one of these times.", StatusCodes.Status409Conflict);
+        }
+
+        var stale = (await connection.QueryAsync<StaleSocialHoldRow>(new CommandDefinition(
+            """
+            SELECT r.Id, r.SocialId, r.PointsRedeemed, r.PromotionCodeId, r.CheckoutGroupId,
+                   (
+                       SELECT p.StripePaymentIntentId
+                       FROM PublicSocialPayments p
+                       WHERE p.RegistrationId = r.Id AND p.Status = 'pending'
+                       ORDER BY p.CreatedAt DESC
+                       LIMIT 1
+                   ) AS StripePaymentIntentId
+            FROM PublicSocialRegistrations r
+            WHERE r.UserId = @UserId AND r.Status = 'pending' AND r.HoldExpiresAt > UTC_TIMESTAMP(6)
+              AND (
+                  r.SocialId IN @Ids
+                  OR r.CheckoutGroupId IN (
+                      SELECT g.CheckoutGroupId
+                      FROM (
+                          SELECT CheckoutGroupId
+                          FROM PublicSocialRegistrations
+                          WHERE UserId = @UserId AND Status = 'pending' AND SocialId IN @Ids AND CheckoutGroupId IS NOT NULL
+                      ) g
+                  )
+              )
+            FOR UPDATE
+            """,
+            new { UserId = userId, Ids = ids },
+            tx,
+            cancellationToken: cancellationToken))).ToArray();
+        foreach (var row in stale)
+        {
+            await RestoreSocialPointsAsync(connection, tx, userId, row.PointsRedeemed, cancellationToken);
+            if (row.PromotionCodeId is not null)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE PromotionCodes SET UsedCount = GREATEST(UsedCount - 1, 0), UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                    new { Id = row.PromotionCodeId },
+                    tx,
+                    cancellationToken: cancellationToken));
+            }
+        }
+
+        if (stale.Length > 0)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE PublicSocialPayments
+                SET Status = 'cancelled', UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Status = 'pending' AND RegistrationId IN @Ids
+                """,
+                new { Ids = stale.Select(row => row.Id).ToArray() },
+                tx,
+                cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE PublicSocialRegistrations
+                SET Status = 'expired', CancelledAt = UTC_TIMESTAMP(6)
+                WHERE Id IN @Ids AND Status = 'pending'
+                """,
+                new { Ids = stale.Select(row => row.Id).ToArray() },
+                tx,
+                cancellationToken: cancellationToken));
+        }
+
+        var subtotal = socials.Sum(social => decimal.Round(social.Price, 2, MidpointRounding.AwayFromZero));
+        var (promoId, discount, promoError) = await LockSocialPromotionAsync(connection, tx, venueId, subtotal, promotionCode, cancellationToken);
+        if (promoError is not null)
+        {
+            return SocialCheckoutHold.Fail(promoError, StatusCodes.Status400BadRequest);
+        }
+
+        var payable = subtotal - discount;
+        var (points, value, cash, quoteError) = PaymentRepository.Quote(requestedPoints, account.RewardPoints + stale.Sum(row => row.PointsRedeemed), account.PointsPerDollar, payable);
+        if (quoteError is not null)
+        {
+            return SocialCheckoutHold.Fail(quoteError, StatusCodes.Status400BadRequest);
+        }
+
+        if (points > 0)
+        {
+            var spent = await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Users
+                SET RewardPoints = RewardPoints - @Points, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id AND RewardPoints >= @Points
+                """,
+                new { Id = userId, Points = points },
+                tx,
+                cancellationToken: cancellationToken));
+            if (spent != 1)
+            {
+                return SocialCheckoutHold.Fail("You do not have enough reward points.", StatusCodes.Status409Conflict);
+            }
+        }
+
+        if (promoId is not null)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE PromotionCodes SET UsedCount = UsedCount + 1, UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                new { Id = promoId },
+                tx,
+                cancellationToken: cancellationToken));
+        }
+
+        var prices = socials.Select(social => decimal.Round(social.Price, 2, MidpointRounding.AwayFromZero)).ToArray();
+        var discounts = SplitMoney(prices, discount);
+        var payables = prices.Select((price, index) => price - discounts[index]).ToArray();
+        var values = SplitMoney(payables, value);
+        var cashes = payables.Select((amount, index) => amount - values[index]).ToArray();
+        var pointShares = SplitInt(payables, points);
+        var confirmedNow = cash <= 0;
+        var groupId = Guid.NewGuid();
+        Guid primaryId = Guid.Empty;
+        string courtName = "";
+        var courtNumber = 0;
+        var incentiveTotal = 0;
+        var courts = (await connection.QueryAsync<PublicCourtRow>(new CommandDefinition(
+            """
+            SELECT Id, CourtName, CourtNumber, SurfaceType, ImageUrl, Description
+            FROM Courts
+            WHERE VenueId = @VenueId AND IsActive = 1 AND IsDeleted = 0
+            ORDER BY CourtNumber
+            FOR UPDATE
+            """,
+            new { VenueId = venueId },
+            tx,
+            cancellationToken: cancellationToken))).ToArray();
+
+        for (var index = 0; index < socials.Length; index++)
+        {
+            var social = socials[index];
+            var counts = (await connection.QueryAsync<SocialCourtCountRow>(new CommandDefinition(
+                """
+                SELECT CourtId, COUNT(*) AS Players
+                FROM PublicSocialRegistrations
+                WHERE SocialId = @SocialId
+                  AND (
+                      Status = 'confirmed'
+                      OR (Status = 'pending' AND HoldExpiresAt > UTC_TIMESTAMP(6))
+                  )
+                GROUP BY CourtId
+                """,
+                new { SocialId = social.Id },
+                tx,
+                cancellationToken: cancellationToken))).ToDictionary(row => row.CourtId, row => row.Players);
+            var court = courts.FirstOrDefault(item => counts.GetValueOrDefault(item.Id) < PublicSocialCapacity);
+            if (court is null)
+            {
+                return SocialCheckoutHold.Fail("One of these drop-in times is full.", StatusCodes.Status409Conflict);
+            }
+
+            var registrationId = Guid.NewGuid();
+            var incentivePoints = await SocialIncentivePointsAsync(connection, tx, venueId, account.TimeZone, social.StartTime, cancellationToken);
+            incentiveTotal += incentivePoints;
+            if (primaryId == Guid.Empty)
+            {
+                primaryId = registrationId;
+                courtName = court.CourtName;
+                courtNumber = court.CourtNumber;
+            }
+
+            try
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO PublicSocialRegistrations
+                        (Id, SocialId, VenueId, UserId, CourtId, Status, Amount, SubtotalAmount, DiscountAmount,
+                         PointsRedeemed, PointsValue, PromotionCodeId, CheckoutGroupId, IncentivePoints, HoldExpiresAt, ConfirmedAt, CreatedAt)
+                    VALUES
+                        (@Id, @SocialId, @VenueId, @UserId, @CourtId, @Status, @Cash, @Price, @Discount,
+                         @Points, @PointsValue, @PromotionCodeId, @GroupId, @IncentivePoints,
+                         CASE WHEN @Confirmed = 1 THEN NULL ELSE DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 30 MINUTE) END,
+                         CASE WHEN @Confirmed = 1 THEN UTC_TIMESTAMP(6) ELSE NULL END,
+                         UTC_TIMESTAMP(6))
+                    """,
+                    new
+                    {
+                        Id = registrationId,
+                        SocialId = social.Id,
+                        VenueId = venueId,
+                        UserId = userId,
+                        CourtId = court.Id,
+                        Status = confirmedNow ? "confirmed" : "pending",
+                        Cash = cashes[index],
+                        Price = prices[index],
+                        Discount = discounts[index],
+                        Points = pointShares[index],
+                        PointsValue = values[index],
+                        PromotionCodeId = promoId,
+                        GroupId = groupId,
+                        IncentivePoints = incentivePoints,
+                        Confirmed = confirmedNow ? 1 : 0,
+                    },
+                    tx,
+                    cancellationToken: cancellationToken));
+            }
+            catch (MySqlException exception) when (exception.Number == 1062)
+            {
+                return SocialCheckoutHold.Fail("You already have a place in one of these drop-in times.", StatusCodes.Status409Conflict);
+            }
+        }
+
+        await tx.CommitAsync(cancellationToken);
+        return new SocialCheckoutHold
+        {
+            RegistrationId = primaryId,
+            CheckoutGroupId = groupId,
+            Status = confirmedNow ? "confirmed" : "pending",
+            ExistingIntentId = stale.Select(row => row.StripePaymentIntentId).FirstOrDefault(id => !string.IsNullOrWhiteSpace(id)),
+            Amount = cash,
+            Subtotal = subtotal,
+            DiscountAmount = discount,
+            PointsRedeemed = points,
+            PointsValue = value,
+            IncentivePoints = incentiveTotal,
+            Currency = currency,
+            Email = account.Email,
+            StripeCustomerId = account.StripeCustomerId,
+            CourtName = courtName,
+            CourtNumber = courtNumber,
+            NeedsPayment = !confirmedNow,
+            Requoted = stale.Any(row => !string.IsNullOrWhiteSpace(row.StripePaymentIntentId)),
+        };
+    }
+
+    public async Task ReleaseSocialGroupAsync(Guid groupId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        var rows = (await connection.QueryAsync<SocialPointRow>(new CommandDefinition(
+            """
+            SELECT Id, UserId, PointsRedeemed
+            FROM PublicSocialRegistrations
+            WHERE CheckoutGroupId = @GroupId AND Status = 'pending'
+            FOR UPDATE
+            """,
+            new { GroupId = groupId },
+            tx,
+            cancellationToken: cancellationToken))).ToArray();
+        foreach (var row in rows)
+        {
+            await RestoreSocialPointsAsync(connection, tx, row.UserId, row.PointsRedeemed, cancellationToken);
+        }
+
+        if (rows.Length > 0)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE PublicSocialPayments
+                SET Status = 'cancelled', UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Status = 'pending' AND RegistrationId IN @Ids
+                """,
+                new { Ids = rows.Select(row => row.Id).ToArray() },
+                tx,
+                cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE PublicSocialRegistrations
+                SET Status = 'expired', CancelledAt = UTC_TIMESTAMP(6)
+                WHERE Id IN @Ids AND Status = 'pending'
+                """,
+                new { Ids = rows.Select(row => row.Id).ToArray() },
+                tx,
+                cancellationToken: cancellationToken));
+        }
+
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    private static decimal[] SplitMoney(decimal[] weights, decimal total)
+    {
+        var shares = new decimal[weights.Length];
+        if (weights.Length == 0)
+        {
+            return shares;
+        }
+
+        var sum = weights.Sum();
+        decimal assigned = 0;
+        for (var index = 0; index < weights.Length; index++)
+        {
+            if (index == weights.Length - 1)
+            {
+                shares[index] = decimal.Round(total - assigned, 2, MidpointRounding.AwayFromZero);
+                continue;
+            }
+
+            var share = sum <= 0 ? 0 : decimal.Round(total * weights[index] / sum, 2, MidpointRounding.AwayFromZero);
+            shares[index] = share;
+            assigned += share;
+        }
+
+        return shares;
+    }
+
+    private static int[] SplitInt(decimal[] weights, int total)
+    {
+        var shares = new int[weights.Length];
+        if (weights.Length == 0)
+        {
+            return shares;
+        }
+
+        var sum = weights.Sum();
+        var assigned = 0;
+        for (var index = 0; index < weights.Length; index++)
+        {
+            if (index == weights.Length - 1)
+            {
+                shares[index] = total - assigned;
+                continue;
+            }
+
+            var share = sum <= 0 ? 0 : (int)decimal.Round(total * weights[index] / sum, 0, MidpointRounding.AwayFromZero);
+            shares[index] = share;
+            assigned += share;
+        }
+
+        return shares;
+    }
+
     public async Task AttachSocialPaymentAsync(
         Guid registrationId,
         Guid userId,
@@ -1207,6 +1724,16 @@ public sealed class BookingRepository(IConfiguration configuration)
                 new { Id = row.RegistrationId },
                 tx,
                 cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE PublicSocialRegistrations sibling
+                JOIN PublicSocialRegistrations owner ON owner.CheckoutGroupId = sibling.CheckoutGroupId
+                SET sibling.Status = 'confirmed', sibling.ConfirmedAt = UTC_TIMESTAMP(6), sibling.HoldExpiresAt = NULL
+                WHERE owner.Id = @Id AND owner.CheckoutGroupId IS NOT NULL AND sibling.Status = 'pending'
+                """,
+                new { Id = row.RegistrationId },
+                tx,
+                cancellationToken: cancellationToken));
         }
 
         await tx.CommitAsync(cancellationToken);
@@ -1225,6 +1752,19 @@ public sealed class BookingRepository(IConfiguration configuration)
                     ELSE r.HoldExpiresAt
                 END
             WHERE p.StripePaymentIntentId = @IntentId AND r.Status = 'pending'
+            """,
+            new { IntentId = intentId, Until = untilUtc },
+            cancellationToken: cancellationToken));
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE PublicSocialRegistrations sibling
+            JOIN PublicSocialRegistrations owner ON owner.CheckoutGroupId = sibling.CheckoutGroupId
+            JOIN PublicSocialPayments p ON p.RegistrationId = owner.Id
+            SET sibling.HoldExpiresAt = CASE
+                    WHEN sibling.HoldExpiresAt IS NULL OR sibling.HoldExpiresAt < @Until THEN @Until
+                    ELSE sibling.HoldExpiresAt
+                END
+            WHERE p.StripePaymentIntentId = @IntentId AND sibling.Status = 'pending' AND owner.CheckoutGroupId IS NOT NULL
             """,
             new { IntentId = intentId, Until = untilUtc },
             cancellationToken: cancellationToken));
@@ -1265,6 +1805,34 @@ public sealed class BookingRepository(IConfiguration configuration)
             new { Id = row.RegistrationId },
             tx,
             cancellationToken: cancellationToken));
+        var siblings = (await connection.QueryAsync<SocialPointRow>(new CommandDefinition(
+            """
+            SELECT sibling.Id, sibling.UserId, sibling.PointsRedeemed
+            FROM PublicSocialRegistrations sibling
+            JOIN PublicSocialRegistrations owner ON owner.CheckoutGroupId = sibling.CheckoutGroupId
+            WHERE owner.Id = @Id AND owner.CheckoutGroupId IS NOT NULL AND sibling.Status = 'pending'
+            FOR UPDATE
+            """,
+            new { Id = row.RegistrationId },
+            tx,
+            cancellationToken: cancellationToken))).ToArray();
+        foreach (var sibling in siblings)
+        {
+            await RestoreSocialPointsAsync(connection, tx, sibling.UserId, sibling.PointsRedeemed, cancellationToken);
+        }
+
+        if (siblings.Length > 0)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE PublicSocialRegistrations
+                SET Status = 'expired', CancelledAt = UTC_TIMESTAMP(6)
+                WHERE Id IN @Ids AND Status = 'pending'
+                """,
+                new { Ids = siblings.Select(sibling => sibling.Id).ToArray() },
+                tx,
+                cancellationToken: cancellationToken));
+        }
         await connection.ExecuteAsync(new CommandDefinition(
             """
             UPDATE PublicSocialPayments
@@ -1345,14 +1913,17 @@ public sealed class BookingRepository(IConfiguration configuration)
         return await connection.QuerySingleOrDefaultAsync<SocialCancelContext>(new CommandDefinition(
             """
             SELECT r.Id, r.Status, s.StartTime, v.Currency, v.LateCancelFeePercent,
-                   p.Id AS PaymentId, p.StripePaymentIntentId, p.Status AS PaymentStatus, COALESCE(p.Amount, 0) AS PaymentAmount
+                   p.Id AS PaymentId, p.StripePaymentIntentId, p.Status AS PaymentStatus, r.Amount AS PaymentAmount
             FROM PublicSocialRegistrations r
             JOIN PublicSocials s ON s.Id = r.SocialId
             JOIN Venues v ON v.Id = r.VenueId
             LEFT JOIN PublicSocialPayments p ON p.Id = (
-                SELECT p2.Id FROM PublicSocialPayments p2
-                WHERE p2.RegistrationId = r.Id
-                ORDER BY p2.CreatedAt DESC
+                SELECT p2.Id
+                FROM PublicSocialPayments p2
+                JOIN PublicSocialRegistrations owner ON owner.Id = p2.RegistrationId
+                WHERE owner.Id = r.Id
+                   OR (r.CheckoutGroupId IS NOT NULL AND owner.CheckoutGroupId = r.CheckoutGroupId)
+                ORDER BY CASE WHEN owner.Id = r.Id THEN 0 ELSE 1 END, p2.CreatedAt DESC
                 LIMIT 1
             )
             WHERE r.Id = @Id AND r.UserId = @UserId
@@ -1406,7 +1977,60 @@ public sealed class BookingRepository(IConfiguration configuration)
             return false;
         }
 
-        if (write.PaymentId is not null && write.PaymentStatus is not null)
+        var paymentStatus = write.PaymentStatus;
+        var groupId = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "SELECT CheckoutGroupId FROM PublicSocialRegistrations WHERE Id = @Id",
+            new { write.Id },
+            tx,
+            cancellationToken: cancellationToken));
+        if (groupId is not null && paymentStatus == "refunded")
+        {
+            var others = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                """
+                SELECT COUNT(*) FROM PublicSocialRegistrations
+                WHERE CheckoutGroupId = @GroupId AND Id <> @Id AND Status IN ('pending', 'confirmed')
+                """,
+                new { GroupId = groupId, write.Id },
+                tx,
+                cancellationToken: cancellationToken));
+            if (others > 0)
+            {
+                paymentStatus = "partially_refunded";
+            }
+        }
+
+        if (groupId is not null && paymentStatus == "cancelled")
+        {
+            var siblings = (await connection.QueryAsync<SocialPointRow>(new CommandDefinition(
+                """
+                SELECT Id, UserId, PointsRedeemed
+                FROM PublicSocialRegistrations
+                WHERE CheckoutGroupId = @GroupId AND Id <> @Id AND Status = 'pending'
+                FOR UPDATE
+                """,
+                new { GroupId = groupId, write.Id },
+                tx,
+                cancellationToken: cancellationToken))).ToArray();
+            foreach (var sibling in siblings)
+            {
+                await RestoreSocialPointsAsync(connection, tx, sibling.UserId, sibling.PointsRedeemed, cancellationToken);
+            }
+
+            if (siblings.Length > 0)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    UPDATE PublicSocialRegistrations
+                    SET Status = 'expired', CancelledAt = UTC_TIMESTAMP(6)
+                    WHERE Id IN @Ids AND Status = 'pending'
+                    """,
+                    new { Ids = siblings.Select(sibling => sibling.Id).ToArray() },
+                    tx,
+                    cancellationToken: cancellationToken));
+            }
+        }
+
+        if (write.PaymentId is not null && paymentStatus is not null)
         {
             await connection.ExecuteAsync(new CommandDefinition(
                 """
@@ -1414,7 +2038,7 @@ public sealed class BookingRepository(IConfiguration configuration)
                 SET Status = @Status, UpdatedAt = UTC_TIMESTAMP(6)
                 WHERE Id = @Id
                 """,
-                new { Id = write.PaymentId, Status = write.PaymentStatus },
+                new { Id = write.PaymentId, Status = paymentStatus },
                 tx,
                 cancellationToken: cancellationToken));
         }
@@ -1813,6 +2437,7 @@ public sealed class SocialCheckoutHold
     public bool AlreadyJoined { get; init; }
     public bool NeedsPayment { get; init; } = true;
     public bool Requoted { get; init; }
+    public Guid? CheckoutGroupId { get; init; }
 
     public static SocialCheckoutHold Fail(string error, int statusCode) => new() { Error = error, StatusCode = statusCode };
 }
@@ -1822,6 +2447,36 @@ public sealed class SocialPointRow
     public Guid Id { get; init; }
     public Guid UserId { get; init; }
     public int PointsRedeemed { get; init; }
+}
+
+public sealed class WeeklySocialRow
+{
+    public Guid Id { get; init; }
+    public Guid VenueId { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public decimal Price { get; init; }
+    public string TimeZone { get; init; } = "";
+}
+
+public sealed class OpenSocialRow
+{
+    public Guid Id { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public decimal Price { get; init; }
+    public bool RepeatWeekly { get; init; }
+    public int PlayerCount { get; init; }
+}
+
+public sealed class StaleSocialHoldRow
+{
+    public Guid Id { get; init; }
+    public Guid SocialId { get; init; }
+    public int PointsRedeemed { get; init; }
+    public Guid? PromotionCodeId { get; init; }
+    public Guid? CheckoutGroupId { get; init; }
+    public string? StripePaymentIntentId { get; init; }
 }
 
 public sealed class SocialPromoRow

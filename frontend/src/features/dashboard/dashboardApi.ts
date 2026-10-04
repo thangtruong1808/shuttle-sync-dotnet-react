@@ -48,6 +48,7 @@ export type DashSocial = {
   startTime: string;
   endTime: string;
   price: number;
+  repeatWeekly: boolean;
   playerCount: number;
   timeZone: string;
 };
@@ -142,6 +143,7 @@ export type DashAward = {
   awardedAt: string;
   startTime: string;
   endTime: string;
+  source: string;
 };
 
 export type DashRedemption = {
@@ -225,15 +227,15 @@ export function deleteCourt(venueId: string, courtId: string): Promise<void> {
   return send(`/api/dashboard/venues/${venueId}/courts/${courtId}`, "DELETE");
 }
 
-export function listSocials(venueId: string, date: string): Promise<DashSocial[]> {
-  return read(`/api/dashboard/venues/${venueId}/socials?date=${encodeURIComponent(date)}`);
+export function listSocials(venueId: string): Promise<DashSocial[]> {
+  return read(`/api/dashboard/venues/${venueId}/socials?upcoming=true`);
 }
 
-export function createSocial(venueId: string, body: { date: string; start: string; end: string; price: number }): Promise<void> {
+export function createSocial(venueId: string, body: { date: string; start: string; end: string; price: number; repeatWeekly: boolean }): Promise<void> {
   return send(`/api/dashboard/venues/${venueId}/socials`, "POST", body);
 }
 
-export function updateSocial(venueId: string, socialId: string, body: { date: string; start: string; end: string; price: number }): Promise<void> {
+export function updateSocial(venueId: string, socialId: string, body: { date: string; start: string; end: string; price: number; repeatWeekly: boolean }): Promise<void> {
   return send(`/api/dashboard/venues/${venueId}/socials/${socialId}`, "PUT", body);
 }
 

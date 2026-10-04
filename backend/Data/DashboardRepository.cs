@@ -316,12 +316,12 @@ public sealed class DashboardRepository(IConfiguration configuration)
         await using var connection = await OpenAsync(cancellationToken);
         var rows = await connection.QueryAsync<DashSocialRow>(new CommandDefinition(
             """
-            SELECT s.Id, s.StartTime, s.EndTime, s.Price, COUNT(r.Id) AS PlayerCount
+            SELECT s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly, COUNT(r.Id) AS PlayerCount
             FROM PublicSocials s
             LEFT JOIN PublicSocialRegistrations r ON r.SocialId = s.Id AND r.Status = 'confirmed'
             WHERE s.VenueId = @VenueId AND s.IsDeleted = 0
               AND s.StartTime < @EndUtc AND s.EndTime > @StartUtc
-            GROUP BY s.Id, s.StartTime, s.EndTime, s.Price
+            GROUP BY s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly
             ORDER BY s.StartTime
             """,
             new { VenueId = venueId, StartUtc = startUtc, EndUtc = endUtc },
@@ -329,7 +329,25 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return rows.ToArray();
     }
 
-    public async Task<string?> CreateSocialAsync(Guid venueId, DateTime start, DateTime end, decimal price, Guid actorId, string? ip, CancellationToken cancellationToken)
+    public async Task<DashSocialRow[]> ListUpcomingSocialsAsync(Guid venueId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<DashSocialRow>(new CommandDefinition(
+            """
+            SELECT s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly, COUNT(r.Id) AS PlayerCount
+            FROM PublicSocials s
+            LEFT JOIN PublicSocialRegistrations r ON r.SocialId = s.Id AND r.Status = 'confirmed'
+            WHERE s.VenueId = @VenueId AND s.IsDeleted = 0
+              AND s.StartTime > UTC_TIMESTAMP(6)
+            GROUP BY s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly
+            ORDER BY s.StartTime
+            """,
+            new { VenueId = venueId },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
+    public async Task<string?> CreateSocialAsync(Guid venueId, DateTime start, DateTime end, decimal price, bool repeatWeekly, Guid actorId, string? ip, CancellationToken cancellationToken)
     {
         if (end <= start)
         {
@@ -365,18 +383,18 @@ public sealed class DashboardRepository(IConfiguration configuration)
         var id = Guid.NewGuid();
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            INSERT INTO PublicSocials (Id, VenueId, StartTime, EndTime, Price, IsDeleted, CreatedAt, UpdatedAt)
-            VALUES (@Id, @VenueId, @StartTime, @EndTime, @Price, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            INSERT INTO PublicSocials (Id, VenueId, StartTime, EndTime, Price, RepeatWeekly, IsDeleted, CreatedAt, UpdatedAt)
+            VALUES (@Id, @VenueId, @StartTime, @EndTime, @Price, @RepeatWeekly, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
             """,
-            new { Id = id, VenueId = venueId, StartTime = start, EndTime = end, Price = price },
+            new { Id = id, VenueId = venueId, StartTime = start, EndTime = end, Price = price, RepeatWeekly = repeatWeekly },
             tx,
             cancellationToken: cancellationToken));
-        await AuditAsync(connection, tx, actorId, venueId, "create", "PublicSocial", id, new { start, end, price }, ip, cancellationToken);
+        await AuditAsync(connection, tx, actorId, venueId, "create", "PublicSocial", id, new { start, end, price, repeatWeekly }, ip, cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return null;
     }
 
-    public async Task<string?> UpdateSocialAsync(Guid venueId, Guid socialId, DateTime start, DateTime end, decimal price, Guid actorId, string? ip, CancellationToken cancellationToken)
+    public async Task<string?> UpdateSocialAsync(Guid venueId, Guid socialId, DateTime start, DateTime end, decimal price, bool repeatWeekly, Guid actorId, string? ip, CancellationToken cancellationToken)
     {
         if (end <= start)
         {
@@ -417,13 +435,13 @@ public sealed class DashboardRepository(IConfiguration configuration)
         await connection.ExecuteAsync(new CommandDefinition(
             """
             UPDATE PublicSocials
-            SET StartTime = @StartTime, EndTime = @EndTime, Price = @Price, UpdatedAt = UTC_TIMESTAMP(6)
+            SET StartTime = @StartTime, EndTime = @EndTime, Price = @Price, RepeatWeekly = @RepeatWeekly, UpdatedAt = UTC_TIMESTAMP(6)
             WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0
             """,
-            new { Id = socialId, VenueId = venueId, StartTime = start, EndTime = end, Price = price },
+            new { Id = socialId, VenueId = venueId, StartTime = start, EndTime = end, Price = price, RepeatWeekly = repeatWeekly },
             tx,
             cancellationToken: cancellationToken));
-        await AuditAsync(connection, tx, actorId, venueId, "update", "PublicSocial", socialId, new { start, end, price }, ip, cancellationToken);
+        await AuditAsync(connection, tx, actorId, venueId, "update", "PublicSocial", socialId, new { start, end, price, repeatWeekly }, ip, cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return null;
     }
@@ -1280,22 +1298,38 @@ public sealed class DashboardRepository(IConfiguration configuration)
             return new DashPage<DashAwardRow>([], pageNumber, size, 0);
         }
 
-        var venueClause = admin
+        var courtVenue = admin
             ? "(@VenueId IS NULL OR a.VenueId = @VenueId)"
             : "a.VenueId IN @Allowed AND (@VenueId IS NULL OR a.VenueId = @VenueId)";
-        await using var connection = await OpenAsync(cancellationToken);
-        var total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
-            $"SELECT COUNT(*) FROM RewardPointAwards a WHERE {venueClause}",
-            new { VenueId = venueId, Allowed = allowed }, cancellationToken: cancellationToken));
-        var rows = await connection.QueryAsync<DashAwardRow>(new CommandDefinition(
-            $"""
-            SELECT a.Id, u.Email AS UserEmail, v.Name AS VenueName, v.TimeZone, a.Points, a.AwardedAt, cs.StartTime, cs.EndTime
+        var socialVenue = admin
+            ? "(@VenueId IS NULL OR r.VenueId = @VenueId)"
+            : "r.VenueId IN @Allowed AND (@VenueId IS NULL OR r.VenueId = @VenueId)";
+        var awards = $"""
+            SELECT a.Id, u.Email AS UserEmail, v.Name AS VenueName, v.TimeZone, a.Points, a.AwardedAt,
+                   cs.StartTime, cs.EndTime, 'Court booking' AS Source
             FROM RewardPointAwards a
             JOIN Users u ON u.Id = a.UserId
             JOIN Venues v ON v.Id = a.VenueId
             JOIN CourtSessions cs ON cs.Id = a.CourtSessionId
-            WHERE {venueClause}
-            ORDER BY a.AwardedAt DESC
+            WHERE {courtVenue}
+            UNION ALL
+            SELECT r.Id, u.Email, v.Name, v.TimeZone, r.IncentivePoints, r.IncentiveAwardedAt,
+                   s.StartTime, s.EndTime, 'Drop-in social'
+            FROM PublicSocialRegistrations r
+            JOIN Users u ON u.Id = r.UserId
+            JOIN Venues v ON v.Id = r.VenueId
+            JOIN PublicSocials s ON s.Id = r.SocialId
+            WHERE r.IncentiveAwardedAt IS NOT NULL AND r.IncentivePoints > 0 AND {socialVenue}
+            """;
+        await using var connection = await OpenAsync(cancellationToken);
+        var total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            $"SELECT COUNT(*) FROM ({awards}) awards",
+            new { VenueId = venueId, Allowed = allowed }, cancellationToken: cancellationToken));
+        var rows = await connection.QueryAsync<DashAwardRow>(new CommandDefinition(
+            $"""
+            SELECT Id, UserEmail, VenueName, TimeZone, Points, AwardedAt, StartTime, EndTime, Source
+            FROM ({awards}) awards
+            ORDER BY AwardedAt DESC
             LIMIT @Take OFFSET @Skip
             """,
             new { VenueId = venueId, Allowed = allowed, Take = size, Skip = skip }, cancellationToken: cancellationToken));
@@ -1807,6 +1841,7 @@ public sealed class DashAwardRow
     public DateTime AwardedAt { get; init; }
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
+    public string Source { get; init; } = "";
 }
 
 public sealed class DashRedemptionRow
@@ -1840,6 +1875,7 @@ public sealed class DashSocialRow
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
     public decimal Price { get; init; }
+    public bool RepeatWeekly { get; init; }
     public int PlayerCount { get; init; }
 }
 

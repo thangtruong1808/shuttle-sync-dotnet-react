@@ -9,6 +9,7 @@ import AuthPanel from "./features/auth/AuthPanel";
 import BookingStubPage from "./features/booking/BookingStubPage";
 import BookCourtPage from "./features/booking/BookCourtPage";
 import SocialPage from "./features/booking/SocialPage";
+import SocialCheckoutPage from "./features/booking/SocialCheckoutPage";
 import SocialPayPage from "./features/booking/SocialPayPage";
 import CourtsPage from "./features/courts/CourtsPage";
 import DashboardLayout from "./features/dashboard/DashboardLayout";
@@ -128,6 +129,7 @@ export default function App() {
           <Route path="/:slug/book" element={<BookCourtPage />} />
           <Route path="/:slug/book/:sessionId" element={<BookingStubPage />} />
           <Route path="/:slug/social" element={<SocialPage />} />
+          <Route path="/:slug/social/checkout" element={<SocialCheckoutPage />} />
           <Route path="/:slug/social/:socialId" element={<SocialPayPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

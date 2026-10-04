@@ -45,6 +45,7 @@ export function BookingsSection() {
         if (active) {
           setData(next);
           setError(null);
+          void dispatch(loadCurrentUser());
         }
       })
       .catch(() => {
@@ -59,7 +60,7 @@ export function BookingsSection() {
     return () => {
       active = false;
     };
-  }, [tab, page, attempt]);
+  }, [tab, page, attempt, dispatch]);
 
   async function onCancel(id: string) {
     setPendingId(id);

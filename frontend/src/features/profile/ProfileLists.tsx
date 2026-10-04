@@ -4,10 +4,11 @@ import type { AppDispatch, RootState } from "../../app/store";
 import { Button, Skeleton } from "../../components/ui";
 import { EmptyState, ErrorState, formatVenueDateTime, formatVenueRange } from "../../components/format";
 import { externalLogins, type ExternalLogin } from "../auth/authApi";
-import { fetchSessions, logoutOthers, revokeSession } from "../auth/authSlice";
+import { fetchSessions, loadCurrentUser, logoutOthers, revokeSession } from "../auth/authSlice";
 import { myPayments, myRewards, type Page, type PaymentRow, type RewardRow } from "./profileApi";
 
 export function RewardsSection() {
+  const dispatch = useDispatch<AppDispatch>();
   const [page, setPage] = useState(1);
   const [data, setData] = useState<(Page<RewardRow> & { balance: number }) | null>(null);
   const [loading, setLoading] = useState(true);
@@ -23,6 +24,7 @@ export function RewardsSection() {
         if (active) {
           setData(next);
           setError(null);
+          void dispatch(loadCurrentUser());
         }
       })
       .catch(() => {
@@ -37,7 +39,7 @@ export function RewardsSection() {
     return () => {
       active = false;
     };
-  }, [page, attempt]);
+  }, [page, attempt, dispatch]);
 
   return (
     <div>
@@ -48,7 +50,7 @@ export function RewardsSection() {
         <div className="mt-4" aria-busy="true"><span className="sr-only">Loading rewards</span><Skeleton className="h-24" /></div>
       ) : data ? (
         <>
-          <p className="mt-2 text-lg font-semibold text-line">{data.balance} points</p>
+          <p className="mt-2 text-lg font-semibold text-line">Balance: {data.balance} points</p>
           {data.items.length === 0 ? (
             <div className="mt-4"><EmptyState title="No points yet" body="Points appear here after a session with an active incentive ends." /></div>
           ) : (

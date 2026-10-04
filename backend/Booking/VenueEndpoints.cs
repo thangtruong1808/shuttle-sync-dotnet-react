@@ -14,6 +14,8 @@ public static class VenueEndpoints
         venues.MapGet("/{slug}/promotions", PromotionsAsync);
         venues.MapGet("/{slug}/slots/{sessionId:guid}", SlotAsync);
         venues.MapPost("/{slug}/sessions", OpenSessionAsync).RequireAuthorization();
+        venues.MapGet("/{slug}/socials", ListSocialsAsync);
+        venues.MapPost("/{slug}/socials/checkout", CheckoutSocialsAsync).RequireAuthorization();
         venues.MapGet("/{slug}/socials/{socialId:guid}", SocialOfferAsync);
         venues.MapPost("/{slug}/socials/{socialId:guid}/checkout", CheckoutSocialAsync).RequireAuthorization();
         venues.MapGet("/{slug}/socials/registrations/{registrationId:guid}", SocialRegistrationAsync).RequireAuthorization();
@@ -293,6 +295,108 @@ public static class VenueEndpoints
         return Results.Ok(new { sessionId = opened.SessionId, price = opened.Price, currency = venue.Currency });
     }
 
+    private static async Task<IResult> ListSocialsAsync(
+        string slug,
+        HttpContext http,
+        BookingRepository repository,
+        AuthRepository auth,
+        CancellationToken cancellationToken)
+    {
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Results.NotFound();
+        }
+
+        await repository.ExpirePublicSocialHoldsAsync(cancellationToken);
+        await repository.AwardEndedSocialIncentivesAsync(cancellationToken);
+        var socials = await repository.ListOpenSocialsAsync(venue.Id, cancellationToken);
+        var socialIds = socials.Select(social => social.Id).ToArray();
+        var seats = await repository.ListPublicSocialSeatsAsync(socialIds, cancellationToken);
+        var courts = await repository.ListPublicCourtsAsync(venue.Id, cancellationToken);
+        var capacity = courts.Length * BookingRepository.PublicSocialCapacity;
+        var session = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
+        var mine = session is null
+            ? []
+            : await repository.ListMySocialStatesAsync(session.UserId, socialIds, cancellationToken);
+        var mineStatus = mine.ToDictionary(row => row.SocialId, row => row.Status);
+        return Results.Ok(new
+        {
+            venue = VenueResponse(venue),
+            socials = socials.Select(social =>
+            {
+                mineStatus.TryGetValue(social.Id, out var yours);
+                var seat = session is null ? null : seats.FirstOrDefault(row => row.SocialId == social.Id && row.UserId == session.UserId);
+                var confirmed = yours == "confirmed";
+                return new
+                {
+                    id = social.Id,
+                    startTime = VenueClock.AsUtc(social.StartTime),
+                    endTime = VenueClock.AsUtc(social.EndTime),
+                    playerCount = social.PlayerCount,
+                    price = decimal.Round(social.Price, 2, MidpointRounding.AwayFromZero),
+                    repeatWeekly = social.RepeatWeekly,
+                    yourStatus = yours,
+                    yourCourtName = confirmed ? seat?.CourtName : null,
+                    yourCourtNumber = confirmed ? seat?.CourtNumber : null,
+                    full = capacity == 0 || social.PlayerCount >= capacity,
+                };
+            }),
+        });
+    }
+
+    private static async Task<IResult> CheckoutSocialsAsync(
+        string slug,
+        SocialBatchBody body,
+        HttpContext http,
+        BookingRepository repository,
+        AuthRepository auth,
+        BookingPayments payments,
+        AuthSettings authSettings,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
+        if (current is null)
+        {
+            return Form("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Form("That venue was not found.", StatusCodes.Status404NotFound);
+        }
+
+        var ids = body.SocialIds ?? [];
+        var origin = authSettings.FrontendOrigin.TrimEnd('/');
+        var joined = string.Join(",", ids);
+        var successUrl = $"{origin}/{slug}/social/checkout?ids={Uri.EscapeDataString(joined)}&checkout=success";
+        var cancelUrl = $"{origin}/{slug}/social/checkout?ids={Uri.EscapeDataString(joined)}&checkout=cancel";
+        var result = await payments.SocialBatchCheckoutAsync(venue.Id, ids, current.UserId, venue.Currency, body.Points, body.PromotionCode, successUrl, cancelUrl, cancellationToken);
+        if (result.Error is not null)
+        {
+            return Form(result.Error, result.StatusCode);
+        }
+
+        return Results.Ok(new
+        {
+            registrationId = result.RegistrationId,
+            status = result.Status,
+            checkoutUrl = result.CheckoutUrl,
+            amount = result.Amount,
+            currency = result.Currency,
+            courtName = result.CourtName,
+            courtNumber = result.CourtNumber,
+            alreadyJoined = result.AlreadyJoined,
+            subtotal = result.Subtotal,
+            discountAmount = result.DiscountAmount,
+            pointsRedeemed = result.PointsRedeemed,
+            pointsValue = result.PointsValue,
+            cashAmount = result.Amount,
+            incentivePoints = result.IncentivePoints,
+        });
+    }
+
     private static async Task<IResult> SocialOfferAsync(
         string slug,
         Guid socialId,
@@ -481,6 +585,8 @@ public static class VenueEndpoints
     private sealed record OpenSessionBody(Guid CourtId, string? Date, string? Start, string? End);
 
     private sealed record SocialCheckoutBody(int Points, string? PromotionCode = null);
+
+    private sealed record SocialBatchBody(Guid[]? SocialIds, int Points, string? PromotionCode = null);
 
     private sealed record SocialCourt(Guid CourtId, int Players);
 

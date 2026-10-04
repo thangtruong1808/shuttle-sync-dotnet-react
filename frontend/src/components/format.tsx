@@ -34,6 +34,15 @@ export function formatVenueRange(start: string, end: string, timeZone: string): 
   return `${time.format(new Date(start))} – ${time.format(new Date(end))}`;
 }
 
+export function formatVenueDay(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-AU", {
+    timeZone: timeZone || "Australia/Melbourne",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(new Date(value));
+}
+
 export function formatVenueDateTime(value: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-AU", {
     timeZone: timeZone || "Australia/Melbourne",

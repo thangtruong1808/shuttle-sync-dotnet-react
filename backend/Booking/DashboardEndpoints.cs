@@ -200,20 +200,31 @@ public static class DashboardEndpoints
         return error is null ? Results.NoContent() : Form(error);
     }
 
-    private static async Task<IResult> ListSocialsAsync(Guid venueId, string? date, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> ListSocialsAsync(Guid venueId, string? date, bool upcoming, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken)
     {
         var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
         if (gate.Error is not null) return gate.Error;
         var venue = await repo.FindVenueAsync(venueId, cancellationToken);
         if (venue is null) return Missing();
-        if (!VenueClock.TryGetDayWindow(venue.TimeZone, date, null, null, out var window, out var error)) return Form(error);
-        var rows = await repo.ListSocialsAsync(venueId, window.StartUtc, window.EndUtc, cancellationToken);
+        await bookings.RollWeeklySocialsAsync(cancellationToken);
+        DashSocialRow[] rows;
+        if (upcoming)
+        {
+            rows = await repo.ListUpcomingSocialsAsync(venueId, cancellationToken);
+        }
+        else
+        {
+            if (!VenueClock.TryGetDayWindow(venue.TimeZone, date, null, null, out var window, out var error)) return Form(error);
+            rows = await repo.ListSocialsAsync(venueId, window.StartUtc, window.EndUtc, cancellationToken);
+        }
+
         return Results.Ok(rows.Select(row => new
         {
             id = row.Id,
             startTime = VenueClock.AsUtc(row.StartTime),
             endTime = VenueClock.AsUtc(row.EndTime),
             price = row.Price,
+            repeatWeekly = row.RepeatWeekly,
             playerCount = row.PlayerCount,
             timeZone = venue.TimeZone,
         }));
@@ -227,7 +238,7 @@ public static class DashboardEndpoints
         if (venue is null) return Missing();
         if (body.Price <= 0) return Form("Enter a session price greater than 0.");
         if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var error)) return Form(error);
-        error = await repo.CreateSocialAsync(venueId, window.StartUtc, window.EndUtc, body.Price, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
+        error = await repo.CreateSocialAsync(venueId, window.StartUtc, window.EndUtc, body.Price, body.RepeatWeekly, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
     }
 
@@ -239,7 +250,7 @@ public static class DashboardEndpoints
         if (venue is null) return Missing();
         if (body.Price <= 0) return Form("Enter a session price greater than 0.");
         if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var error)) return Form(error);
-        error = await repo.UpdateSocialAsync(venueId, socialId, window.StartUtc, window.EndUtc, body.Price, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
+        error = await repo.UpdateSocialAsync(venueId, socialId, window.StartUtc, window.EndUtc, body.Price, body.RepeatWeekly, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
     }
 
@@ -629,6 +640,7 @@ public static class DashboardEndpoints
             awardedAt = Utc(row.AwardedAt),
             startTime = Utc(row.StartTime),
             endTime = Utc(row.EndTime),
+            source = row.Source,
         }));
     }
 
@@ -907,7 +919,7 @@ public static class DashboardEndpoints
 
     private sealed record SessionBody(Guid CourtId, string? Date, string? Start, string? End, decimal Price, string? Until);
 
-    private sealed record SocialBody(string? Date, string? Start, string? End, decimal Price);
+    private sealed record SocialBody(string? Date, string? Start, string? End, decimal Price, bool RepeatWeekly = false);
 
     private sealed record SessionEditBody(Guid CourtId, string? Date, string? Start, string? End, decimal Price);
 

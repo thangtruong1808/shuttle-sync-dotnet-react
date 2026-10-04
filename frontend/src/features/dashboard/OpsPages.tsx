@@ -359,7 +359,7 @@ export function RewardsPage() {
       {tab === "awards" ? (
         <Shell key={applied} title="Reward awards" refreshKey={applied} load={(page) => listAwards(applied, page)} render={(row: DashAward) => (
           <li key={row.id} className="rounded-2xl border border-white/10 p-3 text-sm text-mist">
-            {row.userEmail} · {row.venueName} · {row.points} pts · {formatVenueRange(row.startTime, row.endTime, row.timeZone)}
+            {row.userEmail} · {row.venueName} · {row.source || "Court booking"} · +{row.points} pts · {formatVenueRange(row.startTime, row.endTime, row.timeZone)}
           </li>
         )} />
       ) : (

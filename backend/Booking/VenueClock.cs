@@ -58,6 +58,35 @@ public static class VenueClock
     public static DateTimeOffset AsUtc(DateTime value) =>
         new(DateTime.SpecifyKind(value, DateTimeKind.Utc));
 
+    public static bool TryShiftDays(string timeZoneId, DateTime startUtc, DateTime endUtc, int days, out DateTime nextStartUtc, out DateTime nextEndUtc)
+    {
+        nextStartUtc = default;
+        nextEndUtc = default;
+        TimeZoneInfo zone;
+        try
+        {
+            zone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return false;
+        }
+
+        try
+        {
+            var startLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(startUtc, DateTimeKind.Utc), zone);
+            var endLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(endUtc, DateTimeKind.Utc), zone);
+            nextStartUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(startLocal.AddDays(days), DateTimeKind.Unspecified), zone);
+            nextEndUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(endLocal.AddDays(days), DateTimeKind.Unspecified), zone);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        return nextEndUtc > nextStartUtc;
+    }
+
     private static bool TryParseClock(string? value, out TimeOnly? clock, out string error)
     {
         clock = null;

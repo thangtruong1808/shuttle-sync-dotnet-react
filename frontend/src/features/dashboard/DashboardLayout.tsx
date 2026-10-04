@@ -84,13 +84,17 @@ export default function DashboardLayout() {
           <span className="sr-only">{open ? "Close sidebar" : "Open sidebar"}</span>
         </button>
         <p className="font-display text-lg text-white">Dashboard</p>
-        <p className="ml-auto truncate text-sm text-mist/70">{user.email}</p>
+        <p className="ml-auto flex items-center gap-3 truncate text-sm text-mist/70">
+          <span className="rounded-full bg-line/15 px-2 py-0.5 text-xs font-semibold text-line">{user.rewardPoints} pts</span>
+          <span className="truncate">{user.email}</span>
+        </p>
       </header>
       <div className="flex min-h-0 flex-1">
         <aside
           id="dashboard-nav"
           className={`${open ? "fixed bottom-0 top-14 z-30 flex w-64 flex-col border-r border-white/10 bg-pine lg:sticky lg:bottom-auto lg:top-14 lg:h-[calc(100vh-3.5rem)]" : "hidden"}`}
         >
+          <p className="px-3 pt-4 text-sm font-semibold text-line">{user.rewardPoints} reward points</p>
           <nav className="flex flex-1 flex-col gap-1 overflow-auto px-3 py-4" aria-label="Dashboard">
             {links
               .filter((link) => !link.admin || user.role === "admin")

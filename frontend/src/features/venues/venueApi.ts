@@ -61,6 +61,8 @@ export type PublicSocial = {
   yourStatus?: string | null;
   yourCourtName: string | null;
   yourCourtNumber: number | null;
+  repeatWeekly?: boolean;
+  full?: boolean;
 };
 
 export type AvailableCourt = {
@@ -181,8 +183,20 @@ export type SocialOffer = {
   incentivePoints: number;
 };
 
+export function openSocials(slug: string): Promise<{ venue: Venue; socials: PublicSocial[] }> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/socials`, "no-store");
+}
+
 export function socialOffer(slug: string, socialId: string): Promise<SocialOffer> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/socials/${socialId}`, "no-store");
+}
+
+export function startSocialBatchCheckout(slug: string, socialIds: string[], points: number, promotionCode: string): Promise<SocialCheckout> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/socials/checkout`, "no-store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ socialIds, points, promotionCode: promotionCode || null }),
+  });
 }
 
 export function startSocialCheckout(slug: string, socialId: string, points: number, promotionCode: string): Promise<SocialCheckout> {

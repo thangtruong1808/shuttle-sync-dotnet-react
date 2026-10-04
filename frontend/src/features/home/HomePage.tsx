@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
+import type { AppDispatch } from "../../app/store";
 import { Mic, SlidersHorizontal, Tag, X } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { Button, PickerInput, Skeleton } from "../../components/ui";
@@ -8,11 +9,13 @@ import { CourtImage, EmptyState, ErrorState, Money, addDays, formatVenueRange, v
 import { DayChart, SessionClock, SocialTimes, upcomingBookings, useNow } from "../courts/CourtSchedule";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
 import { apiFetch, AuthRequestError } from "../auth/authApi";
+import { loadCurrentUser } from "../auth/authSlice";
 import { rememberVenueSlug, venueAvailability, venuePromotions, type Availability, type Promotion } from "../venues/venueApi";
 
 export default function HomePage() {
   const { slug = "" } = useParams();
   const { venues, error: venueError, reload } = useVenues();
+  const dispatch = useDispatch<AppDispatch>();
   const user = useSelector((state: RootState) => state.auth.user);
   const status = useSelector((state: RootState) => state.auth.status);
   const venue = venues?.find((item) => item.slug === slug) ?? null;
@@ -49,6 +52,7 @@ export default function HomePage() {
         if (!controller.signal.aborted) {
           setAvailability(nextAvailability);
           setPromotions(nextPromotions);
+          if (status === "authenticated") void dispatch(loadCurrentUser());
         }
       })
       .catch(() => {
@@ -64,7 +68,7 @@ export default function HomePage() {
         }
       });
     return () => controller.abort();
-  }, [slug, applied, attempt]);
+  }, [slug, applied, attempt, status, dispatch]);
 
   function onFilter(event: FormEvent) {
     event.preventDefault();
@@ -169,7 +173,7 @@ export default function HomePage() {
             <div className="mt-4"><ErrorState message={error} loading={retrying} onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }} /></div>
           ) : availability && availability.courts.length > 0 ? (
             <>
-              <DayChart schedule={availability} now={now} compact />
+              <DayChart schedule={availability} now={now} compact collapsible />
               <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {availability.courts.map((court) => {
                   const bookings = upcomingBookings(court.bookings, now);
