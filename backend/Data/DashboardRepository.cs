@@ -38,7 +38,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
                 """
                 SELECT Id, Name, Slug, Description, Address, Suburb, State, Postcode, Country,
                        Latitude, Longitude, Phone, Email, ImageUrl, TimeZone, Currency,
-                       LateCancelFeePercent, PointsPerDollar, HourlyRate, IsActive
+                       LateCancelFeePercent, PointsPerDollar, HourlyRate, SocialPrice, IsActive
                 FROM Venues
                 WHERE Id = @Id AND IsDeleted = 0
                 """,
@@ -58,12 +58,12 @@ public sealed class DashboardRepository(IConfiguration configuration)
                 INSERT INTO Venues
                     (Id, Name, Slug, Description, Address, Suburb, State, Postcode, Country,
                      Latitude, Longitude, Phone, Email, ImageUrl, TimeZone, Currency,
-                     LateCancelFeePercent, PointsPerDollar, HourlyRate, IsActive,
+                     LateCancelFeePercent, PointsPerDollar, HourlyRate, SocialPrice, IsActive,
                      IsDeleted, CreatedAt, UpdatedAt)
                 VALUES
                     (@Id, @Name, @Slug, @Description, @Address, @Suburb, @State, @Postcode, @Country,
                      @Latitude, @Longitude, @Phone, @Email, @ImageUrl, @TimeZone, @Currency,
-                     @LateCancelFeePercent, @PointsPerDollar, @HourlyRate, @IsActive,
+                     @LateCancelFeePercent, @PointsPerDollar, @HourlyRate, @SocialPrice, @IsActive,
                      0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
                 """,
                 write with { Id = id }, tx, cancellationToken: cancellationToken));
@@ -90,7 +90,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
                   Latitude = @Latitude, Longitude = @Longitude, Phone = @Phone, Email = @Email,
                   ImageUrl = @ImageUrl, TimeZone = @TimeZone, Currency = @Currency,
                   LateCancelFeePercent = @LateCancelFeePercent, PointsPerDollar = @PointsPerDollar,
-                  HourlyRate = @HourlyRate,
+                  HourlyRate = @HourlyRate, SocialPrice = @SocialPrice,
                   IsActive = @IsActive,
                   UpdatedAt = UTC_TIMESTAMP(6)
               WHERE Id = @Id AND IsDeleted = 0
@@ -307,6 +307,146 @@ public sealed class DashboardRepository(IConfiguration configuration)
             await AuditAsync(connection, tx, actorId, venueId, "create", "CourtSession", id, slot, ip, cancellationToken);
         }
 
+        await tx.CommitAsync(cancellationToken);
+        return null;
+    }
+
+    public async Task<DashSocialRow[]> ListSocialsAsync(Guid venueId, DateTime startUtc, DateTime endUtc, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<DashSocialRow>(new CommandDefinition(
+            """
+            SELECT s.Id, s.StartTime, s.EndTime, s.Price, COUNT(r.Id) AS PlayerCount
+            FROM PublicSocials s
+            LEFT JOIN PublicSocialRegistrations r ON r.SocialId = s.Id AND r.Status = 'confirmed'
+            WHERE s.VenueId = @VenueId AND s.IsDeleted = 0
+              AND s.StartTime < @EndUtc AND s.EndTime > @StartUtc
+            GROUP BY s.Id, s.StartTime, s.EndTime, s.Price
+            ORDER BY s.StartTime
+            """,
+            new { VenueId = venueId, StartUtc = startUtc, EndUtc = endUtc },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
+    public async Task<string?> CreateSocialAsync(Guid venueId, DateTime start, DateTime end, decimal price, Guid actorId, string? ip, CancellationToken cancellationToken)
+    {
+        if (end <= start)
+        {
+            return "The end time must be later than the start time.";
+        }
+
+        if (end - start < TimeSpan.FromMinutes(30))
+        {
+            return "Choose at least 30 minutes.";
+        }
+
+        if (end <= DateTime.UtcNow)
+        {
+            return "Choose a time that has not ended.";
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        var overlap = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT COUNT(*) FROM PublicSocials
+            WHERE VenueId = @VenueId AND IsDeleted = 0
+              AND StartTime < @EndTime AND EndTime > @StartTime
+            """,
+            new { VenueId = venueId, StartTime = start, EndTime = end },
+            tx,
+            cancellationToken: cancellationToken));
+        if (overlap > 0)
+        {
+            return "That time already has a drop-in social.";
+        }
+
+        var id = Guid.NewGuid();
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO PublicSocials (Id, VenueId, StartTime, EndTime, Price, IsDeleted, CreatedAt, UpdatedAt)
+            VALUES (@Id, @VenueId, @StartTime, @EndTime, @Price, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            """,
+            new { Id = id, VenueId = venueId, StartTime = start, EndTime = end, Price = price },
+            tx,
+            cancellationToken: cancellationToken));
+        await AuditAsync(connection, tx, actorId, venueId, "create", "PublicSocial", id, new { start, end, price }, ip, cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return null;
+    }
+
+    public async Task<string?> UpdateSocialAsync(Guid venueId, Guid socialId, DateTime start, DateTime end, decimal price, Guid actorId, string? ip, CancellationToken cancellationToken)
+    {
+        if (end <= start)
+        {
+            return "The end time must be later than the start time.";
+        }
+
+        if (end - start < TimeSpan.FromMinutes(30))
+        {
+            return "Choose at least 30 minutes.";
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        var exists = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(*) FROM PublicSocials WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0 FOR UPDATE",
+            new { Id = socialId, VenueId = venueId },
+            tx,
+            cancellationToken: cancellationToken));
+        if (exists == 0)
+        {
+            return "That drop-in social was not found.";
+        }
+
+        var overlap = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT COUNT(*) FROM PublicSocials
+            WHERE VenueId = @VenueId AND IsDeleted = 0 AND Id <> @Id
+              AND StartTime < @EndTime AND EndTime > @StartTime
+            """,
+            new { VenueId = venueId, Id = socialId, StartTime = start, EndTime = end },
+            tx,
+            cancellationToken: cancellationToken));
+        if (overlap > 0)
+        {
+            return "That time already has a drop-in social.";
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE PublicSocials
+            SET StartTime = @StartTime, EndTime = @EndTime, Price = @Price, UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0
+            """,
+            new { Id = socialId, VenueId = venueId, StartTime = start, EndTime = end, Price = price },
+            tx,
+            cancellationToken: cancellationToken));
+        await AuditAsync(connection, tx, actorId, venueId, "update", "PublicSocial", socialId, new { start, end, price }, ip, cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return null;
+    }
+
+    public async Task<string?> DeleteSocialAsync(Guid venueId, Guid socialId, Guid actorId, string? ip, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        var changed = await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE PublicSocials
+            SET IsDeleted = 1, UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0
+            """,
+            new { Id = socialId, VenueId = venueId },
+            tx,
+            cancellationToken: cancellationToken));
+        if (changed == 0)
+        {
+            return "That drop-in social was not found.";
+        }
+
+        await AuditAsync(connection, tx, actorId, venueId, "delete", "PublicSocial", socialId, new { socialId }, ip, cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return null;
     }
@@ -1065,24 +1205,34 @@ public sealed class DashboardRepository(IConfiguration configuration)
         var venueClause = admin
             ? "(@VenueId IS NULL OR b.VenueId = @VenueId)"
             : "b.VenueId IN @Allowed AND (@VenueId IS NULL OR b.VenueId = @VenueId)";
-        await using var connection = await OpenAsync(cancellationToken);
-        var total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
-            $"""
-            SELECT COUNT(*) FROM Refunds r
-            JOIN Payments p ON p.Id = r.PaymentId
-            JOIN Bookings b ON b.Id = p.BookingId
-            WHERE {venueClause}
-            """,
-            new { VenueId = venueId, Allowed = allowed }, cancellationToken: cancellationToken));
-        var rows = await connection.QueryAsync<DashPaymentRow>(new CommandDefinition(
-            $"""
+        var socialVenueClause = admin
+            ? "(@VenueId IS NULL OR reg.VenueId = @VenueId)"
+            : "reg.VenueId IN @Allowed AND (@VenueId IS NULL OR reg.VenueId = @VenueId)";
+        const string listed = """
             SELECT r.Id, 'refund' AS Kind, v.Name AS VenueName, r.Amount, p.Currency, r.Status, r.CreatedAt AS OccurredAt
             FROM Refunds r
             JOIN Payments p ON p.Id = r.PaymentId
             JOIN Bookings b ON b.Id = p.BookingId
             JOIN Venues v ON v.Id = b.VenueId
-            WHERE {venueClause}
-            ORDER BY r.CreatedAt DESC
+            WHERE {0}
+            UNION ALL
+            SELECT sr.Id, 'refund', v.Name, sr.Amount, p.Currency, sr.Status, sr.CreatedAt
+            FROM PublicSocialRefunds sr
+            JOIN PublicSocialPayments p ON p.Id = sr.PaymentId
+            JOIN PublicSocialRegistrations reg ON reg.Id = p.RegistrationId
+            JOIN Venues v ON v.Id = reg.VenueId
+            WHERE {1}
+            """;
+        var combined = string.Format(listed, venueClause, socialVenueClause);
+        await using var connection = await OpenAsync(cancellationToken);
+        var total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            $"SELECT COUNT(*) FROM ({combined}) entries",
+            new { VenueId = venueId, Allowed = allowed }, cancellationToken: cancellationToken));
+        var rows = await connection.QueryAsync<DashPaymentRow>(new CommandDefinition(
+            $"""
+            SELECT Id, Kind, VenueName, Amount, Currency, Status, OccurredAt
+            FROM ({combined}) entries
+            ORDER BY OccurredAt DESC
             LIMIT @Take OFFSET @Skip
             """,
             new { VenueId = venueId, Allowed = allowed, Take = size, Skip = skip }, cancellationToken: cancellationToken));
@@ -1471,6 +1621,7 @@ public sealed record DashVenueWrite(
     decimal LateCancelFeePercent,
     int PointsPerDollar,
     decimal HourlyRate,
+    decimal SocialPrice,
     bool IsActive);
 
 public sealed class DashVenueRow
@@ -1494,6 +1645,7 @@ public sealed class DashVenueRow
     public decimal LateCancelFeePercent { get; init; }
     public int PointsPerDollar { get; init; } = 100;
     public decimal HourlyRate { get; init; }
+    public decimal SocialPrice { get; init; }
     public bool IsActive { get; init; }
 }
 
@@ -1680,6 +1832,15 @@ public sealed class BookingHead
 {
     public Guid VenueId { get; init; }
     public string Status { get; init; } = "";
+}
+
+public sealed class DashSocialRow
+{
+    public Guid Id { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public decimal Price { get; init; }
+    public int PlayerCount { get; init; }
 }
 
 public sealed class DashAuditRow

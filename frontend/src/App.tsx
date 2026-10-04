@@ -7,6 +7,9 @@ import { EmptyState, ErrorState } from "./components/format";
 import { Skeleton } from "./components/ui";
 import AuthPanel from "./features/auth/AuthPanel";
 import BookingStubPage from "./features/booking/BookingStubPage";
+import BookCourtPage from "./features/booking/BookCourtPage";
+import SocialPage from "./features/booking/SocialPage";
+import SocialPayPage from "./features/booking/SocialPayPage";
 import CourtsPage from "./features/courts/CourtsPage";
 import DashboardLayout from "./features/dashboard/DashboardLayout";
 import DashboardPage from "./features/dashboard/DashboardPage";
@@ -122,7 +125,10 @@ export default function App() {
           </Route>
           <Route path="/:slug" element={<HomePage />} />
           <Route path="/:slug/courts" element={<CourtsPage />} />
+          <Route path="/:slug/book" element={<BookCourtPage />} />
           <Route path="/:slug/book/:sessionId" element={<BookingStubPage />} />
+          <Route path="/:slug/social" element={<SocialPage />} />
+          <Route path="/:slug/social/:socialId" element={<SocialPayPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

@@ -29,6 +29,7 @@ export type DashVenue = {
   lateCancelFeePercent: number;
   pointsPerDollar: number;
   hourlyRate: number;
+  socialPrice: number;
   isActive: boolean;
 };
 
@@ -40,6 +41,15 @@ export type DashCourt = {
   surfaceType: string | null;
   imageUrl: string | null;
   isActive: boolean;
+};
+
+export type DashSocial = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  price: number;
+  playerCount: number;
+  timeZone: string;
 };
 
 export type DashSession = {
@@ -213,6 +223,22 @@ export function saveCourt(venueId: string, body: Omit<DashCourt, "id">, id?: str
 
 export function deleteCourt(venueId: string, courtId: string): Promise<void> {
   return send(`/api/dashboard/venues/${venueId}/courts/${courtId}`, "DELETE");
+}
+
+export function listSocials(venueId: string, date: string): Promise<DashSocial[]> {
+  return read(`/api/dashboard/venues/${venueId}/socials?date=${encodeURIComponent(date)}`);
+}
+
+export function createSocial(venueId: string, body: { date: string; start: string; end: string; price: number }): Promise<void> {
+  return send(`/api/dashboard/venues/${venueId}/socials`, "POST", body);
+}
+
+export function updateSocial(venueId: string, socialId: string, body: { date: string; start: string; end: string; price: number }): Promise<void> {
+  return send(`/api/dashboard/venues/${venueId}/socials/${socialId}`, "PUT", body);
+}
+
+export function deleteSocial(venueId: string, socialId: string): Promise<void> {
+  return send(`/api/dashboard/venues/${venueId}/socials/${socialId}`, "DELETE");
 }
 
 export function listSessions(venueId: string, date: string): Promise<DashSession[]> {

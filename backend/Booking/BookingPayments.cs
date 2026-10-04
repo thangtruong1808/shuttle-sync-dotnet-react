@@ -7,7 +7,8 @@ namespace ShuttleSync.Api.Booking;
 public sealed class BookingPayments(
     StripeSettings settings,
     PaymentRepository payments,
-    DashboardRepository dashboard)
+    DashboardRepository dashboard,
+    BookingRepository bookings)
 {
     public async Task<CheckoutResponse> CheckoutAsync(
         Guid venueId,
@@ -125,6 +126,41 @@ public sealed class BookingPayments(
         }
 
         return CheckoutResponse.From(prepared, session.Url);
+    }
+
+    public async Task SyncSocialAsync(Guid userId, Guid registrationId, CancellationToken cancellationToken)
+    {
+        if (!settings.IsConfigured)
+        {
+            return;
+        }
+
+        var row = await bookings.FindOwnedSocialAsync(userId, registrationId, cancellationToken);
+        if (row is not { Status: "pending" } || string.IsNullOrWhiteSpace(row.StripePaymentIntentId))
+        {
+            return;
+        }
+
+        StripeConfiguration.ApiKey = settings.SecretKey;
+        var intentId = row.StripePaymentIntentId;
+        if (intentId.StartsWith("cs_", StringComparison.Ordinal))
+        {
+            var checkout = await new SessionService().GetAsync(intentId, cancellationToken: cancellationToken);
+            if (string.IsNullOrWhiteSpace(checkout.PaymentIntentId))
+            {
+                return;
+            }
+
+            if (!await bookings.BindSocialPaymentIntentAsync(registrationId, checkout.PaymentIntentId, cancellationToken))
+            {
+                return;
+            }
+
+            intentId = checkout.PaymentIntentId;
+        }
+
+        var intent = await new PaymentIntentService().GetAsync(intentId, cancellationToken: cancellationToken);
+        await ApplySocialIntentAsync(intent, cancellationToken);
     }
 
     public async Task SyncAsync(Guid userId, Guid bookingId, CancellationToken cancellationToken)
@@ -288,6 +324,13 @@ public sealed class BookingPayments(
             }
             else if (intent is not null)
             {
+                if (IsSocial(intent.Metadata))
+                {
+                    await ApplySocialIntentAsync(intent, cancellationToken);
+                    await payments.FinishWebhookAsync(stripeEvent.Id, "processed", null, cancellationToken);
+                    return Results.Ok();
+                }
+
                 var waitingForRow = stripeEvent.Type is "payment_intent.succeeded" or "payment_intent.processing" or "payment_intent.payment_failed" or "payment_intent.canceled";
                 if (waitingForRow && !await EnsurePaymentLinkedAsync(intent, cancellationToken))
                 {
@@ -530,6 +573,11 @@ public sealed class BookingPayments(
 
     private async Task<bool> ApplyCheckoutSessionAsync(string eventType, Session session, CancellationToken cancellationToken)
     {
+        if (IsSocial(session.Metadata) || await bookings.SocialPaymentExistsAsync(session.Id, cancellationToken))
+        {
+            return await ApplySocialCheckoutAsync(eventType, session, cancellationToken);
+        }
+
         if (eventType == "checkout.session.expired")
         {
             await payments.FailPendingAsync(session.Id, "cancelled", "expired", "The payment page expired.", cancellationToken);
@@ -629,6 +677,399 @@ public sealed class BookingPayments(
         _ => "pending",
     };
 
+    public async Task<SocialCheckoutResponse> SocialCheckoutAsync(
+        Guid venueId,
+        Guid socialId,
+        Guid userId,
+        string currency,
+        int requestedPoints,
+        string? promotionCode,
+        string successUrl,
+        string cancelUrl,
+        CancellationToken cancellationToken)
+    {
+        if (settings.IsConfigured)
+        {
+            StripeConfiguration.ApiKey = settings.SecretKey;
+        }
+
+        await bookings.ExpirePublicSocialHoldsAsync(cancellationToken);
+        var hold = await bookings.BeginPublicSocialCheckoutAsync(venueId, socialId, userId, currency, requestedPoints, promotionCode, cancellationToken);
+        if (hold.Error is not null)
+        {
+            return SocialCheckoutResponse.Fail(hold.Error, hold.StatusCode);
+        }
+
+        if (hold.AlreadyJoined || !hold.NeedsPayment)
+        {
+            return SocialCheckoutResponse.From(hold, null);
+        }
+
+        if (hold.Amount > 0 && !settings.IsConfigured)
+        {
+            await bookings.ReleaseSocialHoldAsync(hold.RegistrationId, cancellationToken);
+            return SocialCheckoutResponse.Fail("Card payments are not configured yet.", StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var replacePayment = hold.Requoted;
+        if (hold.Requoted && !string.IsNullOrWhiteSpace(hold.ExistingIntentId))
+        {
+            await bookings.CancelSocialPaymentAsync(hold.ExistingIntentId, cancellationToken);
+            await CancelIntentsAsync([hold.ExistingIntentId], cancellationToken);
+        }
+
+        if (!hold.Requoted && !string.IsNullOrWhiteSpace(hold.ExistingIntentId))
+        {
+            var resumed = await ResumeSocialCheckoutAsync(hold, userId, cancellationToken);
+            if (resumed is not null)
+            {
+                return resumed;
+            }
+
+            replacePayment = true;
+        }
+
+        var customerId = await CustomerIdAsync(hold.StripeCustomerId, hold.Email, userId, cancellationToken);
+        Session session;
+        try
+        {
+            session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: true, replacePayment, cancellationToken);
+        }
+        catch (StripeException exception) when (MentionsPayTo(exception))
+        {
+            try
+            {
+                session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: false, replacePayment, cancellationToken);
+            }
+            catch (StripeException retry)
+            {
+                await bookings.ReleaseSocialHoldAsync(hold.RegistrationId, cancellationToken);
+                return SocialCheckoutResponse.Fail(retry.StripeError?.Message ?? "The payment could not be started.", StatusCodes.Status502BadGateway);
+            }
+        }
+        catch (StripeException exception)
+        {
+            await bookings.ReleaseSocialHoldAsync(hold.RegistrationId, cancellationToken);
+            return SocialCheckoutResponse.Fail(exception.StripeError?.Message ?? "The payment could not be started.", StatusCodes.Status502BadGateway);
+        }
+
+        if (string.IsNullOrWhiteSpace(session.Url))
+        {
+            await CancelIntentsAsync([session.Id], cancellationToken);
+            await bookings.ReleaseSocialHoldAsync(hold.RegistrationId, cancellationToken);
+            return SocialCheckoutResponse.Fail("The payment page could not be opened.", StatusCodes.Status502BadGateway);
+        }
+
+        try
+        {
+            await bookings.AttachSocialPaymentAsync(hold.RegistrationId, userId, customerId, session.Id, hold.Amount, hold.Currency, cancellationToken);
+        }
+        catch
+        {
+            await CancelIntentsAsync([session.Id], cancellationToken);
+            await bookings.ReleaseSocialHoldAsync(hold.RegistrationId, cancellationToken);
+            return SocialCheckoutResponse.Fail("The payment could not be started.", StatusCodes.Status502BadGateway);
+        }
+
+        return SocialCheckoutResponse.From(hold, session.Url);
+    }
+
+    public async Task<CancelResponse> CancelSocialAsync(Guid userId, Guid registrationId, CancellationToken cancellationToken)
+    {
+        var context = await bookings.LoadSocialCancelAsync(userId, registrationId, cancellationToken);
+        if (context is null)
+        {
+            return CancelResponse.Fail("That booking was not found.", StatusCodes.Status404NotFound);
+        }
+
+        if (context.Status is not ("pending" or "confirmed") || context.StartTime <= DateTime.UtcNow)
+        {
+            return CancelResponse.Fail("This booking can no longer be cancelled.", StatusCodes.Status409Conflict);
+        }
+
+        var late = DateTime.SpecifyKind(context.StartTime, DateTimeKind.Utc) <= DateTime.UtcNow.AddHours(24);
+        var fee = context.PaymentStatus == "succeeded" && late ? context.LateCancelFeePercent : 0m;
+        string? refundId = null;
+        var refundStatus = "succeeded";
+        decimal refundAmount = 0m;
+        if (context.PaymentStatus == "succeeded"
+            && context.PaymentAmount > 0
+            && !string.IsNullOrWhiteSpace(context.StripePaymentIntentId)
+            && !context.StripePaymentIntentId.StartsWith("cs_", StringComparison.Ordinal))
+        {
+            refundAmount = decimal.Round(context.PaymentAmount * (100m - fee) / 100m, 2, MidpointRounding.AwayFromZero);
+            if (refundAmount > context.PaymentAmount)
+            {
+                refundAmount = context.PaymentAmount;
+            }
+
+            if (refundAmount > 0)
+            {
+                if (!settings.IsConfigured)
+                {
+                    return CancelResponse.Fail("Card payments are not configured yet.", StatusCodes.Status503ServiceUnavailable);
+                }
+
+                StripeConfiguration.ApiKey = settings.SecretKey;
+                try
+                {
+                    var refund = await new RefundService().CreateAsync(
+                        new RefundCreateOptions
+                        {
+                            PaymentIntent = context.StripePaymentIntentId,
+                            Amount = Cents(refundAmount),
+                        },
+                        new RequestOptions { IdempotencyKey = "refund-social-" + registrationId.ToString("N") },
+                        cancellationToken);
+                    refundId = refund.Id;
+                    refundStatus = MapRefundStatus(refund.Status);
+                }
+                catch (StripeException exception)
+                {
+                    return CancelResponse.Fail(exception.StripeError?.Message ?? "The refund could not be started.", StatusCodes.Status502BadGateway);
+                }
+            }
+        }
+        else if (context.PaymentStatus == "pending" && !string.IsNullOrWhiteSpace(context.StripePaymentIntentId))
+        {
+            if (settings.IsConfigured)
+            {
+                StripeConfiguration.ApiKey = settings.SecretKey;
+                await CancelIntentsAsync([context.StripePaymentIntentId], cancellationToken);
+            }
+        }
+
+        string? paymentStatus = context.PaymentStatus switch
+        {
+            "succeeded" when refundAmount <= 0 => null,
+            "succeeded" when refundAmount >= context.PaymentAmount => "refunded",
+            "succeeded" => "partially_refunded",
+            "pending" => "cancelled",
+            _ => null,
+        };
+        var saved = await bookings.CompleteSocialCancelAsync(
+            new SocialCancelWrite(context.Id, userId, fee, context.PaymentId, paymentStatus, refundId, refundAmount, refundStatus),
+            cancellationToken);
+        if (!saved)
+        {
+            return CancelResponse.Fail("This booking can no longer be cancelled.", StatusCodes.Status409Conflict);
+        }
+
+        return new CancelResponse(StatusCodes.Status200OK, null, refundAmount, fee, 0, context.Currency);
+    }
+
+    private async Task<SocialCheckoutResponse?> ResumeSocialCheckoutAsync(
+        SocialCheckoutHold hold,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var intentId = hold.ExistingIntentId!;
+        if (intentId.StartsWith("cs_", StringComparison.Ordinal))
+        {
+            Session existing;
+            try
+            {
+                existing = await new SessionService().GetAsync(intentId, cancellationToken: cancellationToken);
+            }
+            catch (StripeException)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(existing.PaymentIntentId))
+            {
+                await bookings.BindSocialPaymentIntentAsync(hold.RegistrationId, existing.PaymentIntentId, cancellationToken);
+                var paid = await new PaymentIntentService().GetAsync(existing.PaymentIntentId, cancellationToken: cancellationToken);
+                await ApplySocialIntentAsync(paid, cancellationToken);
+                var current = await bookings.FindOwnedSocialAsync(userId, hold.RegistrationId, cancellationToken);
+                if (current is { Status: "confirmed" })
+                {
+                    return SocialCheckoutResponse.From(hold, null) with { Status = "confirmed", AlreadyJoined = true, CourtName = current.CourtName, CourtNumber = current.CourtNumber };
+                }
+
+                if (current is { Status: "expired" or "cancelled" })
+                {
+                    return SocialCheckoutResponse.Fail("The payment failed and the seat was released. Register again.", StatusCodes.Status409Conflict);
+                }
+            }
+
+            if (existing.Status == "open" && !string.IsNullOrWhiteSpace(existing.Url))
+            {
+                return SocialCheckoutResponse.From(hold, existing.Url);
+            }
+
+            await CancelIntentsAsync([existing.Id], cancellationToken);
+            return null;
+        }
+
+        var intent = await new PaymentIntentService().GetAsync(intentId, cancellationToken: cancellationToken);
+        await ApplySocialIntentAsync(intent, cancellationToken);
+        var owned = await bookings.FindOwnedSocialAsync(userId, hold.RegistrationId, cancellationToken);
+        if (owned is { Status: "confirmed" })
+        {
+            return SocialCheckoutResponse.From(hold, null) with { Status = "confirmed", AlreadyJoined = true, CourtName = owned.CourtName, CourtNumber = owned.CourtNumber };
+        }
+
+        if (intent.Status == "processing")
+        {
+            return SocialCheckoutResponse.From(hold, null);
+        }
+
+        await CancelIntentsAsync([intentId], cancellationToken);
+        return null;
+    }
+
+    private async Task<bool> ApplySocialCheckoutAsync(string eventType, Session session, CancellationToken cancellationToken)
+    {
+        if (eventType == "checkout.session.expired")
+        {
+            await bookings.FailSocialPendingAsync(session.Id, "cancelled", cancellationToken);
+            return true;
+        }
+
+        if (eventType is not ("checkout.session.completed" or "checkout.session.async_payment_succeeded" or "checkout.session.async_payment_failed"))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(session.PaymentIntentId))
+        {
+            return false;
+        }
+
+        var registrationRaw = session.ClientReferenceId;
+        if (string.IsNullOrWhiteSpace(registrationRaw) && session.Metadata is not null)
+        {
+            session.Metadata.TryGetValue("registrationId", out registrationRaw);
+        }
+
+        if (!Guid.TryParse(registrationRaw, out var registrationId)
+            || !await bookings.BindSocialPaymentIntentAsync(registrationId, session.PaymentIntentId, cancellationToken))
+        {
+            return false;
+        }
+
+        var intent = await new PaymentIntentService().GetAsync(session.PaymentIntentId, cancellationToken: cancellationToken);
+        if (eventType == "checkout.session.async_payment_failed")
+        {
+            await bookings.FailSocialPendingAsync(intent.Id, "failed", cancellationToken);
+            return true;
+        }
+
+        await ApplySocialIntentAsync(intent, cancellationToken);
+        return true;
+    }
+
+    private async Task ApplySocialIntentAsync(PaymentIntent intent, CancellationToken cancellationToken)
+    {
+        if (intent.Metadata is not null
+            && intent.Metadata.TryGetValue("registrationId", out var registrationRaw)
+            && Guid.TryParse(registrationRaw, out var registrationId))
+        {
+            await bookings.BindSocialPaymentIntentAsync(registrationId, intent.Id, cancellationToken);
+        }
+
+        switch (intent.Status)
+        {
+            case "succeeded":
+                var transition = await bookings.MarkSocialSucceededAsync(intent.Id, intent.LatestChargeId, cancellationToken);
+                if (transition is { Action: "refund", Amount: > 0 })
+                {
+                    var refund = await new RefundService().CreateAsync(
+                        new RefundCreateOptions { PaymentIntent = intent.Id, Amount = Cents(transition.Amount) },
+                        new RequestOptions { IdempotencyKey = "refund-social-late-" + transition.RegistrationId.ToString("N") },
+                        cancellationToken);
+                    await bookings.RecordSocialRefundAsync(intent.Id, refund.Id, transition.Amount, MapRefundStatus(refund.Status), cancellationToken);
+                }
+
+                return;
+            case "processing":
+                var type = await MethodTypeAsync(intent, cancellationToken);
+                var until = type switch
+                {
+                    "au_becs_debit" => DateTime.UtcNow.AddDays(5),
+                    "payto" => DateTime.UtcNow.AddMinutes(60),
+                    _ => (DateTime?)null,
+                };
+                if (until is not null)
+                {
+                    await bookings.ExtendSocialHoldAsync(intent.Id, until.Value, cancellationToken);
+                }
+
+                return;
+            case "canceled":
+                await bookings.FailSocialPendingAsync(intent.Id, "cancelled", cancellationToken);
+                return;
+        }
+    }
+
+    private static async Task<Session> CreateSocialSessionAsync(
+        SocialCheckoutHold hold,
+        string customerId,
+        string successUrl,
+        string cancelUrl,
+        bool includePayTo,
+        bool replacement,
+        CancellationToken cancellationToken)
+    {
+        var types = new List<string> { "card", "au_becs_debit" };
+        if (includePayTo)
+        {
+            types.Add("payto");
+        }
+
+        var key = "social-checkout-" + hold.RegistrationId.ToString("N");
+        if (!includePayTo)
+        {
+            key += "-card";
+        }
+
+        if (replacement)
+        {
+            key += "-" + Guid.NewGuid().ToString("N");
+        }
+
+        var metadata = new Dictionary<string, string>
+        {
+            ["kind"] = "social",
+            ["registrationId"] = hold.RegistrationId.ToString(),
+        };
+        return await new SessionService().CreateAsync(
+            new SessionCreateOptions
+            {
+                Mode = "payment",
+                Customer = customerId,
+                SuccessUrl = successUrl,
+                CancelUrl = cancelUrl,
+                PaymentMethodTypes = types,
+                ClientReferenceId = hold.RegistrationId.ToString(),
+                Metadata = metadata,
+                PaymentIntentData = new SessionPaymentIntentDataOptions
+                {
+                    ReceiptEmail = string.IsNullOrWhiteSpace(hold.Email) ? null : hold.Email,
+                    Metadata = metadata,
+                },
+                LineItems =
+                [
+                    new SessionLineItemOptions
+                    {
+                        Quantity = 1,
+                        PriceData = new SessionLineItemPriceDataOptions
+                        {
+                            Currency = hold.Currency.ToLowerInvariant(),
+                            UnitAmount = Cents(hold.Amount),
+                            ProductData = new SessionLineItemPriceDataProductDataOptions { Name = "Drop-in social" },
+                        },
+                    },
+                ],
+            },
+            new RequestOptions { IdempotencyKey = key },
+            cancellationToken);
+    }
+
+    private static bool IsSocial(IDictionary<string, string>? metadata) =>
+        metadata is not null && metadata.TryGetValue("kind", out var kind) && kind == "social";
+
     private static long Cents(decimal amount) =>
         (long)decimal.Round(amount * 100m, 0, MidpointRounding.AwayFromZero);
 }
@@ -663,4 +1104,28 @@ public sealed record CancelResponse(
 {
     public static CancelResponse Fail(string error, int statusCode) =>
         new(statusCode, error, 0, 0, 0, "AUD");
+}
+
+public sealed record SocialCheckoutResponse(
+    int StatusCode,
+    string? Error,
+    Guid RegistrationId,
+    string Status,
+    string? CheckoutUrl,
+    decimal Amount,
+    string Currency,
+    string CourtName,
+    int CourtNumber,
+    bool AlreadyJoined,
+    decimal Subtotal,
+    decimal DiscountAmount,
+    int PointsRedeemed,
+    decimal PointsValue,
+    int IncentivePoints)
+{
+    public static SocialCheckoutResponse Fail(string error, int statusCode) =>
+        new(statusCode, error, Guid.Empty, "", null, 0, "AUD", "", 0, false, 0, 0, 0, 0, 0);
+
+    public static SocialCheckoutResponse From(SocialCheckoutHold hold, string? checkoutUrl) =>
+        new(StatusCodes.Status200OK, null, hold.RegistrationId, hold.Status, checkoutUrl, hold.Amount, hold.Currency, hold.CourtName, hold.CourtNumber, hold.AlreadyJoined, hold.Subtotal, hold.DiscountAmount, hold.PointsRedeemed, hold.PointsValue, hold.IncentivePoints);
 }

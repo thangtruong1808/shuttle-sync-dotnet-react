@@ -14,6 +14,9 @@ public static class VenueEndpoints
         venues.MapGet("/{slug}/promotions", PromotionsAsync);
         venues.MapGet("/{slug}/slots/{sessionId:guid}", SlotAsync);
         venues.MapPost("/{slug}/sessions", OpenSessionAsync).RequireAuthorization();
+        venues.MapGet("/{slug}/socials/{socialId:guid}", SocialOfferAsync);
+        venues.MapPost("/{slug}/socials/{socialId:guid}/checkout", CheckoutSocialAsync).RequireAuthorization();
+        venues.MapGet("/{slug}/socials/registrations/{registrationId:guid}", SocialRegistrationAsync).RequireAuthorization();
 
         app.MapGet("/api/dashboard/venues", DashboardVenuesAsync).RequireAuthorization();
     }
@@ -35,7 +38,9 @@ public static class VenueEndpoints
         string? date,
         string? from,
         string? to,
+        HttpContext http,
         BookingRepository repository,
+        AuthRepository auth,
         CancellationToken cancellationToken)
     {
         var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
@@ -56,9 +61,19 @@ public static class VenueEndpoints
 
         var incentives = await repository.ListPublicIncentivesAsync(venue.Id, DateOnly.Parse(window.Date), cancellationToken);
         var bookings = await repository.ListConfirmedBookingsAsync(venue.Id, window.StartUtc, window.EndUtc, cancellationToken);
-        var openSlots = await repository.ListAvailableSlotsAsync(venue.Id, window.StartUtc, window.EndUtc, cancellationToken);
         var closures = await repository.ListPublicClosuresAsync(venue.Id, window.StartUtc, window.EndUtc, cancellationToken);
         var courtRows = await repository.ListPublicCourtsAsync(venue.Id, cancellationToken);
+        await repository.ExpirePublicSocialHoldsAsync(cancellationToken);
+        await repository.AwardEndedSocialIncentivesAsync(cancellationToken);
+        var socials = await repository.ListPublicSocialsAsync(venue.Id, window.StartUtc, window.EndUtc, cancellationToken);
+        var socialIds = socials.Select(social => social.Id).ToArray();
+        var seats = await repository.ListPublicSocialSeatsAsync(socialIds, cancellationToken);
+        var session = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
+        var mine = session is null
+            ? []
+            : await repository.ListMySocialStatesAsync(session.UserId, socialIds, cancellationToken);
+        var mineStatus = mine.ToDictionary(row => row.SocialId, row => row.Status);
+        var socialViews = socials.Select(social => BuildSocialView(social, seats, courtRows, session?.UserId, social.Price, mineStatus)).ToArray();
         var courts = courtRows.Select(court => new
         {
             id = court.Id,
@@ -73,14 +88,15 @@ public static class VenueEndpoints
                 startTime = VenueClock.AsUtc(booking.StartTime),
                 endTime = VenueClock.AsUtc(booking.EndTime),
             }),
-            slots = openSlots.Where(slot => slot.CourtId == court.Id).Select(slot => new
-            {
-                id = slot.SessionId,
-                startTime = VenueClock.AsUtc(slot.StartTime),
-                endTime = VenueClock.AsUtc(slot.EndTime),
-                price = slot.Price,
-                incentivePoints = slot.IncentivePoints,
-            }),
+            socials = socialViews
+                .Where(social => social.Courts.Any(item => item.CourtId == court.Id))
+                .Select(social => new
+                {
+                    id = social.Id,
+                    startTime = social.StartTime,
+                    endTime = social.EndTime,
+                    players = social.Courts.First(item => item.CourtId == court.Id).Players,
+                }),
         });
 
         return Results.Ok(new
@@ -90,6 +106,17 @@ public static class VenueEndpoints
             windowStart = VenueClock.AsUtc(window.StartUtc),
             windowEnd = VenueClock.AsUtc(window.EndUtc),
             courts,
+            socials = socialViews.Select(social => new
+            {
+                id = social.Id,
+                startTime = social.StartTime,
+                endTime = social.EndTime,
+                playerCount = social.PlayerCount,
+                price = social.Price,
+                yourStatus = social.YourStatus,
+                yourCourtName = social.YourCourtName,
+                yourCourtNumber = social.YourCourtNumber,
+            }),
             incentives = incentives.Select(incentive => new
             {
                 id = incentive.Id,
@@ -206,6 +233,7 @@ public static class VenueEndpoints
         lateCancelFeePercent = venue.LateCancelFeePercent,
         pointsPerDollar = venue.PointsPerDollar,
         hourlyRate = venue.HourlyRate,
+        socialPrice = venue.SocialPrice,
     };
 
     private static async Task<IResult> OpenSessionAsync(
@@ -265,8 +293,196 @@ public static class VenueEndpoints
         return Results.Ok(new { sessionId = opened.SessionId, price = opened.Price, currency = venue.Currency });
     }
 
+    private static async Task<IResult> SocialOfferAsync(
+        string slug,
+        Guid socialId,
+        HttpContext http,
+        BookingRepository repository,
+        AuthRepository auth,
+        CancellationToken cancellationToken)
+    {
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Results.NotFound();
+        }
+
+        var social = await repository.FindPublicSocialAsync(venue.Id, socialId, cancellationToken);
+        if (social is null)
+        {
+            return Results.NotFound();
+        }
+
+        var seats = await repository.ListPublicSocialSeatsAsync([socialId], cancellationToken);
+        var session = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
+        var mine = session is null
+            ? []
+            : await repository.ListMySocialStatesAsync(session.UserId, [socialId], cancellationToken);
+        var yours = mine.FirstOrDefault(row => row.SocialId == socialId);
+        var seat = session is null ? null : seats.FirstOrDefault(row => row.UserId == session.UserId);
+        var price = social.Price <= 0 ? 0 : decimal.Round(social.Price, 2, MidpointRounding.AwayFromZero);
+        TimeZoneInfo zone;
+        try
+        {
+            zone = TimeZoneInfo.FindSystemTimeZoneById(venue.TimeZone);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            zone = TimeZoneInfo.Utc;
+        }
+
+        var localDay = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(social.StartTime, DateTimeKind.Utc), zone));
+        var incentives = await repository.ListPublicIncentivesAsync(venue.Id, localDay, cancellationToken);
+        return Results.Ok(new
+        {
+            venue = VenueResponse(venue),
+            id = social.Id,
+            startTime = VenueClock.AsUtc(social.StartTime),
+            endTime = VenueClock.AsUtc(social.EndTime),
+            price,
+            playerCount = seats.Length,
+            yourStatus = yours?.Status,
+            yourCourtName = yours?.Status == "confirmed" ? seat?.CourtName : null,
+            yourCourtNumber = yours?.Status == "confirmed" ? seat?.CourtNumber : null,
+            incentivePoints = incentives.FirstOrDefault()?.Points ?? 0,
+        });
+    }
+
+    private static async Task<IResult> CheckoutSocialAsync(
+        string slug,
+        Guid socialId,
+        SocialCheckoutBody body,
+        HttpContext http,
+        BookingRepository repository,
+        AuthRepository auth,
+        BookingPayments payments,
+        AuthSettings authSettings,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
+        if (current is null)
+        {
+            return Form("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Form("That venue was not found.", StatusCodes.Status404NotFound);
+        }
+
+        var origin = authSettings.FrontendOrigin.TrimEnd('/');
+        var successUrl = $"{origin}/{slug}/social/{socialId}?checkout=success";
+        var cancelUrl = $"{origin}/{slug}/social/{socialId}?checkout=cancel";
+        var result = await payments.SocialCheckoutAsync(venue.Id, socialId, current.UserId, venue.Currency, body.Points, body.PromotionCode, successUrl, cancelUrl, cancellationToken);
+        if (result.Error is not null)
+        {
+            return Form(result.Error, result.StatusCode);
+        }
+
+        return Results.Ok(new
+        {
+            registrationId = result.RegistrationId,
+            status = result.Status,
+            checkoutUrl = result.CheckoutUrl,
+            amount = result.Amount,
+            currency = result.Currency,
+            courtName = result.CourtName,
+            courtNumber = result.CourtNumber,
+            alreadyJoined = result.AlreadyJoined,
+            subtotal = result.Subtotal,
+            discountAmount = result.DiscountAmount,
+            pointsRedeemed = result.PointsRedeemed,
+            pointsValue = result.PointsValue,
+            cashAmount = result.Amount,
+            incentivePoints = result.IncentivePoints,
+        });
+    }
+
+    private static async Task<IResult> SocialRegistrationAsync(
+        string slug,
+        Guid registrationId,
+        HttpContext http,
+        BookingRepository repository,
+        AuthRepository auth,
+        BookingPayments payments,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
+        if (current is null)
+        {
+            return Form("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        var row = await repository.FindOwnedSocialAsync(current.UserId, registrationId, cancellationToken);
+        if (row is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (row.Status == "pending" && !string.IsNullOrWhiteSpace(row.StripePaymentIntentId))
+        {
+            try
+            {
+                await payments.SyncSocialAsync(current.UserId, registrationId, cancellationToken);
+                row = await repository.FindOwnedSocialAsync(current.UserId, registrationId, cancellationToken) ?? row;
+            }
+            catch (Stripe.StripeException)
+            {
+                // The stored status is still returned when Stripe cannot be reached.
+            }
+        }
+
+        return Results.Ok(new
+        {
+            id = row.Id,
+            status = row.Status,
+            courtName = row.CourtName,
+            courtNumber = row.CourtNumber,
+            paymentStatus = row.PaymentStatus,
+            cashAmount = row.Amount,
+            pointsRedeemed = row.PointsRedeemed,
+            incentivePoints = row.IncentivePoints,
+        });
+    }
+
+    private static SocialView BuildSocialView(
+        PublicSocialRow social,
+        PublicSocialSeatRow[] seats,
+        PublicCourtRow[] courts,
+        Guid? userId,
+        decimal socialPrice,
+        IReadOnlyDictionary<Guid, string> mineStatus)
+    {
+        var mine = seats.FirstOrDefault(seat => seat.SocialId == social.Id && userId is not null && seat.UserId == userId);
+        var placed = seats.Where(seat => seat.SocialId == social.Id).GroupBy(seat => seat.CourtId).ToArray();
+        var ordered = courts.OrderBy(court => court.CourtNumber).ToArray();
+        var visible = placed.Length == 0
+            ? ordered.Take(1).ToArray()
+            : ordered.Where(court => placed.Any(group => group.Key == court.Id)).ToArray();
+        mineStatus.TryGetValue(social.Id, out var yourStatus);
+        var price = socialPrice <= 0 ? 0 : decimal.Round(socialPrice, 2, MidpointRounding.AwayFromZero);
+        var confirmed = yourStatus == "confirmed";
+        return new SocialView(
+            social.Id,
+            VenueClock.AsUtc(social.StartTime),
+            VenueClock.AsUtc(social.EndTime),
+            seats.Count(seat => seat.SocialId == social.Id),
+            price,
+            yourStatus,
+            confirmed ? mine?.CourtName : null,
+            confirmed ? mine?.CourtNumber : null,
+            visible.Select(court => new SocialCourt(court.Id, placed.FirstOrDefault(group => group.Key == court.Id)?.Count() ?? 0)).ToArray());
+    }
+
     private static IResult Form(string message, int status) =>
         Results.Json(new { errors = new Dictionary<string, string[]> { ["form"] = [message] } }, statusCode: status);
 
     private sealed record OpenSessionBody(Guid CourtId, string? Date, string? Start, string? End);
+
+    private sealed record SocialCheckoutBody(int Points, string? PromotionCode = null);
+
+    private sealed record SocialCourt(Guid CourtId, int Players);
+
+    private sealed record SocialView(Guid Id, DateTimeOffset StartTime, DateTimeOffset EndTime, int PlayerCount, decimal Price, string? YourStatus, string? YourCourtName, int? YourCourtNumber, SocialCourt[] Courts);
 }

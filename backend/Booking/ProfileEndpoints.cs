@@ -112,6 +112,10 @@ public static class ProfileEndpoints
         }
 
         var result = await bookingPayments.CancelAsync(userId.Value, id, cancellationToken);
+        if (result.StatusCode == StatusCodes.Status404NotFound)
+        {
+            result = await bookingPayments.CancelSocialAsync(userId.Value, id, cancellationToken);
+        }
         if (result.Error is not null)
         {
             return Results.Json(new

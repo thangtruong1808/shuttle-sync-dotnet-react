@@ -2,32 +2,32 @@ import { useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { NavLink, useNavigate, useParams } from "react-router-dom";
 import type { RootState } from "../../app/store";
-import { CourtImage, EmptyState, ErrorState, formatVenueRange, Money } from "../../components/format";
+import { CourtImage, EmptyState, ErrorState, Money, formatVenueRange } from "../../components/format";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import {
   createClosure,
-  createSessions,
+  createSocial,
+  deleteSocial,
+  listSocials,
+  updateSocial,
   DashError,
   createVenueIncentive,
   deleteClosure,
   deleteCourt,
-  deleteSession,
   deleteVenue,
   deleteVenueIncentive,
   listClosures,
   listCourts,
-  listSessions,
   listVenueIncentives,
   saveCourt,
   saveVenue,
   updateClosure,
-  updateSession,
   updateVenueIncentive,
   uploadDashboardImage,
   venueDetail,
   type DashClosure,
   type DashCourt,
-  type DashSession,
+  type DashSocial,
   type DashVenue,
   type DashVenueIncentive,
 } from "./dashboardApi";
@@ -118,7 +118,7 @@ export default function VenueDesk() {
           <div className="mt-6">
             {current === "details" ? <Details venue={venue} admin={admin} onSaved={() => setAttempt((value) => value + 1)} /> : null}
             {current === "courts" ? <Courts venueId={venueId} /> : null}
-            {current === "slots" ? <Slots venueId={venueId} /> : null}
+            {current === "slots" ? <Slots venueId={venueId} currency={venue.currency} /> : null}
             {current === "closures" ? <Closures venueId={venueId} /> : null}
             {current === "incentives" && admin ? <Incentives venueId={venueId} /> : null}
             {current === "incentives" && !admin ? <EmptyState title="Admins only" body="Reward incentives are managed by an admin." /> : null}
@@ -213,7 +213,7 @@ function Details({ venue, admin, onSaved }: { venue: DashVenue; admin: boolean; 
           }}
         />
       </Field>
-      <Field label="Hourly rate">
+      <Field label="Court hourly rate">
         <input
           className={control}
           type="number"
@@ -518,29 +518,25 @@ function CourtRow({ venueId, court, onChanged }: { venueId: string; court: DashC
   );
 }
 
-function Slots({ venueId }: { venueId: string }) {
+function Slots({ venueId, currency }: { venueId: string; currency: string }) {
   const [date, setDate] = useState(today);
-  const [courts, setCourts] = useState<DashCourt[]>([]);
-  const [rows, setRows] = useState<DashSession[] | null>(null);
+  const [rows, setRows] = useState<DashSocial[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);
-  const [draft, setDraft] = useState({ courtId: "", start: "09:00", end: "10:00", price: "20" });
+  const [draft, setDraft] = useState({ start: "18:00", end: "20:00", price: "" });
   const { busy, run } = useBusy();
 
   useEffect(() => {
     let active = true;
-    Promise.all([listCourts(venueId), listSessions(venueId, date)])
-      .then(([courtRows, sessions]) => {
-        if (!active) return;
-        setCourts(courtRows);
-        setRows(sessions);
-        setDraft((current) => ({ ...current, courtId: current.courtId || courtRows[0]?.id || "" }));
+    listSocials(venueId, date)
+      .then((socials) => {
+        if (active) setRows(socials);
       })
       .catch((reason: unknown) => {
-        if (active) setError(reason instanceof DashError ? reason.message : "Slots could not be loaded.");
+        if (active) setError(reason instanceof DashError ? reason.message : "Social times could not be loaded.");
       })
       .finally(() => {
         if (active) setRetrying(false);
@@ -560,17 +556,11 @@ function Slots({ venueId }: { venueId: string }) {
           setSuccess(null);
           void run("create", async () => {
             try {
-              await createSessions(venueId, {
-                courtId: draft.courtId,
-                date,
-                start: draft.start,
-                end: draft.end,
-                price: Number(draft.price),
-              });
-              setRows(await listSessions(venueId, date));
-              setSuccess("Slot added. Players can book it from the homepage.");
+              await createSocial(venueId, { date, start: draft.start, end: draft.end, price: Number(draft.price) });
+              setRows(await listSocials(venueId, date));
+              setSuccess("Drop-in social added. Players register from the homepage, starting on court 1.");
             } catch (reason) {
-              setMessage(reason instanceof DashError ? reason.message : "The slot could not be created.");
+              setMessage(reason instanceof DashError ? reason.message : "The social could not be created.");
             }
           });
         }}
@@ -578,40 +568,34 @@ function Slots({ venueId }: { venueId: string }) {
         <Field label="Date">
           <PickerInput className={control} type="date" value={date} disabled={busy !== null} onChange={(event) => setDate(event.target.value)} />
         </Field>
-        <Field label="Court">
-          <select className={control} value={draft.courtId} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, courtId: event.target.value })}>
-            {courts.map((court) => (
-              <option key={court.id} value={court.id}>{court.courtName}</option>
-            ))}
-          </select>
-        </Field>
         <Field label="Start">
           <PickerInput className={control} type="time" value={draft.start} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, start: event.target.value })} />
         </Field>
         <Field label="End">
           <PickerInput className={control} type="time" value={draft.end} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, end: event.target.value })} />
         </Field>
-        <Field label="Price">
-          <input className={control} type="number" min={0} step="0.01" value={draft.price} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, price: event.target.value })} />
+        <Field label="Session price">
+          <input className={control} type="number" min={0.01} step="0.01" required value={draft.price} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, price: event.target.value })} />
         </Field>
+        <p className="text-sm text-mist/70 sm:col-span-2 lg:col-span-3">Players pay this session price. Court bookings still use the hourly rate. Eight players fill court 1, then court 2, and so on.</p>
         <div className="sm:col-span-2 lg:col-span-3 flex flex-wrap items-center gap-2">
           <Notice message={message} />
           <Success message={success} />
-          <Button type="submit" loading={busy === "create"} disabled={busy !== null && busy !== "create" || !draft.courtId}>
-            Add slot
+          <Button type="submit" loading={busy === "create"} disabled={(busy !== null && busy !== "create") || !(Number(draft.price) > 0)}>
+            Add public social
           </Button>
         </div>
       </form>
       {error ? (
         <ErrorState message={error} loading={retrying} onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }} />
       ) : rows === null ? (
-        <div aria-busy="true"><span className="sr-only">Loading slots</span><Skeleton className="h-24" /></div>
+        <div aria-busy="true"><span className="sr-only">Loading social times</span><Skeleton className="h-24" /></div>
       ) : rows.length === 0 ? (
-        <EmptyState title="No slots" body="Add a court, date, start, and end. Players book that time from the homepage." />
+        <EmptyState title="No drop-in social" body="Add the hours and the session price. Players pay that price to register." />
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2">
           {rows.map((row) => (
-            <SlotRow key={row.id} venueId={venueId} courts={courts} row={row} onChanged={(note) => { setSuccess(note); setAttempt((value) => value + 1); }} />
+            <SocialRow key={row.id} venueId={venueId} currency={currency} row={row} onChanged={(note) => { setSuccess(note); setAttempt((value) => value + 1); }} />
           ))}
         </ul>
       )}
@@ -619,42 +603,36 @@ function Slots({ venueId }: { venueId: string }) {
   );
 }
 
-function SlotRow({ venueId, courts, row, onChanged }: { venueId: string; courts: DashCourt[]; row: DashSession; onChanged: (message: string) => void }) {
+function SocialRow({ venueId, currency, row, onChanged }: { venueId: string; currency: string; row: DashSocial; onChanged: (message: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
-    courtId: row.courtId,
     date: venueLocalDate(row.startTime, row.timeZone),
     start: venueLocalTime(row.startTime, row.timeZone),
     end: venueLocalTime(row.endTime, row.timeZone),
-    price: String(row.price),
+    price: String(row.price ?? ""),
   });
   const [message, setMessage] = useState<string | null>(null);
   const { busy, run } = useBusy();
   return (
     <li className="grid gap-3 rounded-2xl border border-white/10 p-3 text-sm text-mist">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-white">{row.courtName}</span>
         <span>{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span>
-        <Money amount={row.price} currency="AUD" />
+        <span className="font-semibold text-white"><Money amount={row.price} currency={currency} /></span>
+        <span className="text-white">{row.playerCount} player{row.playerCount === 1 ? "" : "s"}</span>
         <Button variant="secondary" disabled={busy !== null} onClick={() => { setMessage(null); setEditing((open) => !open); }}>Edit</Button>
         <Button variant="danger" loading={busy === "delete"} disabled={busy !== null && busy !== "delete"} onClick={() => {
           void run("delete", async () => {
             try {
-              await deleteSession(venueId, row.id);
-              onChanged("Slot removed.");
+              await deleteSocial(venueId, row.id);
+              onChanged("Drop-in social removed.");
             } catch (reason) {
-              setMessage(reason instanceof DashError ? reason.message : "The slot could not be deleted.");
+              setMessage(reason instanceof DashError ? reason.message : "The social could not be deleted.");
             }
           });
         }}>Delete</Button>
       </div>
       {editing ? (
         <div className="grid gap-2 sm:grid-cols-2">
-          <Field label="Court">
-            <select className={control} value={form.courtId} disabled={busy !== null} onChange={(event) => setForm({ ...form, courtId: event.target.value })}>
-              {courts.map((court) => <option key={court.id} value={court.id}>{court.courtName}</option>)}
-            </select>
-          </Field>
           <Field label="Date">
             <PickerInput className={control} type="date" value={form.date} disabled={busy !== null} onChange={(event) => setForm({ ...form, date: event.target.value })} />
           </Field>
@@ -664,18 +642,18 @@ function SlotRow({ venueId, courts, row, onChanged }: { venueId: string; courts:
           <Field label="End">
             <PickerInput className={control} type="time" value={form.end} disabled={busy !== null} onChange={(event) => setForm({ ...form, end: event.target.value })} />
           </Field>
-          <Field label="Price">
-            <input className={control} type="number" min={0} step="0.01" value={form.price} disabled={busy !== null} onChange={(event) => setForm({ ...form, price: event.target.value })} />
+          <Field label="Session price">
+            <input className={control} type="number" min={0.01} step="0.01" required value={form.price} disabled={busy !== null} onChange={(event) => setForm({ ...form, price: event.target.value })} />
           </Field>
           <div className="flex items-end">
-            <Button loading={busy === "save"} disabled={busy !== null && busy !== "save" || !form.courtId} onClick={() => {
+            <Button loading={busy === "save"} disabled={busy !== null && busy !== "save"} onClick={() => {
               void run("save", async () => {
                 try {
-                  await updateSession(venueId, row.id, { courtId: form.courtId, date: form.date, start: form.start, end: form.end, price: Number(form.price) });
+                  await updateSocial(venueId, row.id, { date: form.date, start: form.start, end: form.end, price: Number(form.price) });
                   setEditing(false);
-                  onChanged("Slot saved.");
+                  onChanged("Drop-in social saved.");
                 } catch (reason) {
-                  setMessage(reason instanceof DashError ? reason.message : "The slot could not be saved.");
+                  setMessage(reason instanceof DashError ? reason.message : "The social could not be saved.");
                 }
               });
             }}>Save</Button>

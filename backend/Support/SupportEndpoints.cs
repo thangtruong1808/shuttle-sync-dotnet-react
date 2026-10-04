@@ -212,7 +212,7 @@ public static class SupportEndpoints
         var lines = new List<string>
         {
             $"Now: {nowLocal.ToString("dddd d MMMM yyyy, h:mm tt", CultureInfo.InvariantCulture)} ({venue.TimeZone}).",
-            $"Hourly rate: {venue.Currency} ${venue.HourlyRate:0.00}.",
+            $"Court hourly rate: {venue.Currency} ${venue.HourlyRate:0.00}. A drop-in social uses the session price set by the admin, not the hourly rate.",
             $"Schedule date: {date.ToString("dddd d MMMM yyyy", CultureInfo.InvariantCulture)}.",
         };
 

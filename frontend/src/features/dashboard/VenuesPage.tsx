@@ -27,6 +27,7 @@ const blank = {
   lateCancelFeePercent: 0,
   pointsPerDollar: 100,
   hourlyRate: 0,
+  socialPrice: 0,
   isActive: true,
 };
 

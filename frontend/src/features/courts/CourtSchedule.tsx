@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { Money, formatVenueRange } from "../../components/format";
-import type { Availability, OpenSlot, ScheduleBooking } from "../venues/venueApi";
+import { formatVenueRange } from "../../components/format";
+import type { Availability, CourtSocial, ScheduleBooking } from "../venues/venueApi";
 
 function clock(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -22,22 +21,20 @@ export function useNow(): number {
   return now;
 }
 
-export function OpenSlots({ slug, slots, timeZone, currency, now }: { slug: string; slots: OpenSlot[]; timeZone: string; currency: string; now: number }) {
-  const open = slots.filter((slot) => new Date(slot.endTime).getTime() > now);
+export function SocialTimes({ times, timeZone, now }: { times: CourtSocial[]; timeZone: string; now: number }) {
+  const open = times.filter((time) => new Date(time.endTime).getTime() > now);
   if (open.length === 0) {
-    return <p className="mt-3 text-sm text-mist/65">No open times to book.</p>;
+    return null;
   }
 
   return (
     <div className="mt-3">
-      <p className="text-sm font-semibold text-white">Book a time</p>
-      <ul className="mt-2 grid grid-cols-2 gap-2">
-        {open.map((slot) => (
-          <li key={slot.id} className="min-w-0">
-            <Link to={`/${slug}/book/${slot.id}`} className="block rounded-2xl border border-line/40 px-3 py-2 hover:bg-white/5">
-              <p className="text-sm text-white">{formatVenueRange(slot.startTime, slot.endTime, timeZone)}</p>
-              <p className="text-sm font-semibold text-line"><Money amount={slot.price} currency={currency} /> · Book</p>
-            </Link>
+      <p className="text-sm font-semibold text-white">Drop-in social</p>
+      <ul className="mt-2 grid gap-2">
+        {open.map((time) => (
+          <li key={time.id} className="rounded-2xl border border-line/40 px-3 py-2">
+            <p className="whitespace-nowrap text-sm text-white">{formatVenueRange(time.startTime, time.endTime, timeZone)}</p>
+            <p className="text-sm text-mist/80">{time.players === 0 ? "Be the first to join" : `${time.players} of 8 players`}</p>
           </li>
         ))}
       </ul>

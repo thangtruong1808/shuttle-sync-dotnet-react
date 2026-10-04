@@ -23,6 +23,10 @@ public static class DashboardEndpoints
         dash.MapPost("/venues/{venueId:guid}/sessions", CreateSessionsAsync);
         dash.MapPut("/venues/{venueId:guid}/sessions/{sessionId:guid}", UpdateSessionAsync);
         dash.MapDelete("/venues/{venueId:guid}/sessions/{sessionId:guid}", DeleteSessionAsync);
+        dash.MapGet("/venues/{venueId:guid}/socials", ListSocialsAsync);
+        dash.MapPost("/venues/{venueId:guid}/socials", CreateSocialAsync);
+        dash.MapPut("/venues/{venueId:guid}/socials/{socialId:guid}", UpdateSocialAsync);
+        dash.MapDelete("/venues/{venueId:guid}/socials/{socialId:guid}", DeleteSocialAsync);
         dash.MapPut("/venues/{venueId:guid}/sessions/{sessionId:guid}/incentive", SaveIncentiveAsync);
         dash.MapDelete("/venues/{venueId:guid}/sessions/{sessionId:guid}/incentive", DeleteIncentiveAsync);
         dash.MapGet("/venues/{venueId:guid}/incentives", ListVenueIncentivesAsync);
@@ -193,6 +197,57 @@ public static class DashboardEndpoints
         if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var error)) return Form(error);
         var slots = new List<(DateTime Start, DateTime End, decimal Price)> { (window.StartUtc, window.EndUtc, body.Price) };
         error = await repo.CreateSessionsAsync(venueId, body.CourtId, slots, DateOnly.Parse(window.Date), gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
+        return error is null ? Results.NoContent() : Form(error);
+    }
+
+    private static async Task<IResult> ListSocialsAsync(Guid venueId, string? date, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    {
+        var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
+        if (gate.Error is not null) return gate.Error;
+        var venue = await repo.FindVenueAsync(venueId, cancellationToken);
+        if (venue is null) return Missing();
+        if (!VenueClock.TryGetDayWindow(venue.TimeZone, date, null, null, out var window, out var error)) return Form(error);
+        var rows = await repo.ListSocialsAsync(venueId, window.StartUtc, window.EndUtc, cancellationToken);
+        return Results.Ok(rows.Select(row => new
+        {
+            id = row.Id,
+            startTime = VenueClock.AsUtc(row.StartTime),
+            endTime = VenueClock.AsUtc(row.EndTime),
+            price = row.Price,
+            playerCount = row.PlayerCount,
+            timeZone = venue.TimeZone,
+        }));
+    }
+
+    private static async Task<IResult> CreateSocialAsync(Guid venueId, SocialBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    {
+        var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
+        if (gate.Error is not null) return gate.Error;
+        var venue = await repo.FindVenueAsync(venueId, cancellationToken);
+        if (venue is null) return Missing();
+        if (body.Price <= 0) return Form("Enter a session price greater than 0.");
+        if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var error)) return Form(error);
+        error = await repo.CreateSocialAsync(venueId, window.StartUtc, window.EndUtc, body.Price, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
+        return error is null ? Results.NoContent() : Form(error);
+    }
+
+    private static async Task<IResult> UpdateSocialAsync(Guid venueId, Guid socialId, SocialBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    {
+        var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
+        if (gate.Error is not null) return gate.Error;
+        var venue = await repo.FindVenueAsync(venueId, cancellationToken);
+        if (venue is null) return Missing();
+        if (body.Price <= 0) return Form("Enter a session price greater than 0.");
+        if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var error)) return Form(error);
+        error = await repo.UpdateSocialAsync(venueId, socialId, window.StartUtc, window.EndUtc, body.Price, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
+        return error is null ? Results.NoContent() : Form(error);
+    }
+
+    private static async Task<IResult> DeleteSocialAsync(Guid venueId, Guid socialId, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    {
+        var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
+        if (gate.Error is not null) return gate.Error;
+        var error = await repo.DeleteSocialAsync(venueId, socialId, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
     }
 
@@ -705,8 +760,10 @@ public static class DashboardEndpoints
         var pointsPerDollar = body.PointsPerDollar ?? 100;
         if (pointsPerDollar < 1) { error = "Enter at least 1 point per dollar."; return false; }
         var hourlyRate = body.HourlyRate ?? 0;
-        if (hourlyRate < 0) { error = "Enter an hourly rate of 0 or more."; return false; }
-        write = new DashVenueWrite(id, name, slug, Trim(body.Description, 1000), Trim(body.Address, 300), Trim(body.Suburb, 100), Trim(body.State, 50), Trim(body.Postcode, 20), string.IsNullOrWhiteSpace(body.Country) ? "AU" : body.Country.Trim().ToUpperInvariant(), body.Latitude, body.Longitude, Trim(body.Phone, 32), Trim(body.Email, 256), Trim(body.ImageUrl, 500), zone, currency, fee, pointsPerDollar, hourlyRate, body.IsActive);
+        if (hourlyRate < 0) { error = "Enter a court hourly rate of 0 or more."; return false; }
+        var socialPrice = body.SocialPrice ?? 0;
+        if (socialPrice < 0) { error = "Enter a social price of 0 or more."; return false; }
+        write = new DashVenueWrite(id, name, slug, Trim(body.Description, 1000), Trim(body.Address, 300), Trim(body.Suburb, 100), Trim(body.State, 50), Trim(body.Postcode, 20), string.IsNullOrWhiteSpace(body.Country) ? "AU" : body.Country.Trim().ToUpperInvariant(), body.Latitude, body.Longitude, Trim(body.Phone, 32), Trim(body.Email, 256), Trim(body.ImageUrl, 500), zone, currency, fee, pointsPerDollar, hourlyRate, socialPrice, body.IsActive);
         error = "";
         return true;
     }
@@ -802,6 +859,7 @@ public static class DashboardEndpoints
         lateCancelFeePercent = venue.LateCancelFeePercent,
         pointsPerDollar = venue.PointsPerDollar,
         hourlyRate = venue.HourlyRate,
+        socialPrice = venue.SocialPrice,
         isActive = venue.IsActive,
     };
 
@@ -843,11 +901,13 @@ public static class DashboardEndpoints
 
     private sealed record ScopeResult(DashActor? Actor, IReadOnlyCollection<Guid> Allowed, IResult? Error);
 
-    private sealed record VenueBody(string? Name, string? Slug, string? Description, string? Address, string? Suburb, string? State, string? Postcode, string? Country, decimal? Latitude, decimal? Longitude, string? Phone, string? Email, string? ImageUrl, string? TimeZone, string? Currency, bool IsActive, decimal? LateCancelFeePercent = null, int? PointsPerDollar = null, decimal? HourlyRate = null);
+    private sealed record VenueBody(string? Name, string? Slug, string? Description, string? Address, string? Suburb, string? State, string? Postcode, string? Country, decimal? Latitude, decimal? Longitude, string? Phone, string? Email, string? ImageUrl, string? TimeZone, string? Currency, bool IsActive, decimal? LateCancelFeePercent = null, int? PointsPerDollar = null, decimal? HourlyRate = null, decimal? SocialPrice = null);
 
     private sealed record CourtBody(string? CourtName, int CourtNumber, string? Description, string? SurfaceType, string? ImageUrl, bool IsActive);
 
     private sealed record SessionBody(Guid CourtId, string? Date, string? Start, string? End, decimal Price, string? Until);
+
+    private sealed record SocialBody(string? Date, string? Start, string? End, decimal Price);
 
     private sealed record SessionEditBody(Guid CourtId, string? Date, string? Start, string? End, decimal Price);
 

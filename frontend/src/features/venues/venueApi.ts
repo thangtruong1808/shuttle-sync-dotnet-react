@@ -21,6 +21,7 @@ export type Venue = {
   lateCancelFeePercent: number;
   pointsPerDollar: number;
   hourlyRate: number;
+  socialPrice: number;
 };
 
 export type ScheduleBooking = {
@@ -44,6 +45,24 @@ export type ScheduleClosure = {
   endTime: string;
 };
 
+export type CourtSocial = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  players: number;
+};
+
+export type PublicSocial = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  playerCount: number;
+  price?: number;
+  yourStatus?: string | null;
+  yourCourtName: string | null;
+  yourCourtNumber: number | null;
+};
+
 export type AvailableCourt = {
   id: string;
   courtName: string;
@@ -53,6 +72,7 @@ export type AvailableCourt = {
   description: string | null;
   bookings: ScheduleBooking[];
   slots?: OpenSlot[];
+  socials?: CourtSocial[];
 };
 
 export type VenueIncentive = {
@@ -68,6 +88,7 @@ export type Availability = {
   windowStart: string;
   windowEnd: string;
   courts: AvailableCourt[];
+  socials?: PublicSocial[];
   incentives: VenueIncentive[];
   closures: ScheduleClosure[];
 };
@@ -117,6 +138,63 @@ export function venueAvailability(slug: string, date: string, from: string, to: 
 
 export function venuePromotions(slug: string): Promise<Promotion[]> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/promotions`);
+}
+
+export type SocialCheckout = {
+  registrationId: string;
+  status: string;
+  checkoutUrl: string | null;
+  amount: number;
+  currency: string;
+  courtName: string;
+  courtNumber: number;
+  alreadyJoined: boolean;
+  subtotal: number;
+  discountAmount: number;
+  pointsRedeemed: number;
+  pointsValue: number;
+  cashAmount: number;
+  incentivePoints: number;
+};
+
+export type SocialRegistration = {
+  id: string;
+  status: string;
+  courtName: string;
+  courtNumber: number;
+  paymentStatus: string | null;
+  cashAmount: number;
+  pointsRedeemed: number;
+  incentivePoints: number;
+};
+
+export type SocialOffer = {
+  venue: Venue;
+  id: string;
+  startTime: string;
+  endTime: string;
+  price: number;
+  playerCount: number;
+  yourStatus?: string | null;
+  yourCourtName: string | null;
+  yourCourtNumber: number | null;
+  incentivePoints: number;
+};
+
+export function socialOffer(slug: string, socialId: string): Promise<SocialOffer> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/socials/${socialId}`, "no-store");
+}
+
+export function startSocialCheckout(slug: string, socialId: string, points: number, promotionCode: string): Promise<SocialCheckout> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/socials/${socialId}/checkout`, "no-store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ points, promotionCode: promotionCode || null }),
+  });
+}
+
+export function socialRegistration(slug: string, registrationId: string): Promise<SocialRegistration> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/socials/registrations/${registrationId}`, "no-store");
 }
 
 export function openPlayerSession(slug: string, courtId: string, date: string, start: string, end: string): Promise<{ sessionId: string; price: number; currency: string }> {

@@ -4,7 +4,7 @@ import { CourtImage, EmptyState, ErrorState, formatVenueRange, venueToday } from
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
 import { PickerInput, Skeleton } from "../../components/ui";
 import { venueAvailability, type Availability } from "../venues/venueApi";
-import { DayChart, OpenSlots, SessionClock, upcomingBookings, useNow } from "./CourtSchedule";
+import { DayChart, SessionClock, SocialTimes, upcomingBookings, useNow } from "./CourtSchedule";
 
 export default function CourtsPage() {
   const { slug = "" } = useParams();
@@ -79,7 +79,7 @@ export default function CourtsPage() {
                   <div>
                     <h2 className="font-display text-2xl text-white">{court.courtName}</h2>
                     <p className="text-sm text-mist/65">Court {court.courtNumber}{court.surfaceType ? ` · ${court.surfaceType}` : ""}</p>
-                    {bookings.length === 0 ? <p className="mt-3 text-sm text-mist/65">Nothing else is booked today.</p> : (
+                    {bookings.length === 0 ? null : (
                       <ul className="mt-3 grid gap-2">
                         {bookings.map((booking) => (
                           <li key={booking.id} className="rounded-2xl border border-white/10 px-3 py-2">
@@ -89,7 +89,7 @@ export default function CourtsPage() {
                         ))}
                       </ul>
                     )}
-                    <OpenSlots slug={slug} slots={court.slots ?? []} timeZone={availability.venue.timeZone} currency={availability.venue.currency} now={now} />
+                    <SocialTimes times={court.socials ?? []} timeZone={availability.venue.timeZone} now={now} />
                   </div>
                 </li>
                 );
