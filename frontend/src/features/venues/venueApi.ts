@@ -45,11 +45,19 @@ export type ScheduleClosure = {
   endTime: string;
 };
 
+export type SocialCourtLoad = {
+  courtName: string;
+  courtNumber: number;
+  players: number;
+};
+
 export type CourtSocial = {
   id: string;
   startTime: string;
   endTime: string;
   players: number;
+  totalPlayers?: number;
+  courtsUsed?: number;
 };
 
 export type PublicSocial = {
@@ -63,6 +71,7 @@ export type PublicSocial = {
   yourCourtNumber: number | null;
   repeatWeekly?: boolean;
   full?: boolean;
+  courts?: SocialCourtLoad[];
 };
 
 export type AvailableCourt = {
@@ -177,13 +186,15 @@ export type SocialOffer = {
   endTime: string;
   price: number;
   playerCount: number;
+  courtCount?: number;
+  courts?: SocialCourtLoad[];
   yourStatus?: string | null;
   yourCourtName: string | null;
   yourCourtNumber: number | null;
   incentivePoints: number;
 };
 
-export function openSocials(slug: string): Promise<{ venue: Venue; socials: PublicSocial[] }> {
+export function openSocials(slug: string): Promise<{ venue: Venue; courtCount: number; socials: PublicSocial[] }> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/socials`, "no-store");
 }
 
@@ -204,6 +215,28 @@ export function startSocialCheckout(slug: string, socialId: string, points: numb
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ points, promotionCode: promotionCode || null }),
+  });
+}
+
+export type SocialFriend = {
+  id: string;
+  name: string;
+  status: string;
+  amount: number;
+  courtName: string;
+  checkoutGroupId: string;
+  canCancel: boolean;
+};
+
+export function socialFriends(slug: string, socialId: string): Promise<{ placesLeft: number; friends: SocialFriend[] }> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/socials/${socialId}/friends`, "no-store");
+}
+
+export function startFriendCheckout(slug: string, socialId: string, names: string[], points: number, promotionCode: string): Promise<SocialCheckout & { friendGroupId?: string | null }> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/socials/${socialId}/friends`, "no-store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ names, points, promotionCode: promotionCode || null }),
   });
 }
 

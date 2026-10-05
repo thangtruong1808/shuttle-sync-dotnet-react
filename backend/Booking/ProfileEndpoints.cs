@@ -9,8 +9,10 @@ public static class ProfileEndpoints
     {
         var me = app.MapGroup("/api/me").RequireAuthorization();
         me.MapGet("/bookings", BookingsAsync);
+        me.MapGet("/friend-spots", FriendSpotsAsync);
         me.MapGet("/bookings/{id:guid}", BookingAsync);
         me.MapPost("/bookings/{id:guid}/cancel", CancelAsync);
+        me.MapPut("/social-friends/{id:guid}", RenameFriendAsync);
         me.MapGet("/rewards", RewardsAsync);
         me.MapGet("/payments", PaymentsAsync);
     }
@@ -33,6 +35,8 @@ public static class ProfileEndpoints
         var filter = status is "past" or "cancelled" ? status : "upcoming";
         var (pageNumber, size, offset) = Page(page, pageSize);
         var (items, total) = await repository.ListBookingsAsync(userId.Value, filter, offset, size, cancellationToken);
+        var friends = await repository.ListBookingFriendsAsync(userId.Value, items.Select(item => item.Id).ToArray(), cancellationToken);
+        var friendsByRegistration = friends.GroupBy(friend => friend.RegistrationId).ToDictionary(group => group.Key, group => group.ToArray());
         var now = DateTime.UtcNow;
         return Results.Ok(new
         {
@@ -50,6 +54,61 @@ public static class ProfileEndpoints
                 status = item.Status,
                 totalAmount = item.TotalAmount,
                 canCancel = item.Status is "pending" or "confirmed" && item.StartTime > now,
+                socialId = item.SocialId,
+                friends = (friendsByRegistration.TryGetValue(item.Id, out var mine) ? mine : Array.Empty<FriendBookingRow>()).Select(friend => new
+                {
+                    id = friend.Id,
+                    name = friend.DisplayName,
+                    status = friend.Status,
+                    amount = friend.Amount,
+                    canCancel = friend.Status == "confirmed" && friend.StartTime > now,
+                }),
+            }),
+            page = pageNumber,
+            pageSize = size,
+            total,
+        });
+    }
+
+    private static async Task<IResult> FriendSpotsAsync(
+        HttpContext http,
+        string? status,
+        int? page,
+        int? pageSize,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var userId = await RequireUserAsync(http, authRepository, cancellationToken);
+        if (userId is null)
+        {
+            return SignInAgain();
+        }
+
+        var filter = status is "past" or "cancelled" ? status : "upcoming";
+        var (pageNumber, size, offset) = Page(page, pageSize);
+        var (items, total) = await repository.ListFriendSpotsAsync(userId.Value, filter, offset, size, cancellationToken);
+        var now = DateTime.UtcNow;
+        return Results.Ok(new
+        {
+            items = items.Select(item => new
+            {
+                id = item.Id,
+                name = item.DisplayName,
+                status = item.Status,
+                amount = item.Amount,
+                courtName = item.CourtName,
+                courtNumber = item.CourtNumber,
+                venueName = item.VenueName,
+                venueSlug = item.VenueSlug,
+                timeZone = item.TimeZone,
+                currency = item.Currency,
+                socialId = item.SocialId,
+                startTime = VenueClock.AsUtc(item.StartTime),
+                endTime = VenueClock.AsUtc(item.EndTime),
+                youLeft = item.RegistrationStatus is "cancelled" or "expired",
+                canCancel = item.Status == "confirmed" && item.StartTime > now,
+                canRename = item.Status is "pending" or "confirmed" && item.StartTime > now,
             }),
             page = pageNumber,
             pageSize = size,
@@ -115,6 +174,11 @@ public static class ProfileEndpoints
         if (result.StatusCode == StatusCodes.Status404NotFound)
         {
             result = await bookingPayments.CancelSocialAsync(userId.Value, id, cancellationToken);
+        }
+
+        if (result.StatusCode == StatusCodes.Status404NotFound)
+        {
+            result = await bookingPayments.CancelFriendAsync(userId.Value, id, cancellationToken);
         }
         if (result.Error is not null)
         {
@@ -212,6 +276,41 @@ public static class ProfileEndpoints
         });
     }
 
+    private static async Task<IResult> RenameFriendAsync(
+        Guid id,
+        RenameFriendBody body,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var userId = await RequireUserAsync(http, authRepository, cancellationToken);
+        if (userId is null)
+        {
+            return SignInAgain();
+        }
+
+        var name = body.Name?.Trim() ?? "";
+        if (name.Length == 0 || name.Length > 80)
+        {
+            return Results.Json(new
+            {
+                errors = new Dictionary<string, string[]> { ["form"] = ["Enter a name of 1 to 80 characters."] },
+            }, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var saved = await repository.RenameSocialFriendAsync(userId.Value, id, name, cancellationToken);
+        if (!saved)
+        {
+            return Results.Json(new
+            {
+                errors = new Dictionary<string, string[]> { ["form"] = ["This friend's name can no longer be changed."] },
+            }, statusCode: StatusCodes.Status409Conflict);
+        }
+
+        return Results.Ok(new { id, name });
+    }
+
     private static async Task<Guid?> RequireUserAsync(
         HttpContext http,
         AuthRepository repository,
@@ -227,6 +326,8 @@ public static class ProfileEndpoints
         var size = pageSize is null or < 1 ? 20 : Math.Min(pageSize.Value, 50);
         return (pageNumber, size, (pageNumber - 1) * size);
     }
+
+    private sealed record RenameFriendBody(string? Name);
 
     private static IResult SignInAgain() =>
         Results.Json(new

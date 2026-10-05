@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
+import { Link } from "react-router-dom";
+import { UserPlus } from "lucide-react";
 import type { AppDispatch } from "../../app/store";
 import { Button, Skeleton, Spinner } from "../../components/ui";
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
@@ -134,7 +136,22 @@ export function BookingsSection() {
                   <p className="mt-2 font-semibold text-white"><Money amount={booking.totalAmount} currency={booking.currency} /></p>
                 </div>
               </div>
-              {booking.canCancel ? (
+              {booking.socialId && booking.canCancel ? (
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Link to={`/${booking.venueSlug}/social/${booking.socialId}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
+                    <UserPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Add friends
+                  </Link>
+                  {confirmId === booking.id ? (
+                    <>
+                      <Button variant="danger" className="w-full sm:w-auto" loading={pendingId === booking.id} onClick={() => void onCancel(booking.id)}>Confirm cancel</Button>
+                      <Button variant="secondary" className="w-full sm:w-auto" disabled={pendingId === booking.id} onClick={() => setConfirmId(null)}>Keep booking</Button>
+                    </>
+                  ) : (
+                    <Button variant="secondary" className="w-full sm:w-auto" disabled={pendingId !== null} onClick={() => setConfirmId(booking.id)}>Cancel</Button>
+                  )}
+                </div>
+              ) : booking.canCancel ? (
                 confirmId === booking.id ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="danger" loading={pendingId === booking.id} onClick={() => void onCancel(booking.id)}>Confirm cancel</Button>

@@ -1,6 +1,14 @@
 import { apiFetch, AuthRequestError } from "../auth/authApi";
 import type { FieldErrors } from "../auth/validation";
 
+export type BookingFriend = {
+  id: string;
+  name: string;
+  status: string;
+  amount: number;
+  canCancel: boolean;
+};
+
 export type BookingRow = {
   id: string;
   venueName: string;
@@ -14,6 +22,8 @@ export type BookingRow = {
   status: string;
   totalAmount: number;
   canCancel: boolean;
+  socialId?: string | null;
+  friends?: BookingFriend[];
 };
 
 export type RewardRow = {
@@ -58,6 +68,30 @@ export function myBookings(status: string, page: number): Promise<Page<BookingRo
   return readPage(`/api/me/bookings?${params}`);
 }
 
+export type FriendSpot = {
+  id: string;
+  name: string;
+  status: string;
+  amount: number;
+  courtName: string;
+  courtNumber: number;
+  venueName: string;
+  venueSlug: string;
+  startTime: string;
+  endTime: string;
+  timeZone: string;
+  currency: string;
+  socialId: string;
+  youLeft: boolean;
+  canCancel: boolean;
+  canRename: boolean;
+};
+
+export function myFriendSpots(status: string, page: number): Promise<Page<FriendSpot>> {
+  const params = new URLSearchParams({ status, page: String(page) });
+  return readPage(`/api/me/friend-spots?${params}`);
+}
+
 export type CancelResult = {
   refundAmount: number;
   feePercent: number;
@@ -74,6 +108,19 @@ export type BookingPayment = {
   pointsRedeemed: number;
   pointsValue: number;
 };
+
+export async function renameFriend(id: string, name: string): Promise<{ id: string; name: string }> {
+  const response = await apiFetch(`/api/me/social-friends/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { errors?: FieldErrors } | null;
+    throw new AuthRequestError(body?.errors ?? { form: ["The name could not be saved."] });
+  }
+  return (await response.json()) as { id: string; name: string };
+}
 
 export async function cancelBooking(id: string): Promise<CancelResult> {
   const response = await apiFetch(`/api/me/bookings/${id}/cancel`, { method: "POST" });

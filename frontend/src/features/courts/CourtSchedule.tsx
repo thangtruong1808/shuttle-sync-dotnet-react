@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { formatVenueRange } from "../../components/format";
-import type { Availability, CourtSocial, ScheduleBooking } from "../venues/venueApi";
+import { formatVenueDay, formatVenueRange } from "../../components/format";
+import type { Availability, CourtSocial, ScheduleBooking, SocialCourtLoad } from "../venues/venueApi";
 
 function clock(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -33,8 +33,16 @@ export function SocialTimes({ times, timeZone, now }: { times: CourtSocial[]; ti
       <ul className="mt-2 grid gap-2">
         {open.map((time) => (
           <li key={time.id} className="rounded-2xl border border-line/40 px-3 py-2">
+            <p className="text-sm font-semibold text-white">{formatVenueDay(time.startTime, timeZone)}</p>
             <p className="whitespace-nowrap text-sm text-white">{formatVenueRange(time.startTime, time.endTime, timeZone)}</p>
-            <p className="text-sm text-mist/80">{time.players === 0 ? "Be the first to join" : `${time.players} of 8 players`}</p>
+            <p className="text-sm text-mist/80">{time.players === 0 ? "No one on this court yet" : `${time.players} of 8 on this court`}</p>
+            {typeof time.totalPlayers === "number" ? (
+              <p className="text-sm text-mist/70">
+                {time.totalPlayers} registered · {time.courtsUsed ?? 0} court{(time.courtsUsed ?? 0) === 1 ? "" : "s"} · 8 players each
+              </p>
+            ) : (
+              <p className="text-sm text-mist/70">Each court holds 8 players.</p>
+            )}
             <SessionClock start={time.startTime} end={time.endTime} />
           </li>
         ))}
@@ -47,6 +55,71 @@ export function upcomingBookings<T extends { startTime: string; endTime: string 
   return bookings
     .filter((booking) => new Date(booking.endTime).getTime() > now)
     .sort((left, right) => new Date(left.startTime).getTime() - new Date(right.startTime).getTime());
+}
+
+export function BookedTime({ start, end, timeZone }: { start: string; end: string; timeZone: string }) {
+  return (
+    <p className="text-sm text-white">
+      <span className="font-semibold">Booked</span>
+      <span className="text-mist/45"> · </span>
+      <span className="whitespace-nowrap">{formatVenueRange(start, end, timeZone)}</span>
+    </p>
+  );
+}
+
+function prettyDate(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!match) return iso;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", year: "numeric" }).format(date);
+}
+
+export function IncentiveNote({ points, startsOn, endsOn }: { points: number; startsOn: string; endsOn: string }) {
+  return (
+    <p className="mt-2 text-sm leading-snug text-line">
+      <span className="font-semibold">+{points} pts</span>
+      <span className="mt-0.5 block font-normal text-mist/80">
+        Book a court or join a public social from {prettyDate(startsOn)} to {prettyDate(endsOn)}. These points are added after that session ends.
+      </span>
+    </p>
+  );
+}
+
+export function SocialRoster({
+  playerCount,
+  courtCount,
+  courts,
+}: {
+  playerCount: number;
+  courtCount: number;
+  courts: SocialCourtLoad[];
+}) {
+  const used = [...courts].sort((left, right) => left.courtNumber - right.courtNumber);
+  const courtsUsed = used.length;
+  return (
+    <div className="mt-2 rounded-2xl border border-white/10 bg-black/25 p-3">
+      <p className="text-sm font-semibold text-white">
+        {playerCount} player{playerCount === 1 ? "" : "s"} registered
+        <span className="font-normal text-mist/70">
+          {" · "}
+          {courtCount > 0 ? `${courtsUsed} of ${courtCount} courts in use` : `${courtsUsed} court${courtsUsed === 1 ? "" : "s"} in use`}
+        </span>
+      </p>
+      <p className="mt-1 text-sm leading-snug text-mist/75">Each court holds 8 players. The next player uses another court only after the earlier court is full. If someone leaves, the next player moves up.</p>
+      {used.length > 0 ? (
+        <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {used.map((court) => (
+            <li key={court.courtNumber} className="rounded-xl border border-white/10 px-2.5 py-2">
+              <p className="truncate text-xs text-mist/60">{court.courtName}</p>
+              <p className="text-sm font-semibold text-white">{court.players} / 8</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-mist/70">No one has joined this time yet.</p>
+      )}
+    </div>
+  );
 }
 
 export function SessionClock({ start, end }: { start: string; end: string }) {
@@ -73,9 +146,9 @@ function bookingTip(booking: ScheduleBooking, timeZone: string, now: number): st
   const startMs = new Date(booking.startTime).getTime();
   const endMs = new Date(booking.endTime).getTime();
   if (now < startMs) {
-    return `${range}. Starts in ${clock(startMs - now)}.`;
+    return `Booked, ${range}. Starts in ${clock(startMs - now)}.`;
   }
-  return `${range}. Ends in ${clock(endMs - now)}.`;
+  return `Booked, ${range}. Ends in ${clock(endMs - now)}.`;
 }
 
 function clockParts(value: number, timeZone: string) {

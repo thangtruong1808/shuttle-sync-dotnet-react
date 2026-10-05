@@ -45,8 +45,9 @@ export function OverviewSection() {
       ) : (
         <p className="mt-4 text-sm text-mist/70">No upcoming booking.</p>
       )}
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Link className="rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/bookings">My bookings</Link>
+        <Link className="rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/friend-spots">Friend spots</Link>
         <Link className="rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/rewards">Reward history</Link>
         <Link className="rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/payments">Payments</Link>
       </div>

@@ -170,14 +170,15 @@ export function RewardsPage() {
     <main>
       <PageSection>
         <h1 className="font-display text-3xl text-white">Reward points</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-mist/75">Points lower what you pay now, and a finished public social can add more points for next time. Your balance is in the navbar and on your profile.</p>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-mist/75">Points lower what you pay now, and a finished court booking or public social can add more points for next time. Your balance is in the navbar and on your profile.</p>
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
           <article className="rounded-3xl border border-white/10 bg-pine/80 p-5">
             <h2 className="font-display text-2xl text-white">How you earn points</h2>
             <ul className="mt-3 space-y-3 text-sm leading-relaxed text-mist/75">
               <li>A venue sets incentive points for a range of dates. Each court shows +N pts and those dates.</li>
-              <li>Register for a public social that starts on one of those dates. The pay page shows how many points that social will add.</li>
-              <li>After that social ends, the points are added to your balance once. You can spend them on a later court or social.</li>
+              <li>Book a court or register for a public social that starts on one of those dates. The pay page shows how many points that session will add.</li>
+              <li>After that session ends, the points are added to your balance once. You can spend them on a later court or social.</li>
+              <li>Each friend you add earns the same points after that social ends. Three friends at +10 pts add 30 pts.</li>
               <li>A weekly social earns the points again only after that week's session ends, and only if the date is still inside the incentive.</li>
               <li>You do not earn the incentive if you cancel, or if the payment never finishes.</li>
             </ul>
@@ -207,6 +208,7 @@ export function RewardsPage() {
               <li>More than 24 hours before the start, that social's card payment is refunded in full and the points used on it come back.</li>
               <li>Within 24 hours, after the card payment has succeeded, the venue keeps its late-cancel percent of that social's charge and the same percent of the points used on it.</li>
               <li>If you paid for several socials together, cancelling one returns that session's share. The others stay registered.</li>
+              <li>If you added friends on one payment, cancelling one friend refunds only that friend's share. The others stay registered.</li>
               <li>Cancelling does not award the incentive. Those points arrive only if you are still registered when the social ends.</li>
             </ul>
           </article>

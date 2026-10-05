@@ -15,6 +15,7 @@ function pageName(path: string): string {
   if (path === "/profile") return "Overview";
   if (path === "/profile/details") return "Personal info";
   if (path === "/profile/bookings") return "My bookings";
+  if (path === "/profile/friend-spots") return "Friend spots";
   if (path === "/profile/rewards") return "Reward points";
   if (path === "/profile/payments") return "Payments & refunds";
   if (path === "/profile/security") return "Security";

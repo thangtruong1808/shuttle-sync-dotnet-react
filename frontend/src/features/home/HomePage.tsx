@@ -5,8 +5,8 @@ import type { AppDispatch } from "../../app/store";
 import { Mic, SlidersHorizontal, Tag, X } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { Button, PickerInput, Skeleton } from "../../components/ui";
-import { CourtImage, EmptyState, ErrorState, Money, addDays, formatVenueRange, venueToday } from "../../components/format";
-import { DayChart, SessionClock, SocialTimes, upcomingBookings, useNow } from "../courts/CourtSchedule";
+import { CourtImage, EmptyState, ErrorState, Money, addDays, venueToday } from "../../components/format";
+import { BookedTime, DayChart, IncentiveNote, SessionClock, SocialTimes, upcomingBookings, useNow } from "../courts/CourtSchedule";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
 import { apiFetch, AuthRequestError } from "../auth/authApi";
 import { loadCurrentUser } from "../auth/authSlice";
@@ -173,6 +173,13 @@ export default function HomePage() {
           ) : availability && availability.courts.length > 0 ? (
             <>
               <DayChart schedule={availability} now={now} compact collapsible />
+              {(availability.incentives ?? []).length > 0 ? (
+                <div className="mt-4">
+                  {(availability.incentives ?? []).map((incentive) => (
+                    <IncentiveNote key={incentive.id} points={incentive.points} startsOn={incentive.startsOn} endsOn={incentive.endsOn} />
+                  ))}
+                </div>
+              ) : null}
               <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {availability.courts.map((court) => {
                   const bookings = upcomingBookings(court.bookings, now);
@@ -181,14 +188,11 @@ export default function HomePage() {
                       <CourtImage src={court.imageUrl} alt={`${court.courtName} court`} />
                       <h3 className="mt-4 font-display text-xl text-white">{court.courtName}</h3>
                       <p className="text-sm text-mist/65">Court {court.courtNumber}{court.surfaceType ? ` · ${court.surfaceType}` : ""}</p>
-                      {(availability.incentives ?? []).map((incentive) => (
-                        <p key={incentive.id} className="mt-2 text-sm font-semibold text-line">+{incentive.points} pts · {incentive.startsOn} to {incentive.endsOn}</p>
-                      ))}
                       {bookings.length === 0 ? null : (
                         <ul className="mt-3 grid grid-cols-2 gap-2">
                           {bookings.map((booking) => (
                             <li key={booking.id} className="min-w-0 rounded-2xl border border-white/15 px-3 py-2">
-                              <p className="text-sm text-white">{formatVenueRange(booking.startTime, booking.endTime, availability.venue.timeZone)}</p>
+                              <BookedTime start={booking.startTime} end={booking.endTime} timeZone={availability.venue.timeZone} />
                               <SessionClock start={booking.startTime} end={booking.endTime} />
                             </li>
                           ))}

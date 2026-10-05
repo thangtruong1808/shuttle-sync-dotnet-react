@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useDispatch } from "react-redux";
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { CalendarDays, Gift, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Shield, UserRound, Wallet } from "lucide-react";
+import { CalendarDays, Gift, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Shield, UserRound, Users, Wallet } from "lucide-react";
 import type { AppDispatch } from "../../app/store";
 import { logout } from "../auth/authSlice";
 import { useSelector } from "react-redux";
@@ -13,6 +13,7 @@ const sections = [
   { to: "/profile", label: "Overview", end: true, icon: LayoutDashboard },
   { to: "/profile/details", label: "Personal info", end: false, icon: UserRound },
   { to: "/profile/bookings", label: "My bookings", end: false, icon: CalendarDays },
+  { to: "/profile/friend-spots", label: "Friend spots", end: false, icon: Users },
   { to: "/profile/rewards", label: "Reward points", end: false, icon: Gift },
   { to: "/profile/payments", label: "Payments & refunds", end: false, icon: Wallet },
   { to: "/profile/security", label: "Security", end: false, icon: Shield },

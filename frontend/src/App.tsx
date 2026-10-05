@@ -22,6 +22,7 @@ import VenuesPage from "./features/dashboard/VenuesPage";
 import HomePage from "./features/home/HomePage";
 import { CancellationPage, ContactPage, FaqPage, NotFoundPage, PrivacyPage, PromotionsPage as PublicPromotionsPage, RewardsPage, TermsPage } from "./features/pages/StaticPages";
 import { BookingsSection } from "./features/profile/BookingsSection";
+import { FriendSpotsSection } from "./features/profile/FriendSpotsSection";
 import ProfileLayout from "./features/profile/ProfileLayout";
 import { DetailsSection, OverviewSection } from "./features/profile/ProfileBasics";
 import { PaymentsSection, RewardsSection, SecuritySection } from "./features/profile/ProfileLists";
@@ -123,6 +124,7 @@ export default function App() {
             <Route index element={<OverviewSection />} />
             <Route path="details" element={<DetailsSection />} />
             <Route path="bookings" element={<BookingsSection />} />
+            <Route path="friend-spots" element={<FriendSpotsSection />} />
             <Route path="rewards" element={<RewardsSection />} />
             <Route path="payments" element={<PaymentsSection />} />
             <Route path="security" element={<SecuritySection />} />

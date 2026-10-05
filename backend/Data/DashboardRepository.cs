@@ -316,7 +316,11 @@ public sealed class DashboardRepository(IConfiguration configuration)
         await using var connection = await OpenAsync(cancellationToken);
         var rows = await connection.QueryAsync<DashSocialRow>(new CommandDefinition(
             """
-            SELECT s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly, COUNT(r.Id) AS PlayerCount
+            SELECT s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly,
+                   COUNT(r.Id) + (
+                       SELECT COUNT(*) FROM PublicSocialFriends f
+                       WHERE f.SocialId = s.Id AND f.Status = 'confirmed'
+                   ) AS PlayerCount
             FROM PublicSocials s
             LEFT JOIN PublicSocialRegistrations r ON r.SocialId = s.Id AND r.Status = 'confirmed'
             WHERE s.VenueId = @VenueId AND s.IsDeleted = 0
@@ -334,7 +338,11 @@ public sealed class DashboardRepository(IConfiguration configuration)
         await using var connection = await OpenAsync(cancellationToken);
         var rows = await connection.QueryAsync<DashSocialRow>(new CommandDefinition(
             """
-            SELECT s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly, COUNT(r.Id) AS PlayerCount
+            SELECT s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly,
+                   COUNT(r.Id) + (
+                       SELECT COUNT(*) FROM PublicSocialFriends f
+                       WHERE f.SocialId = s.Id AND f.Status = 'confirmed'
+                   ) AS PlayerCount
             FROM PublicSocials s
             LEFT JOIN PublicSocialRegistrations r ON r.SocialId = s.Id AND r.Status = 'confirmed'
             WHERE s.VenueId = @VenueId AND s.IsDeleted = 0
@@ -1386,6 +1394,15 @@ public sealed class DashboardRepository(IConfiguration configuration)
             JOIN Venues v ON v.Id = r.VenueId
             JOIN PublicSocials s ON s.Id = r.SocialId
             WHERE r.IncentiveAwardedAt IS NOT NULL AND r.IncentivePoints > 0 AND {socialVenue}
+            UNION ALL
+            SELECT f.Id, u.Email, v.Name, v.TimeZone, f.IncentivePoints, f.IncentiveAwardedAt,
+                   s.StartTime, s.EndTime, CONCAT('Friend · ', f.DisplayName)
+            FROM PublicSocialFriends f
+            JOIN PublicSocialRegistrations r ON r.Id = f.RegistrationId
+            JOIN Users u ON u.Id = r.UserId
+            JOIN Venues v ON v.Id = f.VenueId
+            JOIN PublicSocials s ON s.Id = f.SocialId
+            WHERE f.IncentiveAwardedAt IS NOT NULL AND f.IncentivePoints > 0 AND {socialVenue}
             """;
         await using var connection = await OpenAsync(cancellationToken);
         var total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(

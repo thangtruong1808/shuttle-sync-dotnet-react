@@ -324,6 +324,13 @@ public sealed class BookingPayments(
             }
             else if (intent is not null)
             {
+                if (IsFriend(intent.Metadata))
+                {
+                    await ApplyFriendIntentAsync(intent, cancellationToken);
+                    await payments.FinishWebhookAsync(stripeEvent.Id, "processed", null, cancellationToken);
+                    return Results.Ok();
+                }
+
                 if (IsSocial(intent.Metadata))
                 {
                     await ApplySocialIntentAsync(intent, cancellationToken);
@@ -573,6 +580,11 @@ public sealed class BookingPayments(
 
     private async Task<bool> ApplyCheckoutSessionAsync(string eventType, Session session, CancellationToken cancellationToken)
     {
+        if (IsFriend(session.Metadata) || await bookings.FriendPaymentExistsAsync(session.Id, cancellationToken))
+        {
+            return await ApplyFriendCheckoutAsync(eventType, session, cancellationToken);
+        }
+
         if (IsSocial(session.Metadata) || await bookings.SocialPaymentExistsAsync(session.Id, cancellationToken))
         {
             return await ApplySocialCheckoutAsync(eventType, session, cancellationToken);
@@ -856,6 +868,180 @@ public sealed class BookingPayments(
         }
 
         return SocialCheckoutResponse.From(hold, session.Url);
+    }
+
+    public async Task<SocialCheckoutResponse> FriendCheckoutAsync(
+        Guid venueId,
+        Guid socialId,
+        Guid userId,
+        string currency,
+        int requestedPoints,
+        string? promotionCode,
+        IReadOnlyList<string> names,
+        string successUrl,
+        string cancelUrl,
+        CancellationToken cancellationToken)
+    {
+        if (settings.IsConfigured)
+        {
+            StripeConfiguration.ApiKey = settings.SecretKey;
+        }
+
+        await bookings.ExpirePublicSocialHoldsAsync(cancellationToken);
+        var hold = await bookings.BeginFriendCheckoutAsync(venueId, socialId, userId, currency, requestedPoints, promotionCode, names, cancellationToken);
+        if (hold.Error is not null)
+        {
+            return SocialCheckoutResponse.Fail(hold.Error, hold.StatusCode);
+        }
+
+        if (!hold.NeedsPayment || hold.CheckoutGroupId is null)
+        {
+            return SocialCheckoutResponse.From(hold, null) with { FriendGroupId = hold.CheckoutGroupId };
+        }
+
+        if (hold.Amount > 0 && !settings.IsConfigured)
+        {
+            await bookings.ReleaseFriendGroupAsync(hold.CheckoutGroupId.Value, cancellationToken);
+            return SocialCheckoutResponse.Fail("Card payments are not configured yet.", StatusCodes.Status503ServiceUnavailable);
+        }
+
+        if (!string.IsNullOrWhiteSpace(hold.ExistingIntentId))
+        {
+            await bookings.CancelSocialPaymentAsync(hold.ExistingIntentId, cancellationToken);
+            await CancelIntentsAsync([hold.ExistingIntentId], cancellationToken);
+        }
+
+        var customerId = await CustomerIdAsync(hold.StripeCustomerId, hold.Email, userId, cancellationToken);
+        Session session;
+        try
+        {
+            session = await CreateFriendSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: true, hold.Requoted, cancellationToken);
+        }
+        catch (StripeException exception) when (MentionsPayTo(exception))
+        {
+            try
+            {
+                session = await CreateFriendSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: false, hold.Requoted, cancellationToken);
+            }
+            catch (StripeException retry)
+            {
+                await bookings.ReleaseFriendGroupAsync(hold.CheckoutGroupId.Value, cancellationToken);
+                return SocialCheckoutResponse.Fail(retry.StripeError?.Message ?? "The payment could not be started.", StatusCodes.Status502BadGateway);
+            }
+        }
+        catch (StripeException exception)
+        {
+            await bookings.ReleaseFriendGroupAsync(hold.CheckoutGroupId.Value, cancellationToken);
+            return SocialCheckoutResponse.Fail(exception.StripeError?.Message ?? "The payment could not be started.", StatusCodes.Status502BadGateway);
+        }
+
+        if (string.IsNullOrWhiteSpace(session.Url))
+        {
+            await CancelIntentsAsync([session.Id], cancellationToken);
+            await bookings.ReleaseFriendGroupAsync(hold.CheckoutGroupId.Value, cancellationToken);
+            return SocialCheckoutResponse.Fail("The payment page could not be opened.", StatusCodes.Status502BadGateway);
+        }
+
+        try
+        {
+            await bookings.AttachFriendPaymentAsync(hold.RegistrationId, hold.CheckoutGroupId.Value, userId, customerId, session.Id, hold.Amount, hold.Currency, cancellationToken);
+        }
+        catch
+        {
+            await CancelIntentsAsync([session.Id], cancellationToken);
+            await bookings.ReleaseFriendGroupAsync(hold.CheckoutGroupId.Value, cancellationToken);
+            return SocialCheckoutResponse.Fail("The payment could not be started.", StatusCodes.Status502BadGateway);
+        }
+
+        return SocialCheckoutResponse.From(hold, session.Url) with { FriendGroupId = hold.CheckoutGroupId };
+    }
+
+    public async Task<CancelResponse> CancelFriendAsync(Guid userId, Guid friendId, CancellationToken cancellationToken)
+    {
+        var context = await bookings.LoadFriendCancelAsync(userId, friendId, cancellationToken);
+        if (context is null)
+        {
+            return CancelResponse.Fail("That friend was not found.", StatusCodes.Status404NotFound);
+        }
+
+        if (context.Status != "confirmed" || context.StartTime <= DateTime.UtcNow)
+        {
+            return CancelResponse.Fail("This friend can no longer be cancelled.", StatusCodes.Status409Conflict);
+        }
+
+        var late = DateTime.SpecifyKind(context.StartTime, DateTimeKind.Utc) <= DateTime.UtcNow.AddHours(24);
+        var fee = context.PaymentStatus == "succeeded" && late ? context.LateCancelFeePercent : 0m;
+        string? refundId = null;
+        var refundStatus = "succeeded";
+        decimal refundAmount = 0m;
+        if (context.PaymentStatus == "succeeded"
+            && context.ShareAmount > 0
+            && context.PaymentId is not null
+            && !string.IsNullOrWhiteSpace(context.StripePaymentIntentId)
+            && !context.StripePaymentIntentId.StartsWith("cs_", StringComparison.Ordinal))
+        {
+            refundAmount = decimal.Round(context.ShareAmount * (100m - fee) / 100m, 2, MidpointRounding.AwayFromZero);
+            if (refundAmount > context.ShareAmount)
+            {
+                refundAmount = context.ShareAmount;
+            }
+
+            var already = await bookings.RefundedSocialAmountAsync(context.PaymentId.Value, cancellationToken);
+            var room = context.ChargedAmount - already;
+            if (room < 0)
+            {
+                room = 0;
+            }
+
+            if (refundAmount > room)
+            {
+                refundAmount = room;
+            }
+
+            if (refundAmount > 0)
+            {
+                if (!settings.IsConfigured)
+                {
+                    return CancelResponse.Fail("Card payments are not configured yet.", StatusCodes.Status503ServiceUnavailable);
+                }
+
+                StripeConfiguration.ApiKey = settings.SecretKey;
+                try
+                {
+                    var refund = await new RefundService().CreateAsync(
+                        new RefundCreateOptions
+                        {
+                            PaymentIntent = context.StripePaymentIntentId,
+                            Amount = Cents(refundAmount),
+                        },
+                        new RequestOptions { IdempotencyKey = "refund-friend-" + friendId.ToString("N") },
+                        cancellationToken);
+                    refundId = refund.Id;
+                    refundStatus = MapRefundStatus(refund.Status);
+                }
+                catch (StripeException exception)
+                {
+                    return CancelResponse.Fail(exception.StripeError?.Message ?? "The refund could not be started.", StatusCodes.Status502BadGateway);
+                }
+            }
+        }
+
+        string? paymentStatus = context.PaymentStatus switch
+        {
+            "succeeded" when refundAmount <= 0 => null,
+            "succeeded" when refundAmount >= context.ChargedAmount => "refunded",
+            "succeeded" => "partially_refunded",
+            _ => null,
+        };
+        var restored = await bookings.CompleteFriendCancelAsync(
+            new SocialCancelWrite(context.Id, userId, fee, context.PaymentId, paymentStatus, refundId, refundAmount, refundStatus),
+            cancellationToken);
+        if (restored is null)
+        {
+            return CancelResponse.Fail("This friend can no longer be cancelled.", StatusCodes.Status409Conflict);
+        }
+
+        return new CancelResponse(StatusCodes.Status200OK, null, refundAmount, fee, restored.Value, context.Currency);
     }
 
     public async Task<CancelResponse> CancelSocialAsync(Guid userId, Guid registrationId, CancellationToken cancellationToken)
@@ -1151,6 +1337,160 @@ public sealed class BookingPayments(
             cancellationToken);
     }
 
+    private async Task<bool> ApplyFriendCheckoutAsync(string eventType, Session session, CancellationToken cancellationToken)
+    {
+        if (eventType == "checkout.session.expired")
+        {
+            await bookings.FailFriendPendingAsync(session.Id, "cancelled", cancellationToken);
+            return true;
+        }
+
+        if (eventType is not ("checkout.session.completed" or "checkout.session.async_payment_succeeded" or "checkout.session.async_payment_failed"))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(session.PaymentIntentId))
+        {
+            return false;
+        }
+
+        var groupRaw = session.ClientReferenceId;
+        if (string.IsNullOrWhiteSpace(groupRaw) && session.Metadata is not null)
+        {
+            session.Metadata.TryGetValue("friendGroupId", out groupRaw);
+        }
+
+        if (!Guid.TryParse(groupRaw, out var friendGroupId)
+            || !await bookings.BindFriendPaymentIntentAsync(friendGroupId, session.PaymentIntentId, cancellationToken))
+        {
+            return false;
+        }
+
+        var intent = await new PaymentIntentService().GetAsync(session.PaymentIntentId, cancellationToken: cancellationToken);
+        if (eventType == "checkout.session.async_payment_failed")
+        {
+            await bookings.FailFriendPendingAsync(intent.Id, "failed", cancellationToken);
+            return true;
+        }
+
+        await ApplyFriendIntentAsync(intent, cancellationToken);
+        return true;
+    }
+
+    private async Task ApplyFriendIntentAsync(PaymentIntent intent, CancellationToken cancellationToken)
+    {
+        if (intent.Metadata is not null
+            && intent.Metadata.TryGetValue("friendGroupId", out var groupRaw)
+            && Guid.TryParse(groupRaw, out var friendGroupId))
+        {
+            await bookings.BindFriendPaymentIntentAsync(friendGroupId, intent.Id, cancellationToken);
+        }
+
+        switch (intent.Status)
+        {
+            case "succeeded":
+                var transition = await bookings.MarkFriendSucceededAsync(intent.Id, intent.LatestChargeId, cancellationToken);
+                if (transition is { Action: "refund", Amount: > 0 })
+                {
+                    var refund = await new RefundService().CreateAsync(
+                        new RefundCreateOptions { PaymentIntent = intent.Id, Amount = Cents(transition.Amount) },
+                        new RequestOptions { IdempotencyKey = "refund-friend-late-" + transition.RegistrationId.ToString("N") },
+                        cancellationToken);
+                    await bookings.RecordSocialRefundAsync(intent.Id, refund.Id, transition.Amount, MapRefundStatus(refund.Status), cancellationToken);
+                }
+
+                return;
+            case "processing":
+                var type = await MethodTypeAsync(intent, cancellationToken);
+                var until = type switch
+                {
+                    "au_becs_debit" => DateTime.UtcNow.AddDays(5),
+                    "payto" => DateTime.UtcNow.AddMinutes(60),
+                    _ => (DateTime?)null,
+                };
+                if (until is not null)
+                {
+                    await bookings.ExtendFriendHoldAsync(intent.Id, until.Value, cancellationToken);
+                }
+
+                return;
+            case "canceled":
+                await bookings.FailFriendPendingAsync(intent.Id, "cancelled", cancellationToken);
+                return;
+        }
+    }
+
+    private static async Task<Session> CreateFriendSessionAsync(
+        SocialCheckoutHold hold,
+        string customerId,
+        string successUrl,
+        string cancelUrl,
+        bool includePayTo,
+        bool replacement,
+        CancellationToken cancellationToken)
+    {
+        var types = new List<string> { "card", "au_becs_debit" };
+        if (includePayTo)
+        {
+            types.Add("payto");
+        }
+
+        var groupId = hold.CheckoutGroupId ?? hold.RegistrationId;
+        var key = "friend-checkout-" + groupId.ToString("N");
+        if (!includePayTo)
+        {
+            key += "-card";
+        }
+
+        if (replacement)
+        {
+            key += "-" + Guid.NewGuid().ToString("N");
+        }
+
+        var people = hold.FriendCount == 1 ? "1 friend" : $"{hold.FriendCount} friends";
+        var metadata = new Dictionary<string, string>
+        {
+            ["kind"] = "social-friends",
+            ["registrationId"] = hold.RegistrationId.ToString(),
+            ["friendGroupId"] = groupId.ToString(),
+        };
+        return await new SessionService().CreateAsync(
+            new SessionCreateOptions
+            {
+                Mode = "payment",
+                Customer = customerId,
+                SuccessUrl = successUrl,
+                CancelUrl = cancelUrl,
+                PaymentMethodTypes = types,
+                ClientReferenceId = groupId.ToString(),
+                Metadata = metadata,
+                PaymentIntentData = new SessionPaymentIntentDataOptions
+                {
+                    ReceiptEmail = string.IsNullOrWhiteSpace(hold.Email) ? null : hold.Email,
+                    Metadata = metadata,
+                },
+                LineItems =
+                [
+                    new SessionLineItemOptions
+                    {
+                        Quantity = 1,
+                        PriceData = new SessionLineItemPriceDataOptions
+                        {
+                            Currency = hold.Currency.ToLowerInvariant(),
+                            UnitAmount = Cents(hold.Amount),
+                            ProductData = new SessionLineItemPriceDataProductDataOptions { Name = $"Drop-in social · {people}" },
+                        },
+                    },
+                ],
+            },
+            new RequestOptions { IdempotencyKey = key },
+            cancellationToken);
+    }
+
+    private static bool IsFriend(IDictionary<string, string>? metadata) =>
+        metadata is not null && metadata.TryGetValue("kind", out var kind) && kind == "social-friends";
+
     private static bool IsSocial(IDictionary<string, string>? metadata) =>
         metadata is not null && metadata.TryGetValue("kind", out var kind) && kind == "social";
 
@@ -1205,7 +1545,8 @@ public sealed record SocialCheckoutResponse(
     decimal DiscountAmount,
     int PointsRedeemed,
     decimal PointsValue,
-    int IncentivePoints)
+    int IncentivePoints,
+    Guid? FriendGroupId = null)
 {
     public static SocialCheckoutResponse Fail(string error, int statusCode) =>
         new(statusCode, error, Guid.Empty, "", null, 0, "AUD", "", 0, false, 0, 0, 0, 0, 0);

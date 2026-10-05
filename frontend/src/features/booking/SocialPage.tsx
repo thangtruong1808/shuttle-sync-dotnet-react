@@ -5,7 +5,7 @@ import type { RootState } from "../../app/store";
 import { ErrorState, Money, formatVenueDay, formatVenueRange } from "../../components/format";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
 import { Button, Skeleton } from "../../components/ui";
-import { SessionClock, useNow } from "../courts/CourtSchedule";
+import { SessionClock, SocialRoster, useNow } from "../courts/CourtSchedule";
 import { openSocials, rememberVenueSlug, type PublicSocial } from "../venues/venueApi";
 
 export default function SocialPage() {
@@ -20,6 +20,7 @@ export default function SocialPage() {
   const [timeZone, setTimeZone] = useState(venue?.timeZone ?? "Australia/Melbourne");
   const [currency, setCurrency] = useState(venue?.currency ?? "AUD");
   const [fee, setFee] = useState(venue?.lateCancelFeePercent ?? 0);
+  const [courtCount, setCourtCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -44,6 +45,7 @@ export default function SocialPage() {
         setTimeZone(next.venue.timeZone);
         setCurrency(next.venue.currency);
         setFee(next.venue.lateCancelFeePercent);
+        setCourtCount(next.courtCount ?? 0);
         setSelected((current) => current.filter((id) => (next.socials ?? []).some((social) => social.id === id && social.yourStatus !== "confirmed" && !social.full)));
       })
       .catch(() => {
@@ -110,12 +112,13 @@ export default function SocialPage() {
                         <p className="text-sm font-semibold text-white">{formatVenueDay(social.startTime, timeZone)}</p>
                         <p className="whitespace-nowrap text-sm text-white">{formatVenueRange(social.startTime, social.endTime, timeZone)}</p>
                         <SessionClock start={social.startTime} end={social.endTime} />
-                        <p className="text-sm text-mist/75">
+                        <SocialRoster playerCount={social.playerCount} courtCount={courtCount} courts={social.courts ?? []} />
+                        <p className="mt-2 text-sm text-mist/75">
                           {social.yourStatus === "confirmed" && social.yourCourtName
                             ? `You're on ${social.yourCourtName}.`
                             : social.full
-                              ? "Full"
-                              : `${social.playerCount} player${social.playerCount === 1 ? "" : "s"} joined.`}
+                              ? "This social is full."
+                              : "Places are still open."}
                           {typeof social.price === "number" ? <> · <Money amount={social.price} currency={currency} /></> : null}
                         </p>
                         {social.repeatWeekly ? <p className="text-sm font-medium text-line">This slot repeats weekly.</p> : null}

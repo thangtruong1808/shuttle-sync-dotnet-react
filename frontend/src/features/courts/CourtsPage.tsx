@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { CourtImage, EmptyState, ErrorState, formatVenueRange, venueToday } from "../../components/format";
+import { CourtImage, EmptyState, ErrorState, venueToday } from "../../components/format";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
 import { PickerInput, Skeleton } from "../../components/ui";
 import { venueAvailability, type Availability } from "../venues/venueApi";
-import { DayChart, SessionClock, SocialTimes, upcomingBookings, useNow } from "./CourtSchedule";
+import { BookedTime, DayChart, IncentiveNote, SessionClock, SocialTimes, upcomingBookings, useNow } from "./CourtSchedule";
 
 export default function CourtsPage() {
   const { slug = "" } = useParams();
@@ -70,6 +70,13 @@ export default function CourtsPage() {
         ) : availability && availability.courts.length > 0 ? (
           <>
             <DayChart schedule={availability} now={now} />
+            {(availability.incentives ?? []).length > 0 ? (
+              <div className="mt-6">
+                {(availability.incentives ?? []).map((incentive) => (
+                  <IncentiveNote key={incentive.id} points={incentive.points} startsOn={incentive.startsOn} endsOn={incentive.endsOn} />
+                ))}
+              </div>
+            ) : null}
             <ul className="mt-6 space-y-4">
               {availability.courts.map((court) => {
                 const bookings = upcomingBookings(court.bookings, now);
@@ -83,7 +90,7 @@ export default function CourtsPage() {
                       <ul className="mt-3 grid gap-2">
                         {bookings.map((booking) => (
                           <li key={booking.id} className="rounded-2xl border border-white/10 px-3 py-2">
-                            <p className="text-sm text-white">{formatVenueRange(booking.startTime, booking.endTime, availability.venue.timeZone)}</p>
+                            <BookedTime start={booking.startTime} end={booking.endTime} timeZone={availability.venue.timeZone} />
                             <SessionClock start={booking.startTime} end={booking.endTime} />
                           </li>
                         ))}

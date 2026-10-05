@@ -18,6 +18,8 @@ public static class VenueEndpoints
         venues.MapPost("/{slug}/socials/checkout", CheckoutSocialsAsync).RequireAuthorization();
         venues.MapGet("/{slug}/socials/{socialId:guid}", SocialOfferAsync);
         venues.MapPost("/{slug}/socials/{socialId:guid}/checkout", CheckoutSocialAsync).RequireAuthorization();
+        venues.MapGet("/{slug}/socials/{socialId:guid}/friends", ListFriendsAsync).RequireAuthorization();
+        venues.MapPost("/{slug}/socials/{socialId:guid}/friends", CheckoutFriendsAsync).RequireAuthorization();
         venues.MapGet("/{slug}/socials/registrations/{registrationId:guid}", SocialRegistrationAsync).RequireAuthorization();
 
         app.MapGet("/api/dashboard/venues", DashboardVenuesAsync).RequireAuthorization();
@@ -98,6 +100,8 @@ public static class VenueEndpoints
                     startTime = social.StartTime,
                     endTime = social.EndTime,
                     players = social.Courts.First(item => item.CourtId == court.Id).Players,
+                    totalPlayers = social.PlayerCount,
+                    courtsUsed = social.Courts.Count(item => item.Players > 0),
                 }),
         });
 
@@ -323,11 +327,13 @@ public static class VenueEndpoints
         return Results.Ok(new
         {
             venue = VenueResponse(venue),
+            courtCount = courts.Length,
             socials = socials.Select(social =>
             {
                 mineStatus.TryGetValue(social.Id, out var yours);
                 var seat = session is null ? null : seats.FirstOrDefault(row => row.SocialId == social.Id && row.UserId == session.UserId);
                 var confirmed = yours == "confirmed";
+                var loads = CourtLoads(courts, seats, social.Id);
                 return new
                 {
                     id = social.Id,
@@ -340,6 +346,7 @@ public static class VenueEndpoints
                     yourCourtName = confirmed ? seat?.CourtName : null,
                     yourCourtNumber = confirmed ? seat?.CourtNumber : null,
                     full = capacity == 0 || social.PlayerCount >= capacity,
+                    courts = loads,
                 };
             }),
         });
@@ -418,6 +425,7 @@ public static class VenueEndpoints
         }
 
         var seats = await repository.ListPublicSocialSeatsAsync([socialId], cancellationToken);
+        var courts = await repository.ListPublicCourtsAsync(venue.Id, cancellationToken);
         var session = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
         var mine = session is null
             ? []
@@ -445,6 +453,8 @@ public static class VenueEndpoints
             endTime = VenueClock.AsUtc(social.EndTime),
             price,
             playerCount = seats.Length,
+            courtCount = courts.Length,
+            courts = CourtLoads(courts, seats, socialId),
             yourStatus = yours?.Status,
             yourCourtName = yours?.Status == "confirmed" ? seat?.CourtName : null,
             yourCourtNumber = yours?.Status == "confirmed" ? seat?.CourtNumber : null,
@@ -550,6 +560,20 @@ public static class VenueEndpoints
         });
     }
 
+    private static object[] CourtLoads(PublicCourtRow[] courts, PublicSocialSeatRow[] seats, Guid socialId)
+    {
+        return courts
+            .OrderBy(court => court.CourtNumber)
+            .Select(court => new
+            {
+                courtName = court.CourtName,
+                courtNumber = court.CourtNumber,
+                players = seats.Count(seat => seat.SocialId == socialId && seat.CourtId == court.Id),
+            })
+            .Where(court => court.players > 0)
+            .ToArray();
+    }
+
     private static SocialView BuildSocialView(
         PublicSocialRow social,
         PublicSocialSeatRow[] seats,
@@ -579,12 +603,117 @@ public static class VenueEndpoints
             visible.Select(court => new SocialCourt(court.Id, placed.FirstOrDefault(group => group.Key == court.Id)?.Count() ?? 0)).ToArray());
     }
 
+    private static async Task<IResult> ListFriendsAsync(
+        string slug,
+        Guid socialId,
+        HttpContext http,
+        BookingRepository repository,
+        AuthRepository auth,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
+        if (current is null)
+        {
+            return Form("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Results.NotFound();
+        }
+
+        var social = await repository.FindPublicSocialAsync(venue.Id, socialId, cancellationToken);
+        if (social is null)
+        {
+            return Results.NotFound();
+        }
+
+        var now = DateTime.UtcNow;
+        var friends = await repository.ListSocialFriendsAsync(current.UserId, socialId, cancellationToken);
+        var placesLeft = await repository.SocialPlacesLeftAsync(venue.Id, socialId, cancellationToken);
+        return Results.Ok(new
+        {
+            placesLeft,
+            friends = friends.Select(friend => new
+            {
+                id = friend.Id,
+                name = friend.DisplayName,
+                status = friend.Status,
+                amount = friend.Amount,
+                courtName = friend.CourtName,
+                checkoutGroupId = friend.CheckoutGroupId,
+                canCancel = friend.Status == "confirmed" && friend.StartTime > now,
+            }),
+        });
+    }
+
+    private static async Task<IResult> CheckoutFriendsAsync(
+        string slug,
+        Guid socialId,
+        FriendCheckoutBody body,
+        HttpContext http,
+        BookingRepository repository,
+        AuthRepository auth,
+        BookingPayments payments,
+        AuthSettings authSettings,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
+        if (current is null)
+        {
+            return Form("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Form("That venue was not found.", StatusCodes.Status404NotFound);
+        }
+
+        var origin = authSettings.FrontendOrigin.TrimEnd('/');
+        var successUrl = $"{origin}/{slug}/social/{socialId}?checkout=friends";
+        var cancelUrl = $"{origin}/{slug}/social/{socialId}?checkout=friends-cancel";
+        var result = await payments.FriendCheckoutAsync(
+            venue.Id,
+            socialId,
+            current.UserId,
+            venue.Currency,
+            body.Points,
+            body.PromotionCode,
+            body.Names ?? [],
+            successUrl,
+            cancelUrl,
+            cancellationToken);
+        if (result.Error is not null)
+        {
+            return Form(result.Error, result.StatusCode);
+        }
+
+        return Results.Ok(new
+        {
+            registrationId = result.RegistrationId,
+            friendGroupId = result.FriendGroupId,
+            status = result.Status,
+            checkoutUrl = result.CheckoutUrl,
+            amount = result.Amount,
+            currency = result.Currency,
+            subtotal = result.Subtotal,
+            discountAmount = result.DiscountAmount,
+            pointsRedeemed = result.PointsRedeemed,
+            pointsValue = result.PointsValue,
+            cashAmount = result.Amount,
+        });
+    }
+
     private static IResult Form(string message, int status) =>
         Results.Json(new { errors = new Dictionary<string, string[]> { ["form"] = [message] } }, statusCode: status);
 
     private sealed record OpenSessionBody(Guid CourtId, string? Date, string? Start, string? End);
 
     private sealed record SocialCheckoutBody(int Points, string? PromotionCode = null);
+
+    private sealed record FriendCheckoutBody(string[]? Names, int Points, string? PromotionCode = null);
 
     private sealed record SocialBatchBody(Guid[]? SocialIds, int Points, string? PromotionCode = null);
 
