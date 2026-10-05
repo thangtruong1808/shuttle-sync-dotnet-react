@@ -154,6 +154,9 @@ function SessionCard({
       <p className="text-sm font-semibold text-white">{formatVenueDay(social.startTime, timeZone)}</p>
       <p className="whitespace-nowrap text-sm text-white">{formatVenueRange(social.startTime, social.endTime, timeZone)}</p>
       <SessionClock start={social.startTime} end={social.endTime} />
+      {limit > 0 ? (
+        <p className="mt-2 text-sm text-mist/80">{social.playerCount} of {limit * each} players · {each} per court · {limit} {limit === 1 ? "court" : "courts"}</p>
+      ) : null}
       <SocialRoster playerCount={social.playerCount} courtCount={social.courtLimit ?? courtCount} playersPerCourt={social.playersPerCourt} courts={social.courts ?? []} />
       <p className="mt-3 text-sm text-mist/75">
         {yours === "confirmed" && social.yourCourtName

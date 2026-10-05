@@ -73,6 +73,7 @@ public static class VenueEndpoints
         var courtRows = await repository.ListPublicCourtsAsync(venue.Id, cancellationToken);
         await repository.ExpirePublicSocialHoldsAsync(cancellationToken);
         await repository.AwardEndedSocialIncentivesAsync(cancellationToken);
+        await repository.FillOpenWaitlistsAsync(venue.Id, cancellationToken);
         var socials = await repository.ListPublicSocialsAsync(venue.Id, window.StartUtc, window.EndUtc, cancellationToken);
         var socialIds = socials.Select(social => social.Id).ToArray();
         var seats = await repository.ListPublicSocialSeatsAsync(socialIds, cancellationToken);
@@ -324,6 +325,7 @@ public static class VenueEndpoints
 
         await repository.ExpirePublicSocialHoldsAsync(cancellationToken);
         await repository.AwardEndedSocialIncentivesAsync(cancellationToken);
+        await repository.FillOpenWaitlistsAsync(venue.Id, cancellationToken);
         var socials = await repository.ListOpenSocialsAsync(venue.Id, cancellationToken);
         var socialIds = socials.Select(social => social.Id).ToArray();
         var seats = await repository.ListPublicSocialSeatsAsync(socialIds, cancellationToken);
@@ -434,6 +436,7 @@ public static class VenueEndpoints
             return Results.NotFound();
         }
 
+        await repository.FillOpenWaitlistsAsync(venue.Id, cancellationToken);
         var social = await repository.FindPublicSocialAsync(venue.Id, socialId, cancellationToken);
         if (social is null)
         {

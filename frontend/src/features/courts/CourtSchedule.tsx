@@ -94,18 +94,26 @@ export function SocialTimes({ times, timeZone, now, slug, courtNumber }: { times
       <ul className="mt-2 grid gap-2">
         {open.map((time) => {
           const each = time.playersPerCourt ?? 8;
+          const allowed = typeof time.courtLimit === "number" && time.courtLimit > 0 ? time.courtLimit * each : 0;
           const full = time.full === true || (
             typeof time.totalPlayers === "number" &&
-            typeof time.courtLimit === "number" &&
-            time.courtLimit > 0 &&
-            time.totalPlayers >= time.courtLimit * each
+            allowed > 0 &&
+            time.totalPlayers >= allowed
           );
           return (
           <li key={time.id} className="rounded-2xl border border-line/40 px-3 py-2">
             <p className="text-sm font-semibold text-white">{formatVenueDay(time.startTime, timeZone)}</p>
             <p className="whitespace-nowrap text-sm text-white">{formatVenueRange(time.startTime, time.endTime, timeZone)}</p>
             <p className="text-sm text-mist/80">{time.players === 0 ? "No one on this court yet" : `${time.players} of ${each} on this court`}</p>
-            {typeof time.totalPlayers === "number" ? (
+            {typeof time.totalPlayers === "number" && allowed > 0 ? (
+              <p className="text-sm text-mist/70">
+                {time.totalPlayers} of {allowed} players
+                {" · "}
+                {each} per court
+                {" · "}
+                {time.courtLimit} {time.courtLimit === 1 ? "court" : "courts"}
+              </p>
+            ) : typeof time.totalPlayers === "number" ? (
               <p className="text-sm text-mist/70">
                 {time.totalPlayers} registered
                 {" · "}

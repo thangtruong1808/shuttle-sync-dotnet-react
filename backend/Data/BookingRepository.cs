@@ -930,11 +930,63 @@ public sealed class BookingRepository(IConfiguration configuration)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        await FillSocialWaitlistAsync(connection, tx, socialId, cancellationToken);
         await RepackSocialCourtsAsync(connection, tx, socialId, cancellationToken);
         await tx.CommitAsync(cancellationToken);
     }
 
-    private static async Task PromoteNextWaitlistAsync(
+    public async Task FillOpenWaitlistsAsync(Guid venueId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var socialIds = (await connection.QueryAsync<Guid>(new CommandDefinition(
+            """
+            SELECT s.Id
+            FROM PublicSocials s
+            WHERE s.VenueId = @VenueId AND s.IsDeleted = 0 AND s.StartTime > UTC_TIMESTAMP(6)
+              AND (
+                  EXISTS (
+                      SELECT 1 FROM PublicSocialRegistrations w
+                      WHERE w.SocialId = s.Id AND w.Status = 'waitlist' AND w.HoldExpiresAt IS NULL
+                  )
+                  OR EXISTS (
+                      SELECT 1 FROM PublicSocialFriends f
+                      WHERE f.SocialId = s.Id AND f.Status = 'waitlist' AND f.HoldExpiresAt IS NULL
+                  )
+              )
+            """,
+            new { VenueId = venueId },
+            cancellationToken: cancellationToken))).ToArray();
+        if (socialIds.Length == 0)
+        {
+            return;
+        }
+
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        foreach (var socialId in socialIds)
+        {
+            await FillSocialWaitlistAsync(connection, tx, socialId, cancellationToken);
+            await RepackSocialCourtsAsync(connection, tx, socialId, cancellationToken);
+        }
+
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    private static async Task FillSocialWaitlistAsync(
+        MySqlConnection connection,
+        MySqlTransaction tx,
+        Guid socialId,
+        CancellationToken cancellationToken)
+    {
+        for (var step = 0; step < 2000; step++)
+        {
+            if (!await PromoteNextWaitlistAsync(connection, tx, socialId, cancellationToken))
+            {
+                return;
+            }
+        }
+    }
+
+    private static async Task<bool> PromoteNextWaitlistAsync(
         MySqlConnection connection,
         MySqlTransaction tx,
         Guid socialId,
@@ -952,7 +1004,7 @@ public sealed class BookingRepository(IConfiguration configuration)
             cancellationToken: cancellationToken));
         if (room is null)
         {
-            return;
+            return false;
         }
 
         var nextPlayer = await connection.QuerySingleOrDefaultAsync<WaitlistCandidateRow>(new CommandDefinition(
@@ -983,7 +1035,7 @@ public sealed class BookingRepository(IConfiguration configuration)
         var nextId = promoteFriend ? nextFriend?.Id : nextPlayer?.Id;
         if (nextId is null)
         {
-            return;
+            return false;
         }
 
         var counts = (await connection.QueryAsync<SocialCourtCountRow>(new CommandDefinition(
@@ -1025,10 +1077,10 @@ public sealed class BookingRepository(IConfiguration configuration)
         var court = NextSocialCourt(courts, counts, room.PlayersPerCourt, room.MaxCourts);
         if (court is null)
         {
-            return;
+            return false;
         }
 
-        await connection.ExecuteAsync(new CommandDefinition(
+        var promoted = await connection.ExecuteAsync(new CommandDefinition(
             promoteFriend
                 ? """
                   UPDATE PublicSocialFriends
@@ -1043,6 +1095,7 @@ public sealed class BookingRepository(IConfiguration configuration)
             new { Id = nextId, CourtId = court.Id },
             tx,
             cancellationToken: cancellationToken));
+        return promoted == 1;
     }
 
     private static PublicCourtRow? NextSocialCourt(
