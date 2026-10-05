@@ -6,12 +6,13 @@ import { formatVenueRange } from "../../components/format";
 import { Button, Skeleton, Spinner } from "../../components/ui";
 import { AuthRequestError, updateProfile, uploadAvatar } from "../auth/authApi";
 import { loadCurrentUser, logout, signedIn } from "../auth/authSlice";
-import { myBookings, type BookingRow } from "./profileApi";
+import { myBookings, myRewards, type BookingRow } from "./profileApi";
 
 export function OverviewSection() {
   const dispatch = useDispatch<AppDispatch>();
   const user = useSelector((state: RootState) => state.auth.user);
   const [nextBooking, setNextBooking] = useState<BookingRow | null>(null);
+  const [pendingPoints, setPendingPoints] = useState(0);
   const [loadingNext, setLoadingNext] = useState(true);
 
   useEffect(() => {
@@ -23,6 +24,12 @@ export function OverviewSection() {
       })
       .catch(() => setNextBooking(null))
       .finally(() => setLoadingNext(false));
+    myRewards(1)
+      .then((page) => {
+        setPendingPoints(page.pending);
+        void dispatch(loadCurrentUser());
+      })
+      .catch(() => setPendingPoints(0));
   }, [dispatch]);
 
   if (!user) {
@@ -32,7 +39,13 @@ export function OverviewSection() {
   return (
     <div>
       <h1 className="font-display text-3xl text-white">Hello, {name}</h1>
-      <p className="mt-2 text-mist/70">You have {user.rewardPoints} reward points.</p>
+      <p className="mt-2 text-mist/70">You have {user.rewardPoints} reward points ready to use.</p>
+      {pendingPoints > 0 ? (
+        <p className="mt-1 text-sm text-mist/75">
+          <Link className="font-semibold text-line hover:underline" to="/profile/rewards">{pendingPoints} points</Link>
+          {" "}are waiting and join your balance after those sessions end.
+        </p>
+      ) : null}
       {loadingNext ? (
         <div className="mt-4" aria-busy="true">
           <span className="sr-only">Loading your next booking</span>

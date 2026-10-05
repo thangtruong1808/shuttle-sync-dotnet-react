@@ -221,6 +221,7 @@ public static class ProfileEndpoints
             return SignInAgain();
         }
 
+        await repository.AwardEndedSocialIncentivesAsync(cancellationToken);
         var user = await authRepository.FindUserByIdAsync(userId.Value, cancellationToken);
         if (user is null)
         {
@@ -229,9 +230,22 @@ public static class ProfileEndpoints
 
         var (pageNumber, size, offset) = Page(page, pageSize);
         var (items, total) = await repository.ListRewardsAsync(userId.Value, offset, size, cancellationToken);
+        var pending = await repository.ListPendingRewardsAsync(userId.Value, cancellationToken);
         return Results.Ok(new
         {
             balance = user.RewardPoints,
+            pending = pending.Sum(item => item.Points),
+            pendingItems = pending.Select(item => new
+            {
+                id = item.Id,
+                kind = item.Kind,
+                points = item.Points,
+                venueName = item.VenueName,
+                timeZone = item.TimeZone,
+                courtName = item.CourtName,
+                startTime = VenueClock.AsUtc(item.StartTime),
+                endTime = VenueClock.AsUtc(item.EndTime),
+            }),
             items = items.Select(item => new
             {
                 id = item.Id,

@@ -559,6 +559,48 @@ public sealed class BookingRepository(IConfiguration configuration)
         return (rows.ToArray(), total);
     }
 
+    public async Task<PendingRewardRow[]> ListPendingRewardsAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<PendingRewardRow>(new CommandDefinition(
+            """
+            SELECT b.Id, 'Court booking' AS Kind, si.Points AS Points, v.Name AS VenueName, v.TimeZone,
+                   c.CourtName, cs.StartTime, cs.EndTime
+            FROM Bookings b
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+            JOIN Courts c ON c.Id = cs.CourtId
+            JOIN Venues v ON v.Id = b.VenueId
+            JOIN SessionIncentives si ON si.CourtSessionId = cs.Id AND si.IsActive = 1 AND si.Points > 0
+            WHERE b.UserId = @UserId AND b.IsDeleted = 0 AND b.Status = 'confirmed'
+              AND cs.EndTime > UTC_TIMESTAMP(6)
+              AND NOT EXISTS (SELECT 1 FROM RewardPointAwards a WHERE a.BookingId = b.Id)
+            UNION ALL
+            SELECT r.Id, 'Public social', r.IncentivePoints AS Points, v.Name, v.TimeZone,
+                   COALESCE(c.CourtName, 'Your place'), s.StartTime, s.EndTime
+            FROM PublicSocialRegistrations r
+            JOIN PublicSocials s ON s.Id = r.SocialId
+            JOIN Venues v ON v.Id = r.VenueId
+            LEFT JOIN Courts c ON c.Id = r.CourtId
+            WHERE r.UserId = @UserId AND r.Status = 'confirmed'
+              AND r.IncentivePoints > 0 AND r.IncentiveAwardedAt IS NULL
+              AND s.EndTime > UTC_TIMESTAMP(6)
+            UNION ALL
+            SELECT f.Id, 'Friend', f.IncentivePoints AS Points, v.Name, v.TimeZone,
+                   f.DisplayName, s.StartTime, s.EndTime
+            FROM PublicSocialFriends f
+            JOIN PublicSocialRegistrations r ON r.Id = f.RegistrationId
+            JOIN PublicSocials s ON s.Id = f.SocialId
+            JOIN Venues v ON v.Id = f.VenueId
+            WHERE r.UserId = @UserId AND f.Status = 'confirmed'
+              AND f.IncentivePoints > 0 AND f.IncentiveAwardedAt IS NULL
+              AND s.EndTime > UTC_TIMESTAMP(6)
+            ORDER BY StartTime, Kind
+            """,
+            new { UserId = userId },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
     public async Task<(PaymentListRow[] Items, int Total)> ListPaymentsAsync(
         Guid userId,
         int offset,
@@ -4922,6 +4964,18 @@ public sealed class CancelBookingRow
     public Guid UserId { get; init; }
     public DateTime StartTime { get; init; }
     public string Currency { get; init; } = "AUD";
+}
+
+public sealed class PendingRewardRow
+{
+    public Guid Id { get; init; }
+    public string Kind { get; init; } = "";
+    public int Points { get; init; }
+    public string VenueName { get; init; } = "";
+    public string TimeZone { get; init; } = "";
+    public string CourtName { get; init; } = "";
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
 }
 
 public sealed class RewardAwardRow

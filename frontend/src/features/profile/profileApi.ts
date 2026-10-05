@@ -38,6 +38,17 @@ export type RewardRow = {
   endTime: string;
 };
 
+export type PendingReward = {
+  id: string;
+  kind: string;
+  points: number;
+  venueName: string;
+  timeZone: string;
+  courtName: string;
+  startTime: string;
+  endTime: string;
+};
+
 export type PaymentRow = {
   id: string;
   kind: string;
@@ -136,7 +147,7 @@ export function bookingPayment(id: string): Promise<BookingPayment> {
   return readPage(`/api/me/bookings/${id}`);
 }
 
-export function myRewards(page: number): Promise<Page<RewardRow> & { balance: number }> {
+export function myRewards(page: number): Promise<Page<RewardRow> & { balance: number; pending: number; pendingItems: PendingReward[] }> {
   return readPage(`/api/me/rewards?page=${page}`);
 }
 

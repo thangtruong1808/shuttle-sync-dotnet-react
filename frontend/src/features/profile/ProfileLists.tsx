@@ -5,12 +5,12 @@ import { Button, Skeleton } from "../../components/ui";
 import { EmptyState, ErrorState, formatVenueDateTime, formatVenueRange } from "../../components/format";
 import { externalLogins, type ExternalLogin } from "../auth/authApi";
 import { fetchSessions, loadCurrentUser, logoutOthers, revokeSession } from "../auth/authSlice";
-import { myPayments, myRewards, type Page, type PaymentRow, type RewardRow } from "./profileApi";
+import { myPayments, myRewards, type Page, type PaymentRow, type PendingReward, type RewardRow } from "./profileApi";
 
 export function RewardsSection() {
   const dispatch = useDispatch<AppDispatch>();
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<(Page<RewardRow> & { balance: number }) | null>(null);
+  const [data, setData] = useState<(Page<RewardRow> & { balance: number; pending: number; pendingItems: PendingReward[] }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -44,13 +44,46 @@ export function RewardsSection() {
   return (
     <div>
       <h1 className="font-display text-3xl text-white">Reward points</h1>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/75">Available points can be used now. Pending points are set aside for a court, a public social, or a friend, and they join your balance after that session ends.</p>
       {error ? (
         <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
       ) : loading && pageMove === null ? (
-        <div className="mt-4" aria-busy="true"><span className="sr-only">Loading rewards</span><Skeleton className="h-24" /></div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2" aria-busy="true"><span className="sr-only">Loading rewards</span><Skeleton className="h-28" /><Skeleton className="h-28" /></div>
       ) : data ? (
         <>
-          <p className="mt-2 text-lg font-semibold text-line">Balance: {data.balance} points</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <article className="rounded-3xl border border-white/10 bg-pine/80 p-4">
+              <p className="text-sm text-mist/70">Available</p>
+              <p className="mt-1 font-display text-4xl text-line">{data.balance}</p>
+              <p className="mt-1 text-sm text-mist/65">Ready to use on a booking.</p>
+            </article>
+            <article className="rounded-3xl border border-line/30 bg-line/10 p-4">
+              <p className="text-sm font-medium text-line">Pending</p>
+              <p className="mt-1 font-display text-4xl text-white">{data.pending ?? 0}</p>
+              <p className="mt-1 text-sm text-mist/75">Waiting until the session ends.</p>
+            </article>
+          </div>
+          {(data.pendingItems ?? []).length > 0 ? (
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+              {(data.pendingItems ?? []).map((item) => (
+                <li key={`${item.kind}-${item.id}`} className="rounded-2xl border border-white/10 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-line">{item.kind}</p>
+                      <p className="mt-1 truncate font-medium text-white">{item.venueName}</p>
+                      <p className="truncate text-sm text-mist/75">{item.courtName}</p>
+                      <p className="text-sm text-mist/65">{formatVenueRange(item.startTime, item.endTime, item.timeZone)}</p>
+                    </div>
+                    <p className="shrink-0 font-semibold text-line">+{item.points}</p>
+                  </div>
+                  <p className="mt-3 text-sm text-mist/60">Added to your balance after this session ends.</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-4 text-sm text-mist/70">No points are waiting. A new court, public social, or friend spot with an incentive shows up here until that session ends.</p>
+          )}
+          <h2 className="mt-8 font-display text-2xl text-white">History</h2>
           {data.items.length === 0 ? (
             <div className="mt-4"><EmptyState title="No points yet" body="Points appear here after a session with an active incentive ends." /></div>
           ) : (
