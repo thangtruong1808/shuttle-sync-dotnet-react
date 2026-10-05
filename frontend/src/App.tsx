@@ -9,6 +9,7 @@ import { Skeleton } from "./components/ui";
 import AuthPanel from "./features/auth/AuthPanel";
 import BookingStubPage from "./features/booking/BookingStubPage";
 import BookCourtPage from "./features/booking/BookCourtPage";
+import CourtGroupPage from "./features/booking/CourtGroupPage";
 import SocialPage from "./features/booking/SocialPage";
 import SocialCheckoutPage from "./features/booking/SocialCheckoutPage";
 import SocialPayPage from "./features/booking/SocialPayPage";
@@ -132,6 +133,7 @@ export default function App() {
           <Route path="/:slug" element={<HomePage />} />
           <Route path="/:slug/courts" element={<CourtsPage />} />
           <Route path="/:slug/book" element={<BookCourtPage />} />
+          <Route path="/:slug/book/group/:groupId" element={<CourtGroupPage />} />
           <Route path="/:slug/book/:sessionId" element={<BookingStubPage />} />
           <Route path="/:slug/social" element={<SocialPage />} />
           <Route path="/:slug/social/checkout" element={<SocialCheckoutPage />} />

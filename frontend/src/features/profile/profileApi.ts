@@ -24,6 +24,7 @@ export type BookingRow = {
   totalAmount: number;
   canCancel: boolean;
   socialId?: string | null;
+  groupId?: string | null;
   friends?: BookingFriend[];
 };
 
@@ -74,6 +75,26 @@ async function readPage<T>(path: string): Promise<T> {
     throw new AuthRequestError(body?.errors ?? { form: ["The request could not be completed."] });
   }
   return (await response.json()) as T;
+}
+
+export type CourtWeekCourt = {
+  bookingId: string;
+  groupId: string;
+  status: string;
+  price: number;
+  venueName: string;
+  venueSlug: string;
+  timeZone: string;
+  currency: string;
+  courtId: string;
+  courtName: string;
+  courtNumber: number;
+  startTime: string;
+  endTime: string;
+};
+
+export function myCourtWeeks(): Promise<{ weeks: CourtWeekCourt[] }> {
+  return readPage("/api/me/court-weeks");
 }
 
 export function myBookings(status: string, page: number): Promise<Page<BookingRow>> {

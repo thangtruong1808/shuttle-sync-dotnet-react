@@ -27,7 +27,7 @@ type PickerProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
   type: PickerType;
 };
 
-export function PickerInput({ type, className = "", onKeyDown, onPaste, onBeforeInput, onClick, disabled, ...props }: PickerProps) {
+export function PickerInput({ type, className = "", iconClassName = "text-white", onKeyDown, onPaste, onBeforeInput, onClick, disabled, ...props }: PickerProps & { iconClassName?: string }) {
   return (
     <span className="relative block">
       <input
@@ -65,7 +65,7 @@ export function PickerInput({ type, className = "", onKeyDown, onPaste, onBefore
           onClick?.(event);
         }}
       />
-      <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white" aria-hidden="true" />
+      <Calendar className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 ${iconClassName}`} aria-hidden="true" />
     </span>
   );
 }

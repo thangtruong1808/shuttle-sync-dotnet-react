@@ -272,6 +272,57 @@ export function socialRegistration(slug: string, registrationId: string): Promis
   return readJson(`/api/venues/${encodeURIComponent(slug)}/socials/registrations/${registrationId}`, "no-store");
 }
 
+export type CourtHoldSession = {
+  bookingId: string;
+  courtName: string;
+  courtNumber: number;
+  startTime: string;
+  endTime: string;
+  price: number;
+  status: string;
+  incentivePoints: number;
+  holdExpiresAt: string | null;
+  payNow: boolean;
+};
+
+export type PayNowSlot = { date: string; start: string; end: string; courtIds: string[] };
+
+export function openCourtHold(slug: string, courtIds: string[], date: string, start: string, end: string, weeks: number): Promise<{ groupId: string; notice?: string | null; payNow?: PayNowSlot | null }> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/holds`, "no-store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ courtIds, date, start, end, weeks }),
+  });
+}
+
+export function payNowHold(slug: string, courtIds: string[], date: string, start: string, end: string): Promise<CheckoutResult & { groupId: string }> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/pay-now`, "no-store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ courtIds, date, start, end, weeks: 1 }),
+  });
+}
+
+export function courtHold(slug: string, groupId: string): Promise<{ currency: string; pointsPerDollar: number; lateCancelFeePercent: number; timeZone: string; sessions: CourtHoldSession[]; released?: boolean }> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/${groupId}`, "no-store");
+}
+
+export function startGroupCheckout(slug: string, groupId: string, points: number, promotionCode: string, bookingIds: string[]): Promise<CheckoutResult> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/${groupId}/checkout`, "no-store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ points, promotionCode: promotionCode || null, bookingIds }),
+  });
+}
+
+export function addHoldCourts(slug: string, groupId: string, start: string, end: string, courtIds: string[]): Promise<{ added: number }> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/${groupId}/courts`, "no-store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ courtIds, start, end }),
+  });
+}
+
 export function openPlayerSession(slug: string, courtId: string, date: string, start: string, end: string): Promise<{ sessionId: string; price: number; currency: string }> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/sessions`, "no-store", {
     method: "POST",

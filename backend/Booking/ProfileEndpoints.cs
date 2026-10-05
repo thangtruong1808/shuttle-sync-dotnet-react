@@ -9,6 +9,7 @@ public static class ProfileEndpoints
     {
         var me = app.MapGroup("/api/me").RequireAuthorization();
         me.MapGet("/bookings", BookingsAsync);
+        me.MapGet("/court-weeks", CourtWeeksAsync);
         me.MapGet("/friend-spots", FriendSpotsAsync);
         me.MapGet("/bookings/{id:guid}", BookingAsync);
         me.MapPost("/bookings/{id:guid}/cancel", CancelAsync);
@@ -34,6 +35,7 @@ public static class ProfileEndpoints
         }
 
         await payments.RefundStartedWaitlistsAsync(cancellationToken);
+        await payments.ReleaseExpiredCourtHoldsAsync(cancellationToken);
         var filter = status is "past" or "cancelled" ? status : "upcoming";
         var (pageNumber, size, offset) = Page(page, pageSize);
         var (items, total) = await repository.ListBookingsAsync(userId.Value, filter, offset, size, cancellationToken);
@@ -57,6 +59,7 @@ public static class ProfileEndpoints
                 totalAmount = item.TotalAmount,
                 canCancel = (item.Status is "pending" or "confirmed" or "waitlist") && item.StartTime > now,
                 socialId = item.SocialId,
+                groupId = item.GroupId,
                 friends = (friendsByRegistration.TryGetValue(item.Id, out var mine) ? mine : Array.Empty<FriendBookingRow>()).Select(friend => new
                 {
                     id = friend.Id,
@@ -70,6 +73,42 @@ public static class ProfileEndpoints
             page = pageNumber,
             pageSize = size,
             total,
+        });
+    }
+
+    private static async Task<IResult> CourtWeeksAsync(
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        BookingPayments payments,
+        CancellationToken cancellationToken)
+    {
+        var userId = await RequireUserAsync(http, authRepository, cancellationToken);
+        if (userId is null)
+        {
+            return SignInAgain();
+        }
+
+        await payments.ReleaseExpiredCourtHoldsAsync(cancellationToken);
+        var rows = await repository.ListCourtWeeksAsync(userId.Value, cancellationToken);
+        return Results.Ok(new
+        {
+            weeks = rows.Select(row => new
+            {
+                bookingId = row.BookingId,
+                groupId = row.GroupId,
+                status = row.Status,
+                price = row.Price,
+                venueName = row.VenueName,
+                venueSlug = row.VenueSlug,
+                timeZone = row.TimeZone,
+                currency = row.Currency,
+                courtId = row.CourtId,
+                courtName = row.CourtName,
+                courtNumber = row.CourtNumber,
+                startTime = VenueClock.AsUtc(row.StartTime),
+                endTime = VenueClock.AsUtc(row.EndTime),
+            }),
         });
     }
 

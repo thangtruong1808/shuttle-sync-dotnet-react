@@ -128,6 +128,105 @@ public sealed class BookingPayments(
         return CheckoutResponse.From(prepared, session.Url);
     }
 
+    public async Task ReleaseExpiredCourtHoldsAsync(CancellationToken cancellationToken)
+    {
+        await CancelIntentsAsync(await payments.ReleaseExpiredHoldsAsync(cancellationToken), cancellationToken);
+    }
+
+    public async Task<CheckoutResponse> CheckoutGroupAsync(
+        Guid venueId,
+        Guid groupId,
+        Guid userId,
+        IReadOnlyList<Guid> bookingIds,
+        int points,
+        string? promotionCode,
+        string successUrl,
+        string cancelUrl,
+        CancellationToken cancellationToken,
+        bool releaseFirst = true)
+    {
+        if (settings.IsConfigured)
+        {
+            StripeConfiguration.ApiKey = settings.SecretKey;
+        }
+
+        if (releaseFirst)
+        {
+            await ReleaseExpiredCourtHoldsAsync(cancellationToken);
+        }
+
+        var prepared = await payments.PrepareGroupCheckoutAsync(venueId, groupId, userId, bookingIds, points, promotionCode, cancellationToken);
+        if (prepared.Error is not null)
+        {
+            return CheckoutResponse.Fail(prepared.Error, prepared.StatusCode);
+        }
+
+        if (prepared.NeedsPayment && !settings.IsConfigured)
+        {
+            await payments.UnwindGroupCheckoutAsync(prepared.BookingId, cancellationToken);
+            return CheckoutResponse.Fail("Card payments are not configured yet.", StatusCodes.Status503ServiceUnavailable);
+        }
+
+        if (!prepared.NeedsPayment)
+        {
+            foreach (var sessionId in prepared.SessionIds.Distinct())
+            {
+                await SnapshotAsync(venueId, sessionId, userId, cancellationToken);
+            }
+
+            return CheckoutResponse.From(prepared, null);
+        }
+
+        if (!string.IsNullOrWhiteSpace(prepared.ExistingIntentId))
+        {
+            await CancelIntentsAsync([prepared.ExistingIntentId], cancellationToken);
+        }
+
+        var customerId = await CustomerIdAsync(prepared.StripeCustomerId, prepared.Email, userId, cancellationToken);
+        Session session;
+        try
+        {
+            session = await CreateCheckoutSessionAsync(prepared, customerId, successUrl, cancelUrl, includePayTo: true, prepared.ReplacePayment, cancellationToken);
+        }
+        catch (StripeException exception) when (MentionsPayTo(exception))
+        {
+            try
+            {
+                session = await CreateCheckoutSessionAsync(prepared, customerId, successUrl, cancelUrl, includePayTo: false, true, cancellationToken);
+            }
+            catch (StripeException retry)
+            {
+                await payments.UnwindGroupCheckoutAsync(prepared.BookingId, cancellationToken);
+                return CheckoutResponse.Fail(retry.StripeError?.Message ?? "The payment could not be started.", StatusCodes.Status502BadGateway);
+            }
+        }
+        catch (StripeException exception)
+        {
+            await payments.UnwindGroupCheckoutAsync(prepared.BookingId, cancellationToken);
+            return CheckoutResponse.Fail(exception.StripeError?.Message ?? "The payment could not be started.", StatusCodes.Status502BadGateway);
+        }
+
+        if (string.IsNullOrWhiteSpace(session.Url))
+        {
+            await CancelIntentsAsync([session.Id], cancellationToken);
+            await payments.UnwindGroupCheckoutAsync(prepared.BookingId, cancellationToken);
+            return CheckoutResponse.Fail("The payment page could not be opened.", StatusCodes.Status502BadGateway);
+        }
+
+        try
+        {
+            await payments.AttachPaymentAsync(prepared.BookingId, userId, customerId, session.Id, prepared.Cash, prepared.Currency, cancellationToken);
+        }
+        catch
+        {
+            await CancelIntentsAsync([session.Id], cancellationToken);
+            await payments.UnwindGroupCheckoutAsync(prepared.BookingId, cancellationToken);
+            return CheckoutResponse.Fail("The payment could not be started.", StatusCodes.Status502BadGateway);
+        }
+
+        return CheckoutResponse.From(prepared, session.Url);
+    }
+
     public async Task SyncSocialAsync(Guid userId, Guid registrationId, CancellationToken cancellationToken)
     {
         if (!settings.IsConfigured)
@@ -216,14 +315,15 @@ public sealed class BookingPayments(
         string? refundId = null;
         var refundStatus = "succeeded";
         decimal refundAmount = 0m;
+        var share = context.ShareAmount > 0 ? context.ShareAmount : context.PaymentAmount;
         if (context.PaymentStatus == "succeeded"
-            && context.PaymentAmount > 0
+            && share > 0
             && !string.IsNullOrWhiteSpace(context.StripePaymentIntentId))
         {
-            refundAmount = decimal.Round(context.PaymentAmount * (100m - fee) / 100m, 2, MidpointRounding.AwayFromZero);
-            if (refundAmount > context.PaymentAmount)
+            refundAmount = decimal.Round(share * (100m - fee) / 100m, 2, MidpointRounding.AwayFromZero);
+            if (refundAmount > share)
             {
-                refundAmount = context.PaymentAmount;
+                refundAmount = share;
             }
 
             if (refundAmount > 0)
@@ -395,7 +495,12 @@ public sealed class BookingPayments(
 
                 if (transition.Action is "confirmed" or "already")
                 {
-                    await SnapshotAsync(transition.VenueId, transition.SessionId, transition.UserId, cancellationToken);
+                    var sessions = transition.SessionIds.Length > 0 ? transition.SessionIds : [transition.SessionId];
+                    foreach (var sessionId in sessions.Distinct())
+                    {
+                        await SnapshotAsync(transition.VenueId, sessionId, transition.UserId, cancellationToken);
+                    }
+
                     return;
                 }
 
@@ -528,7 +633,7 @@ public sealed class BookingPayments(
                         {
                             Currency = prepared.Currency.ToLowerInvariant(),
                             UnitAmount = Cents(prepared.Cash),
-                            ProductData = new SessionLineItemPriceDataProductDataOptions { Name = "Court booking" },
+                            ProductData = new SessionLineItemPriceDataProductDataOptions { Name = string.IsNullOrWhiteSpace(prepared.ProductName) ? "Court booking" : prepared.ProductName },
                         },
                     },
                 ],

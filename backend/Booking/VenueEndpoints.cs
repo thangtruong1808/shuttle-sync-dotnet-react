@@ -14,6 +14,10 @@ public static class VenueEndpoints
         venues.MapGet("/{slug}/promotions", PromotionsAsync);
         venues.MapGet("/{slug}/slots/{sessionId:guid}", SlotAsync);
         venues.MapPost("/{slug}/sessions", OpenSessionAsync).RequireAuthorization();
+        venues.MapPost("/{slug}/holds", OpenHoldAsync).RequireAuthorization();
+        venues.MapPost("/{slug}/holds/pay-now", PayNowHoldAsync).RequireAuthorization();
+        venues.MapPost("/{slug}/holds/{groupId:guid}/courts", AddHoldCourtsAsync).RequireAuthorization();
+        venues.MapGet("/{slug}/holds/{groupId:guid}", HoldGroupAsync).RequireAuthorization();
         venues.MapGet("/{slug}/socials", ListSocialsAsync);
         venues.MapPost("/{slug}/socials/checkout", CheckoutSocialsAsync).RequireAuthorization();
         venues.MapGet("/{slug}/socials/{socialId:guid}", SocialOfferAsync);
@@ -51,6 +55,7 @@ public static class VenueEndpoints
         CancellationToken cancellationToken)
     {
         await payments.RefundStartedWaitlistsAsync(cancellationToken);
+        await payments.ReleaseExpiredCourtHoldsAsync(cancellationToken);
         var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
         if (venue is null)
         {
@@ -109,7 +114,7 @@ public static class VenueEndpoints
                     courtsUsed = social.Courts.Count(item => item.Players > 0),
                     playersPerCourt = social.PlayersPerCourt,
                     courtLimit = social.CourtLimit,
-                    full = social.CourtLimit == 0 || social.PlayerCount >= social.CourtLimit * social.PlayersPerCourt,
+                    full = BookingRepository.SocialIsFull(social.PlayerCount, social.CourtLimit, social.PlayersPerCourt, socials.First(item => item.Id == social.Id).BlockedCourts),
                     waitlistCount = social.WaitlistCount,
                 }),
         });
@@ -308,6 +313,317 @@ public static class VenueEndpoints
         return Results.Ok(new { sessionId = opened.SessionId, price = opened.Price, currency = venue.Currency });
     }
 
+    private static async Task<IResult> OpenHoldAsync(
+        string slug,
+        OpenHoldBody body,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        DashboardRepository dashboard,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, authRepository, cancellationToken);
+        if (current is null)
+        {
+            return Form("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        if (body.CourtIds is null || body.CourtIds.Length == 0)
+        {
+            return Form("Choose at least one court.", StatusCodes.Status400BadRequest);
+        }
+
+        if (string.IsNullOrWhiteSpace(body.Start) || string.IsNullOrWhiteSpace(body.End))
+        {
+            return Form("Choose a start and end time.", StatusCodes.Status400BadRequest);
+        }
+
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Form("That venue was not found.", StatusCodes.Status404NotFound);
+        }
+
+        if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var clockError))
+        {
+            return Form(clockError, StatusCodes.Status400BadRequest);
+        }
+
+        var opened = await repository.OpenCourtHoldGroupAsync(
+            venue.Id,
+            current.UserId,
+            body.CourtIds,
+            venue.HourlyRate,
+            venue.TimeZone,
+            window.StartUtc,
+            window.EndUtc,
+            body.Weeks <= 0 ? 1 : body.Weeks,
+            cancellationToken);
+        if (opened.Error is not null)
+        {
+            var status = opened.Error.Contains("already held", StringComparison.Ordinal) || opened.Error.Contains("not available", StringComparison.Ordinal)
+                ? StatusCodes.Status409Conflict
+                : StatusCodes.Status400BadRequest;
+            return Form(opened.Error, status);
+        }
+
+        foreach (var row in opened.Rows)
+        {
+            try
+            {
+                await dashboard.SnapshotBookingIncentiveAsync(venue.Id, row.SessionId, current.UserId, cancellationToken);
+            }
+            catch (Exception)
+            {
+                // The hold is already saved. Payment can still continue.
+            }
+        }
+
+        if (opened.Rows.Length > 0)
+        {
+            var start = opened.Rows.Min(row => row.StartTime);
+            var end = opened.Rows.Max(row => row.EndTime);
+            await repository.RepackOverlappingSocialsAsync(venue.Id, start, end, cancellationToken);
+        }
+
+        return Results.Ok(new
+        {
+            groupId = opened.GroupId,
+            notice = opened.Notice,
+            payNow = opened.Notice is null ? null : new { date = body.Date, start = body.Start, end = body.End, courtIds = body.CourtIds },
+        });
+    }
+
+    private static async Task<IResult> PayNowHoldAsync(
+        string slug,
+        OpenHoldBody body,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        DashboardRepository dashboard,
+        BookingPayments payments,
+        AuthSettings authSettings,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, authRepository, cancellationToken);
+        if (current is null)
+        {
+            return Form("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        if (body.CourtIds is null || body.CourtIds.Length == 0)
+        {
+            return Form("Choose at least one court.", StatusCodes.Status400BadRequest);
+        }
+
+        if (string.IsNullOrWhiteSpace(body.Start) || string.IsNullOrWhiteSpace(body.End))
+        {
+            return Form("Choose a start and end time.", StatusCodes.Status400BadRequest);
+        }
+
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Form("That venue was not found.", StatusCodes.Status404NotFound);
+        }
+
+        if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var clockError))
+        {
+            return Form(clockError, StatusCodes.Status400BadRequest);
+        }
+
+        var opened = await repository.OpenCourtHoldGroupAsync(
+            venue.Id,
+            current.UserId,
+            body.CourtIds,
+            venue.HourlyRate,
+            venue.TimeZone,
+            window.StartUtc,
+            window.EndUtc,
+            1,
+            cancellationToken,
+            payWithin24Hours: true);
+        if (opened.Error is not null)
+        {
+            return Form(opened.Error, StatusCodes.Status400BadRequest);
+        }
+
+        foreach (var row in opened.Rows)
+        {
+            try
+            {
+                await dashboard.SnapshotBookingIncentiveAsync(venue.Id, row.SessionId, current.UserId, cancellationToken);
+            }
+            catch (Exception)
+            {
+                // Payment can still continue.
+            }
+        }
+
+        var origin = authSettings.FrontendOrigin.TrimEnd('/');
+        var result = await payments.CheckoutGroupAsync(
+            venue.Id,
+            opened.GroupId,
+            current.UserId,
+            opened.Rows.Select(row => row.BookingId).ToArray(),
+            0,
+            null,
+            $"{origin}/{slug}/book/group/{opened.GroupId}?checkout=success",
+            $"{origin}/{slug}/book/group/{opened.GroupId}?checkout=cancel",
+            cancellationToken,
+            releaseFirst: false);
+        if (result.Error is not null)
+        {
+            await repository.ExpireUnpaidPayNowAsync(opened.GroupId, cancellationToken);
+            return Form(result.Error, result.StatusCode);
+        }
+
+        return Results.Ok(new
+        {
+            groupId = opened.GroupId,
+            bookingId = result.BookingId,
+            status = result.Status,
+            checkoutUrl = result.CheckoutUrl,
+            currency = result.Currency,
+            subtotal = result.Subtotal,
+            discountAmount = result.DiscountAmount,
+            pointsRedeemed = result.PointsRedeemed,
+            pointsValue = result.PointsValue,
+            cashAmount = result.CashAmount,
+        });
+    }
+
+    private static async Task<IResult> AddHoldCourtsAsync(
+        string slug,
+        Guid groupId,
+        AddHoldCourtsBody body,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        DashboardRepository dashboard,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, authRepository, cancellationToken);
+        if (current is null)
+        {
+            return Form("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        if (body.CourtIds is null || body.CourtIds.Length == 0)
+        {
+            return Form("Choose a court to add.", StatusCodes.Status400BadRequest);
+        }
+
+        if (!DateTimeOffset.TryParse(body.Start, out var start) || !DateTimeOffset.TryParse(body.End, out var end))
+        {
+            return Form("That week was not found.", StatusCodes.Status400BadRequest);
+        }
+
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Form("That venue was not found.", StatusCodes.Status404NotFound);
+        }
+
+        var added = await repository.AddCourtsToHoldWeekAsync(
+            venue.Id,
+            current.UserId,
+            groupId,
+            start.UtcDateTime,
+            end.UtcDateTime,
+            body.CourtIds,
+            venue.HourlyRate,
+            cancellationToken);
+        if (added.Error is not null)
+        {
+            var status = added.Error.Contains("already held", StringComparison.Ordinal)
+                ? StatusCodes.Status409Conflict
+                : StatusCodes.Status400BadRequest;
+            return Form(added.Error, status);
+        }
+
+        foreach (var row in added.Added)
+        {
+            try
+            {
+                await dashboard.SnapshotBookingIncentiveAsync(venue.Id, row.SessionId, current.UserId, cancellationToken);
+            }
+            catch (Exception)
+            {
+                // The extra court is already held.
+            }
+        }
+
+        if (added.Added.Length > 0)
+        {
+            await repository.RepackOverlappingSocialsAsync(venue.Id, start.UtcDateTime, end.UtcDateTime, cancellationToken);
+        }
+
+        return Results.Ok(new { added = added.Added.Length });
+    }
+
+    private static async Task<IResult> HoldGroupAsync(
+        string slug,
+        Guid groupId,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, authRepository, cancellationToken);
+        if (current is null)
+        {
+            return Form("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Form("That venue was not found.", StatusCodes.Status404NotFound);
+        }
+
+        var rows = await repository.ListCourtHoldGroupAsync(venue.Id, current.UserId, groupId, cancellationToken);
+        if (rows.Length == 0)
+        {
+            if (await repository.HoldGroupReleasedAsync(venue.Id, current.UserId, groupId, cancellationToken))
+            {
+                return Results.Ok(new
+                {
+                    currency = venue.Currency,
+                    pointsPerDollar = venue.PointsPerDollar,
+                    lateCancelFeePercent = venue.LateCancelFeePercent,
+                    timeZone = venue.TimeZone,
+                    released = true,
+                    sessions = Array.Empty<object>(),
+                });
+            }
+
+            return Form("That court hold was not found.", StatusCodes.Status404NotFound);
+        }
+
+        var now = DateTime.UtcNow;
+        return Results.Ok(new
+        {
+            currency = venue.Currency,
+            pointsPerDollar = venue.PointsPerDollar,
+            lateCancelFeePercent = venue.LateCancelFeePercent,
+            timeZone = venue.TimeZone,
+            sessions = rows.Select(row => new
+            {
+                bookingId = row.BookingId,
+                courtName = row.CourtName,
+                courtNumber = row.CourtNumber,
+                startTime = VenueClock.AsUtc(row.StartTime),
+                endTime = VenueClock.AsUtc(row.EndTime),
+                price = row.Price,
+                status = row.Status,
+                incentivePoints = row.IncentivePoints,
+                holdExpiresAt = row.HoldExpiresAt is null ? (DateTimeOffset?)null : VenueClock.AsUtc(row.HoldExpiresAt.Value),
+                payNow = row.Status == "pending" && row.StartTime <= now.AddHours(24),
+            }),
+        });
+    }
+
     private static async Task<IResult> ListSocialsAsync(
         string slug,
         HttpContext http,
@@ -360,7 +676,7 @@ public static class VenueEndpoints
                     yourStatus = yours,
                     yourCourtName = confirmed ? seat?.CourtName : null,
                     yourCourtNumber = confirmed ? seat?.CourtNumber : null,
-                    full = courtLimit == 0 || social.PlayerCount >= courtLimit * playersPerCourt,
+                    full = BookingRepository.SocialIsFull(social.PlayerCount, courtLimit, playersPerCourt, social.BlockedCourts),
                     waitlistCount = social.WaitlistCount,
                     courts = loads,
                 };
@@ -479,8 +795,7 @@ public static class VenueEndpoints
             yourCourtName = yours?.Status == "confirmed" ? seat?.CourtName : null,
             yourCourtNumber = yours?.Status == "confirmed" ? seat?.CourtNumber : null,
             incentivePoints = incentives.FirstOrDefault()?.Points ?? 0,
-            full = BookingRepository.AllowedCourtCount(courts.Length, social.MaxCourts) == 0
-                || seats.Length >= BookingRepository.AllowedCourtCount(courts.Length, social.MaxCourts) * BookingRepository.NormalizePlayersPerCourt(social.PlayersPerCourt),
+            full = BookingRepository.SocialIsFull(seats.Length, BookingRepository.AllowedCourtCount(courts.Length, social.MaxCourts), social.PlayersPerCourt, social.BlockedCourts),
             waitlistCount = social.WaitlistCount,
         });
     }
@@ -816,6 +1131,8 @@ public static class VenueEndpoints
         Results.Json(new { errors = new Dictionary<string, string[]> { ["form"] = [message] } }, statusCode: status);
 
     private sealed record OpenSessionBody(Guid CourtId, string? Date, string? Start, string? End);
+    private sealed record OpenHoldBody(Guid[]? CourtIds, string? Date, string? Start, string? End, int Weeks = 1);
+    private sealed record AddHoldCourtsBody(Guid[]? CourtIds, string? Start, string? End);
 
     private sealed record SocialCheckoutBody(int Points, string? PromotionCode = null);
 

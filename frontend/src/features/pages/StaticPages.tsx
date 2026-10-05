@@ -240,7 +240,7 @@ export function FaqPage() {
             Choose a day on the venue home page. A court with no bookings listed is available. Booked times appear on that court. You can also narrow the day with From and To.
           </FaqItem>
           <FaqItem question="How do I book a court?">
-            Sign in, choose Book a court, then pick the court, date, and time. On the next page you can add a promotion code and reward points before you pay. The price you see is the price for that session.
+            Sign in, choose Book a court, then pick one or more courts, the date, and the time. You can repeat that time for up to 12 weeks. There is no deposit, and you do not pay every week today. Each week is paid on its own, any time before 24 hours of that session. If a week is still unpaid then, those courts are released. A session that starts within 24 hours has to be paid straight away. One promotion code and your reward points apply to the week you are paying.
           </FaqItem>
           <FaqItem question="What is a public social?">
             A public social is a drop-in session. You pay for a place, and the venue assigns courts in order. Court 1 fills first, up to the players per court and the court limit set for that session. The next person uses another court only after the earlier court is full.
@@ -288,6 +288,7 @@ export function CancellationPage() {
       </GuideCard>
       <GuideCard title="Courts, socials, and friends">
         <p>Cancel a court or your own social from My bookings. Cancel a friend from Friend spots. You can change a friend's name until the social starts.</p>
+        <p>An unpaid court hold is released 24 hours before that session if it has not been paid. Paying before then keeps the court. Cancelling the hold early frees the court without a charge.</p>
         <p>Cancelling one friend refunds only that friend's share. The other friends, and your own place, stay.</p>
         <p>Cancelling your own social does not cancel your friends. Their places stay paid and seated. Courts are packed again so earlier courts fill first.</p>
         <p>If you paid for several socials together, cancelling one returns that session's share. The others stay registered.</p>

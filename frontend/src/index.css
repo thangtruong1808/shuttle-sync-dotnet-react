@@ -18,6 +18,11 @@ body {
   position: relative;
 }
 
+select option {
+  background-color: #f4fbf6;
+  color: #102117;
+}
+
 .picker-input::-webkit-calendar-picker-indicator {
   cursor: pointer;
   opacity: 0;

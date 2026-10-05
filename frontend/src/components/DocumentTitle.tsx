@@ -41,6 +41,7 @@ function pageName(path: string): string {
   if (parts.length === 1) return "Home";
   if (parts.length >= 2) {
     if (parts[1] === "courts") return "Courts";
+    if (parts[1] === "book" && parts[2] === "group") return "Secure courts";
     if (parts[1] === "book" && parts.length === 2) return "Book a court";
     if (parts[1] === "book") return "Payment";
     if (parts[1] === "social" && parts[2] === "checkout") return "Social checkout";
