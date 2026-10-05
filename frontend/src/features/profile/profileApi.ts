@@ -68,8 +68,8 @@ export type Page<T> = {
   total: number;
 };
 
-async function readPage<T>(path: string): Promise<T> {
-  const response = await apiFetch(path);
+async function readPage<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await apiFetch(path, init);
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { errors?: FieldErrors } | null;
     throw new AuthRequestError(body?.errors ?? { form: ["The request could not be completed."] });
@@ -91,10 +91,21 @@ export type CourtWeekCourt = {
   courtNumber: number;
   startTime: string;
   endTime: string;
+  seriesWeeks?: number;
+  repeatHold?: boolean;
+  repeatNote?: string | null;
 };
 
 export function myCourtWeeks(): Promise<{ weeks: CourtWeekCourt[] }> {
   return readPage("/api/me/court-weeks");
+}
+
+export function setCourtRepeat(groupId: string, enabled: boolean): Promise<{ repeatHold: boolean; note: string | null }> {
+  return readPage(`/api/me/holds/${groupId}/repeat`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
 }
 
 export function myBookings(status: string, page: number): Promise<Page<BookingRow>> {

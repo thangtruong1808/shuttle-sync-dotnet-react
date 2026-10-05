@@ -4,7 +4,7 @@ import { Link, Navigate, useLocation, useParams } from "react-router-dom";
 import { ArrowRight, CalendarDays, CircleCheck } from "lucide-react";
 import type { AppDispatch, RootState } from "../../app/store";
 import { ErrorState, Money, formatVenueDateTime } from "../../components/format";
-import { Button, Skeleton } from "../../components/ui";
+import { Button, Skeleton, Spinner } from "../../components/ui";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { bookingPayment, type BookingPayment } from "../profile/profileApi";
@@ -26,6 +26,20 @@ function promoDiscount(price: number, promo: Promotion | null) {
   if (!promo) return 0;
   const amount = promo.discountType === "percent" ? Math.round(price * promo.discountValue) / 100 : promo.discountValue;
   return Math.min(price, Math.max(0, amount));
+}
+
+function weeksOf(sessions: CourtHoldSession[]) {
+  const weeks: CourtHoldSession[][] = [];
+  for (const session of sessions) {
+    const current = weeks[weeks.length - 1];
+    if (current && current[0].startTime === session.startTime) current.push(session);
+    else weeks.push([session]);
+  }
+  return weeks;
+}
+
+function courtStatus(session: CourtHoldSession) {
+  return session.status === "confirmed" ? "Secured" : "Held";
 }
 
 async function waitForBooking(id: string): Promise<BookingPayment> {
@@ -133,7 +147,11 @@ export default function CourtGroupPage() {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
 
-  const unpaid = (sessions ?? []).filter((session) => session.status === "pending" && picked.includes(session.bookingId));
+  const rows = sessions ?? [];
+  const paidView = checkoutState === "success" || (rows.length > 0 && rows.every((session) => session.status !== "pending"));
+  const securedCount = rows.filter((session) => session.status === "confirmed").length;
+  const heldCount = rows.filter((session) => session.status === "pending").length;
+  const unpaid = rows.filter((session) => session.status === "pending" && picked.includes(session.bookingId));
   const subtotal = unpaid.reduce((sum, session) => sum + session.price, 0);
   const discount = promoDiscount(subtotal, appliedCode);
   const payable = Math.max(0, Math.round((subtotal - discount) * 100) / 100);
@@ -180,8 +198,8 @@ export default function CourtGroupPage() {
   return (
     <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
       <Link to={`/${slug}/book`} className="text-sm text-line hover:underline">Back to booking</Link>
-      <h1 className="mt-3 font-display text-3xl text-white">Pay one week</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/75">There is no deposit and you do not have to pay every later week today. Tick the courts for one week, then pay that week. A week that starts within 24 hours is paid once, when you register.</p>
+      <h1 className="mt-3 font-display text-3xl text-white">{paidView ? "This week is paid" : "Pay one week"}</h1>
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">{paidView ? "The courts you just paid are secured. Every later week stays held until 24 hours before it starts. Pay those weeks from My bookings. There is no deposit." : "There is no deposit. This payment covers the courts you chose for one week. Later weeks stay held, and you pay each of them from My bookings before 24 hours of that session."}</p>
       {status === "unknown" || (!sessions && !error) ? (
         <div className="mt-6 space-y-2" aria-busy="true">
           <span className="sr-only">Loading court hold</span>
@@ -191,67 +209,57 @@ export default function CourtGroupPage() {
       ) : error ? (
         <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
       ) : sessions && preview ? (
-        <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
-          <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5">
-            <h2 className="font-display text-2xl text-white">Sessions</h2>
-            <ul className="mt-3 grid gap-2">
-              {sessions.map((session) => {
-                const selected = picked.includes(session.bookingId);
-                const pending = session.status === "pending";
-                return (
-                  <li key={session.bookingId} className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
-                    <label className="flex flex-wrap items-start justify-between gap-2">
-                      <span className="flex min-w-0 items-start gap-2">
-                        {pending ? (
-                          <input
-                            type="checkbox"
-                            className="mt-1 h-4 w-4 accent-line"
-                            checked={selected}
-                            disabled={paying || waiting}
-                            onChange={() => {
-                              setPoints(0);
-                              setPicked((current) => {
-                                const currentWeek = sessions.find((item) => current.includes(item.bookingId))?.startTime;
-                                if (currentWeek && currentWeek !== session.startTime) {
-                                  return [session.bookingId];
-                                }
-                                return selected ? current.filter((id) => id !== session.bookingId) : [...current, session.bookingId];
-                              });
-                            }}
-                          />
-                        ) : null}
-                        <span className="min-w-0">
-                          <span className="block font-medium text-white">{session.courtName}</span>
-                          <span className="block text-sm text-mist/70">{formatVenueDateTime(session.startTime, timeZone)} – {formatVenueDateTime(session.endTime, timeZone)}</span>
-                        </span>
-                      </span>
-                      <span className="text-right">
-                        <span className="block text-sm font-semibold text-white"><Money amount={session.price} currency={currency} /></span>
-                        <span className="block text-xs text-mist/60">{session.status === "confirmed" ? "Secured" : session.payNow ? "Pay now" : "Held"}</span>
-                      </span>
-                    </label>
-                    {session.incentivePoints > 0 && pending ? <p className="mt-1 text-sm text-line">+{session.incentivePoints} pts after this session ends</p> : null}
-                  </li>
-                );
-              })}
-            </ul>
-            {unpaid.some((session) => session.payNow) ? <p className="mt-3 text-sm text-mist/75">A session starting within 24 hours is only held for 30 minutes. Pay now to keep it.</p> : null}
-          </section>
-          <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5">
-            {checkoutState === "success" || sessions.every((session) => session.status !== "pending") ? (
-              <div className="space-y-3" role="status">
-                <p className="flex items-center gap-2 font-semibold text-line">
-                  <CircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
-                  {waiting ? "Checking the payment…" : "This week is paid."}
-                </p>
-                {heldNote ? <p className="text-sm leading-relaxed text-mist/80">{heldNote}</p> : null}
-                {formError ? <p className="text-sm text-mist" role="alert">{formError}</p> : null}
-                <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-line hover:underline">
+        <div className={paidView ? "mt-6 space-y-4" : "mt-6 grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]"}>
+          {paidView ? (
+            <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5" role="status">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 font-semibold text-line">
+                    {waiting ? <Spinner className="h-5 w-5" /> : <CircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />}
+                    {waiting ? "Checking the payment…" : "This week is paid."}
+                  </p>
+                  <p className="mt-2 text-sm leading-relaxed text-mist/80">{securedCount} {securedCount === 1 ? "court is" : "courts are"} secured. {heldCount} {heldCount === 1 ? "court stays" : "courts stay"} held. Pay each held week from My bookings before 24 hours of that session.</p>
+                  {heldNote ? <p className="mt-2 text-sm leading-relaxed text-mist/80">{heldNote}</p> : null}
+                  {formError ? <p className="mt-2 text-sm text-mist" role="alert">{formError}</p> : null}
+                </div>
+                <Link to="/profile/bookings" className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-lime-300 sm:w-auto">
                   <CalendarDays className="h-4 w-4" aria-hidden="true" />
                   View my bookings
                 </Link>
               </div>
-            ) : checkoutState === "cancel" ? (
+            </section>
+          ) : null}
+          <section className="min-w-0">
+            <h2 className="font-display text-2xl text-white">Sessions</h2>
+            <ul className={`mt-3 grid grid-cols-1 gap-3 ${paidView ? "sm:grid-cols-2 xl:grid-cols-3" : ""}`}>
+              {weeksOf(sessions).map((week) => (
+                <li key={week[0].startTime} className="rounded-2xl border border-white/10 bg-pine/80 p-3 transition-colors hover:border-line/40 hover:bg-white/5">
+                  <p className="text-sm font-medium text-white">{formatVenueDateTime(week[0].startTime, timeZone)}</p>
+                  <p className="text-xs text-mist/60">until {formatVenueDateTime(week[0].endTime, timeZone)}</p>
+                  <ul className="mt-2 space-y-1">
+                    {week.map((session) => {
+                      const secured = session.status === "confirmed";
+                      return (
+                        <li key={session.bookingId} className="rounded-xl px-2 py-2 transition-colors hover:bg-line/15">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="min-w-0 font-medium text-white">{session.courtName}</p>
+                            <p className="shrink-0 text-sm font-semibold text-white"><Money amount={session.price} currency={currency} /></p>
+                          </div>
+                          <p className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${secured ? "bg-line/20 text-line" : "bg-white/10 text-mist"}`}>{courtStatus(session)}</p>
+                          {!paidView && !secured && picked.includes(session.bookingId) ? <p className="mt-1 text-xs font-semibold text-line">In this payment</p> : null}
+                          {session.incentivePoints > 0 && !secured ? <p className="mt-1 text-sm text-line">+{session.incentivePoints} pts after this session ends</p> : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+            {unpaid.some((session) => session.payNow) ? <p className="mt-3 text-sm text-mist/75">A session starting within 24 hours is only held for 30 minutes. Pay now to keep it.</p> : null}
+          </section>
+          {paidView ? null : (
+          <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5 lg:sticky lg:top-4">
+            {checkoutState === "cancel" ? (
               <p className="text-sm leading-relaxed text-mist" role="status">{formError ?? "Payment was cancelled. Courts due within 24 hours were released. Later weeks stay in My bookings."}</p>
             ) : (
               <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void onPay(); }}>
@@ -265,7 +273,7 @@ export default function CourtGroupPage() {
                       {promotions.map((promotion) => {
                         const selected = appliedCode?.id === promotion.id;
                         return (
-                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between ${selected ? "border-line/60 bg-line/10" : "border-white/10 bg-black/20"}`}>
+                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 transition-colors sm:flex-row sm:items-center sm:justify-between ${selected ? "border-line/60 bg-line/10 hover:bg-line/20" : "border-white/10 bg-black/20 hover:bg-white/10"}`}>
                             <div className="min-w-0">
                               <p className="break-all font-semibold text-white">{promotion.code}</p>
                               <p className="text-sm text-line">{promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}</p>
@@ -284,7 +292,7 @@ export default function CourtGroupPage() {
                   <p className="text-sm text-mist/80">Reward points</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {pointPercents.map((percent) => (
-                      <button key={percent} type="button" disabled={paying || waiting || maxPoints === 0} className={`rounded-full px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-line text-ink" : "border border-white/15 text-mist"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
+                      <button key={percent} type="button" disabled={paying || waiting || maxPoints === 0} className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-line text-ink hover:bg-lime-300" : "border border-white/15 text-mist hover:bg-white/10"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
                         {percent}%
                       </button>
                     ))}
@@ -309,6 +317,7 @@ export default function CourtGroupPage() {
               </form>
             )}
           </section>
+          )}
         </div>
       ) : null}
     </main>

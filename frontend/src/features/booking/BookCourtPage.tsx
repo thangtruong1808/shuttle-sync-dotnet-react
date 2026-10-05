@@ -51,7 +51,7 @@ export default function BookCourtPage() {
   const { venues } = useVenues();
   const venue = venues?.find((item) => item.slug === slug) ?? null;
   const [date, setDate] = useState("");
-  const [form, setForm] = useState({ courtIds: [] as string[], start: "", end: "", weeks: 1 });
+  const [form, setForm] = useState({ courtIds: [] as string[], start: "", end: "", weeks: 1, repeat: false });
   const [courts, setCourts] = useState<AvailableCourt[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -104,11 +104,13 @@ export default function BookCourtPage() {
     setBusy(true);
     try {
       if (payAtRegistration) {
+        let heldGroupId: string | undefined;
         if (form.weeks > 1) {
-          await openCourtHold(slug, form.courtIds, date, form.start, form.end, form.weeks);
+          const opened = await openCourtHold(slug, form.courtIds, date, form.start, form.end, form.weeks, form.repeat);
+          heldGroupId = opened.groupId;
           sessionStorage.setItem("shuttle-sync-held-note", "The other weeks are held. Pay each one from My bookings before 24 hours of that session.");
         }
-        const result = await payNowHold(slug, form.courtIds, date, form.start, form.end);
+        const result = await payNowHold(slug, form.courtIds, date, form.start, form.end, form.repeat, form.weeks, heldGroupId);
         sessionStorage.setItem("shuttle-sync-checkout", result.bookingId);
         if (result.checkoutUrl) {
           window.location.assign(result.checkoutUrl);
@@ -117,7 +119,7 @@ export default function BookCourtPage() {
         navigate(`/${slug}/book/group/${result.groupId}?checkout=success`);
         return;
       }
-      const opened = await openCourtHold(slug, form.courtIds, date, form.start, form.end, form.weeks);
+      const opened = await openCourtHold(slug, form.courtIds, date, form.start, form.end, form.weeks, form.repeat);
       navigate(`/${slug}/book/group/${opened.groupId}`);
     } catch (reason) {
       sessionStorage.removeItem("shuttle-sync-held-note");
@@ -189,6 +191,16 @@ export default function BookCourtPage() {
                   <option key={weeks} value={weeks} className="bg-[#f4fbf6] text-[#102117]">{weeks === 1 ? "This week only" : `${weeks} weeks`}</option>
                 ))}
               </select>
+            </label>
+            <label className="flex items-start gap-2 text-sm text-mist sm:col-span-2 xl:col-span-4">
+              <input
+                type="checkbox"
+                className="mt-1 accent-line"
+                checked={form.repeat}
+                disabled={busy}
+                onChange={(event) => setForm({ ...form, repeat: event.target.checked })}
+              />
+              <span>Keep {form.weeks} {form.weeks === 1 ? "week" : "weeks"} ahead. When one week passes, the next week is held automatically. You still pay each week before 24 hours of that session.</span>
             </label>
             <div className="flex flex-col gap-3 sm:col-span-2 xl:col-span-4">
               <div className="text-sm leading-relaxed text-mist/75">

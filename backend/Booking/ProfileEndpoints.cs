@@ -10,6 +10,7 @@ public static class ProfileEndpoints
         var me = app.MapGroup("/api/me").RequireAuthorization();
         me.MapGet("/bookings", BookingsAsync);
         me.MapGet("/court-weeks", CourtWeeksAsync);
+        me.MapPut("/holds/{groupId:guid}/repeat", SetRepeatAsync);
         me.MapGet("/friend-spots", FriendSpotsAsync);
         me.MapGet("/bookings/{id:guid}", BookingAsync);
         me.MapPost("/bookings/{id:guid}/cancel", CancelAsync);
@@ -108,8 +109,42 @@ public static class ProfileEndpoints
                 courtNumber = row.CourtNumber,
                 startTime = VenueClock.AsUtc(row.StartTime),
                 endTime = VenueClock.AsUtc(row.EndTime),
+                seriesWeeks = row.SeriesWeeks,
+                repeatHold = row.RepeatHold == 1,
+                repeatNote = row.RepeatNote,
             }),
         });
+    }
+
+    private static async Task<IResult> SetRepeatAsync(
+        Guid groupId,
+        RepeatHoldBody body,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        BookingPayments payments,
+        CancellationToken cancellationToken)
+    {
+        var userId = await RequireUserAsync(http, authRepository, cancellationToken);
+        if (userId is null)
+        {
+            return SignInAgain();
+        }
+
+        await payments.ReleaseExpiredCourtHoldsAsync(cancellationToken);
+        var saved = await repository.SetRepeatHoldAsync(userId.Value, groupId, body.Enabled, cancellationToken);
+        if (!saved.Ok)
+        {
+            return Results.Json(new
+            {
+                errors = new Dictionary<string, string[]>
+                {
+                    ["form"] = [saved.Message ?? "This repeat could not be saved."],
+                },
+            }, statusCode: saved.Message == "That booking was not found." ? StatusCodes.Status404NotFound : StatusCodes.Status400BadRequest);
+        }
+
+        return Results.Ok(new { repeatHold = body.Enabled, note = saved.Message });
     }
 
     private static async Task<IResult> FriendSpotsAsync(
@@ -390,6 +425,7 @@ public static class ProfileEndpoints
     }
 
     private sealed record RenameFriendBody(string? Name);
+    private sealed record RepeatHoldBody(bool Enabled);
 
     private static IResult SignInAgain() =>
         Results.Json(new

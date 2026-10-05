@@ -287,19 +287,19 @@ export type CourtHoldSession = {
 
 export type PayNowSlot = { date: string; start: string; end: string; courtIds: string[] };
 
-export function openCourtHold(slug: string, courtIds: string[], date: string, start: string, end: string, weeks: number): Promise<{ groupId: string; notice?: string | null; payNow?: PayNowSlot | null }> {
+export function openCourtHold(slug: string, courtIds: string[], date: string, start: string, end: string, weeks: number, repeat = false): Promise<{ groupId: string; notice?: string | null; payNow?: PayNowSlot | null }> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/holds`, "no-store", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ courtIds, date, start, end, weeks }),
+    body: JSON.stringify({ courtIds, date, start, end, weeks, repeat }),
   });
 }
 
-export function payNowHold(slug: string, courtIds: string[], date: string, start: string, end: string): Promise<CheckoutResult & { groupId: string }> {
+export function payNowHold(slug: string, courtIds: string[], date: string, start: string, end: string, repeat = false, weeks = 1, groupId?: string): Promise<CheckoutResult & { groupId: string }> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/pay-now`, "no-store", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ courtIds, date, start, end, weeks: 1 }),
+    body: JSON.stringify({ courtIds, date, start, end, weeks, repeat, groupId: groupId ?? null }),
   });
 }
 

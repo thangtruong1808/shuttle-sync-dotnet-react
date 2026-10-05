@@ -368,7 +368,10 @@ public sealed class BookingRepository(IConfiguration configuration)
         DateTime endUtc,
         int weeks,
         CancellationToken cancellationToken,
-        bool payWithin24Hours = false)
+        bool payWithin24Hours = false,
+        Guid? joinGroupId = null,
+        int seriesWeeks = 0,
+        bool repeatHold = false)
     {
         if (endUtc <= startUtc)
         {
@@ -443,7 +446,32 @@ public sealed class BookingRepository(IConfiguration configuration)
 
         var minutes = (decimal)(endUtc - startUtc).TotalMinutes;
         var price = decimal.Round(hourlyRate * minutes / 60m, 2, MidpointRounding.AwayFromZero);
-        var groupId = Guid.NewGuid();
+        var groupId = joinGroupId ?? Guid.NewGuid();
+        if (joinGroupId is Guid existingGroup)
+        {
+            var prior = await connection.QuerySingleOrDefaultAsync<RepeatSettingRow>(new CommandDefinition(
+                """
+                SELECT CAST(COALESCE(SeriesWeeks, 0) AS SIGNED) AS SeriesWeeks,
+                       CAST(RepeatHold AS SIGNED) AS RepeatHold
+                FROM Bookings
+                WHERE GroupId = @GroupId AND UserId = @UserId AND VenueId = @VenueId AND IsDeleted = 0
+                LIMIT 1
+                """,
+                new { GroupId = existingGroup, UserId = userId, VenueId = venueId },
+                tx,
+                cancellationToken: cancellationToken));
+            if (prior is null)
+            {
+                return HoldError("That booking was not found.");
+            }
+
+            if (prior.SeriesWeeks > 0)
+            {
+                seriesWeeks = prior.SeriesWeeks;
+            }
+
+            repeatHold = prior.RepeatHold == 1;
+        }
         var created = new List<CourtHoldRow>();
         var skipped = new HashSet<string>();
         foreach (var court in courts)
@@ -562,10 +590,10 @@ public sealed class BookingRepository(IConfiguration configuration)
                     await connection.ExecuteAsync(new CommandDefinition(
                         """
                         INSERT INTO Bookings
-                            (Id, VenueId, UserId, CourtSessionId, GroupId, Status, SubtotalAmount, DiscountAmount, TotalAmount,
+                            (Id, VenueId, UserId, CourtSessionId, GroupId, SeriesWeeks, RepeatHold, Status, SubtotalAmount, DiscountAmount, TotalAmount,
                              PointsRedeemed, PointsValue, HoldExpiresAt, IsDeleted, CreatedAt, UpdatedAt)
                         VALUES
-                            (@Id, @VenueId, @UserId, @SessionId, @GroupId, 'pending', @Price, 0, @Price,
+                            (@Id, @VenueId, @UserId, @SessionId, @GroupId, @SeriesWeeks, @RepeatHold, 'pending', @Price, 0, @Price,
                              0, 0, @Hold, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
                         """,
                         new
@@ -575,6 +603,8 @@ public sealed class BookingRepository(IConfiguration configuration)
                             UserId = userId,
                             SessionId = sessionId,
                             GroupId = groupId,
+                            SeriesWeeks = seriesWeeks > 0 ? seriesWeeks : (int?)null,
+                            RepeatHold = repeatHold ? 1 : 0,
                             Price = price,
                             Hold = hold,
                         },
@@ -665,12 +695,379 @@ public sealed class BookingRepository(IConfiguration configuration)
         return count > 0;
     }
 
+    public async Task<RepeatAddedRow[]> ExtendRepeatHoldsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var groups = (await connection.QueryAsync<RepeatGroupRow>(new CommandDefinition(
+            """
+            SELECT b.GroupId, b.UserId, b.VenueId,
+                   CAST(MAX(COALESCE(b.SeriesWeeks, 0)) AS SIGNED) AS SeriesWeeks,
+                   v.TimeZone, v.HourlyRate
+            FROM Bookings b
+            JOIN Venues v ON v.Id = b.VenueId AND v.IsDeleted = 0
+            WHERE b.RepeatHold = 1 AND b.GroupId IS NOT NULL AND b.IsDeleted = 0
+              AND b.Status IN ('pending', 'confirmed')
+            GROUP BY b.GroupId, b.UserId, b.VenueId, v.TimeZone, v.HourlyRate
+            """,
+            cancellationToken: cancellationToken))).ToArray();
+        var added = new List<RepeatAddedRow>();
+        foreach (var group in groups)
+        {
+            if (group.SeriesWeeks < 1)
+            {
+                continue;
+            }
+
+            var created = await ExtendRepeatGroupAsync(group, cancellationToken);
+            added.AddRange(created);
+        }
+
+        return added.ToArray();
+    }
+
+    public async Task<(bool Ok, string? Message)> SetRepeatHoldAsync(Guid userId, Guid groupId, bool enabled, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var owned = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT COUNT(*)
+            FROM Bookings
+            WHERE GroupId = @GroupId AND UserId = @UserId AND IsDeleted = 0
+              AND Status IN ('pending', 'confirmed')
+            """,
+            new { GroupId = groupId, UserId = userId },
+            cancellationToken: cancellationToken));
+        if (owned == 0)
+        {
+            return (false, "That booking was not found.");
+        }
+
+        if (!enabled)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Bookings
+                SET RepeatHold = 0, RepeatNote = NULL, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE GroupId = @GroupId AND UserId = @UserId AND IsDeleted = 0
+                """,
+                new { GroupId = groupId, UserId = userId },
+                cancellationToken: cancellationToken));
+            return (true, null);
+        }
+
+        var series = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT CAST(COALESCE(MAX(SeriesWeeks), 0) AS SIGNED)
+            FROM Bookings
+            WHERE GroupId = @GroupId AND UserId = @UserId AND IsDeleted = 0
+            """,
+            new { GroupId = groupId, UserId = userId },
+            cancellationToken: cancellationToken));
+        if (series < 1)
+        {
+            series = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                """
+                SELECT COUNT(DISTINCT cs.StartTime)
+                FROM Bookings b
+                JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+                WHERE b.GroupId = @GroupId AND b.UserId = @UserId AND b.IsDeleted = 0
+                  AND b.Status IN ('pending', 'confirmed')
+                """,
+                new { GroupId = groupId, UserId = userId },
+                cancellationToken: cancellationToken));
+        }
+
+        if (series is < 1 or > 12)
+        {
+            return (false, "Choose from 1 to 12 weeks before repeating this hold.");
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE Bookings
+            SET SeriesWeeks = @SeriesWeeks, RepeatHold = 1, UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE GroupId = @GroupId AND UserId = @UserId AND IsDeleted = 0
+              AND Status IN ('pending', 'confirmed')
+            """,
+            new { GroupId = groupId, UserId = userId, SeriesWeeks = series },
+            cancellationToken: cancellationToken));
+        var group = await connection.QuerySingleOrDefaultAsync<RepeatGroupRow>(new CommandDefinition(
+            """
+            SELECT b.GroupId, b.UserId, b.VenueId, @SeriesWeeks AS SeriesWeeks, v.TimeZone, v.HourlyRate
+            FROM Bookings b
+            JOIN Venues v ON v.Id = b.VenueId
+            WHERE b.GroupId = @GroupId AND b.UserId = @UserId AND b.IsDeleted = 0
+            LIMIT 1
+            """,
+            new { GroupId = groupId, UserId = userId, SeriesWeeks = series },
+            cancellationToken: cancellationToken));
+        if (group is null)
+        {
+            return (false, "That booking was not found.");
+        }
+
+        await ExtendRepeatGroupAsync(group, cancellationToken);
+        return (true, await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
+            """
+            SELECT RepeatNote
+            FROM Bookings
+            WHERE GroupId = @GroupId AND UserId = @UserId AND RepeatNote IS NOT NULL
+            LIMIT 1
+            """,
+            new { GroupId = groupId, UserId = userId },
+            cancellationToken: cancellationToken)));
+    }
+
+    private async Task<RepeatAddedRow[]> ExtendRepeatGroupAsync(RepeatGroupRow group, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = (await connection.QueryAsync<RepeatSlotRow>(new CommandDefinition(
+            """
+            SELECT cs.StartTime, cs.EndTime, cs.CourtId, c.CourtName, b.SubtotalAmount AS Price
+            FROM Bookings b
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+            JOIN Courts c ON c.Id = cs.CourtId
+            WHERE b.GroupId = @GroupId AND b.UserId = @UserId AND b.IsDeleted = 0
+              AND b.Status IN ('pending', 'confirmed')
+              AND NOT (
+                  b.Status = 'pending'
+                  AND b.HoldExpiresAt IS NOT NULL
+                  AND b.HoldExpiresAt <= UTC_TIMESTAMP(6)
+              )
+            """,
+            new { group.GroupId, group.UserId },
+            cancellationToken: cancellationToken))).ToArray();
+        if (rows.Length == 0 || group.SeriesWeeks < 1)
+        {
+            return [];
+        }
+
+        var latest = rows.Max(row => row.StartTime);
+        var anchor = rows.Where(row => SameInstant(row.StartTime, latest)).ToArray();
+        var future = rows.Select(row => row.StartTime).Where(start => start > DateTime.UtcNow).Distinct().Count();
+        if (future >= group.SeriesWeeks)
+        {
+            await SetRepeatNoteAsync(group.GroupId, group.UserId, null, cancellationToken);
+            return [];
+        }
+
+        var added = new List<RepeatAddedRow>();
+        var cursorStart = anchor[0].StartTime;
+        var cursorEnd = anchor[0].EndTime;
+        var price = anchor.Max(row => row.Price);
+        string? blocked = null;
+        var guard = group.SeriesWeeks - future;
+        for (var step = 0; step < guard; step++)
+        {
+            if (!ShuttleSync.Api.Booking.VenueClock.TryShiftDays(group.TimeZone, cursorStart, cursorEnd, 7, out var nextStart, out var nextEnd))
+            {
+                blocked = "The next week could not be placed.";
+                break;
+            }
+
+            if (nextStart <= DateTime.UtcNow.AddHours(24))
+            {
+                blocked = $"{HoldWhen(group.TimeZone, nextStart)} starts within 24 hours. Pay for that week when you register. It was not saved.";
+                break;
+            }
+
+            var created = await InsertRepeatWeekAsync(group, anchor.Select(row => row.CourtId).Distinct().ToArray(), nextStart, nextEnd, price, cancellationToken);
+            if (created.Error is not null)
+            {
+                blocked = created.Error;
+                break;
+            }
+
+            added.AddRange(created.Rows);
+            cursorStart = nextStart;
+            cursorEnd = nextEnd;
+        }
+
+        await SetRepeatNoteAsync(group.GroupId, group.UserId, blocked, cancellationToken);
+        if (added.Count > 0)
+        {
+            await RepackOverlappingSocialsAsync(group.VenueId, added.Min(row => row.StartTime), added.Max(row => row.EndTime), cancellationToken);
+        }
+
+        return added.ToArray();
+    }
+
+    private async Task SetRepeatNoteAsync(Guid groupId, Guid userId, string? note, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE Bookings
+            SET RepeatNote = @Note, UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE GroupId = @GroupId AND UserId = @UserId AND IsDeleted = 0
+            """,
+            new { GroupId = groupId, UserId = userId, Note = note },
+            cancellationToken: cancellationToken));
+    }
+
+    private async Task<(RepeatAddedRow[] Rows, string? Error)> InsertRepeatWeekAsync(
+        RepeatGroupRow group,
+        IReadOnlyList<Guid> courtIds,
+        DateTime startUtc,
+        DateTime endUtc,
+        decimal price,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        var courts = (await connection.QueryAsync<HoldCourtRow>(new CommandDefinition(
+            """
+            SELECT Id, CourtName
+            FROM Courts
+            WHERE Id IN @Ids AND VenueId = @VenueId AND IsDeleted = 0 AND IsActive = 1
+            ORDER BY Id
+            FOR UPDATE
+            """,
+            new { Ids = courtIds.ToArray(), VenueId = group.VenueId },
+            tx,
+            cancellationToken: cancellationToken))).ToArray();
+        if (courts.Length != courtIds.Count())
+        {
+            return ([], "Choose an open court.");
+        }
+
+        if (price <= 0)
+        {
+            price = group.HourlyRate > 0
+                ? decimal.Round(group.HourlyRate * (decimal)(endUtc - startUtc).TotalMinutes / 60m, 2, MidpointRounding.AwayFromZero)
+                : 0;
+        }
+
+        if (price <= 0)
+        {
+            return ([], "This venue has not set an hourly rate yet.");
+        }
+
+        var created = new List<RepeatAddedRow>();
+        foreach (var court in courts)
+        {
+            var closed = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                """
+                SELECT COUNT(*)
+                FROM CourtClosures
+                WHERE VenueId = @VenueId AND (CourtId = @CourtId OR CourtId IS NULL)
+                  AND StartTime < @EndTime AND EndTime > @StartTime
+                """,
+                new { VenueId = group.VenueId, CourtId = court.Id, StartTime = startUtc, EndTime = endUtc },
+                tx,
+                cancellationToken: cancellationToken));
+            if (closed > 0)
+            {
+                return ([], $"{court.CourtName} is closed on {HoldWhen(group.TimeZone, startUtc)}.");
+            }
+
+            var overlaps = (await connection.QueryAsync<OverlapSessionRow>(new CommandDefinition(
+                """
+                SELECT Id, StartTime, EndTime
+                FROM CourtSessions
+                WHERE CourtId = @CourtId AND IsDeleted = 0
+                  AND StartTime < @EndTime AND EndTime > @StartTime
+                FOR UPDATE
+                """,
+                new { CourtId = court.Id, StartTime = startUtc, EndTime = endUtc },
+                tx,
+                cancellationToken: cancellationToken))).ToArray();
+            Guid sessionId;
+            if (overlaps.Length == 0)
+            {
+                sessionId = Guid.NewGuid();
+                try
+                {
+                    await connection.ExecuteAsync(new CommandDefinition(
+                        """
+                        INSERT INTO CourtSessions
+                            (Id, VenueId, CourtId, StartTime, EndTime, Price, IsDeleted, CreatedAt, UpdatedAt)
+                        VALUES
+                            (@Id, @VenueId, @CourtId, @StartTime, @EndTime, @Price, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+                        """,
+                        new { Id = sessionId, VenueId = group.VenueId, CourtId = court.Id, StartTime = startUtc, EndTime = endUtc, Price = price },
+                        tx,
+                        cancellationToken: cancellationToken));
+                }
+                catch (MySqlException exception) when (exception.Number == 1062)
+                {
+                    return ([], $"{court.CourtName} on {HoldWhen(group.TimeZone, startUtc)} is already held.");
+                }
+            }
+            else if (overlaps.Length == 1 && SameInstant(overlaps[0].StartTime, startUtc) && SameInstant(overlaps[0].EndTime, endUtc))
+            {
+                sessionId = overlaps[0].Id;
+                var taken = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                    """
+                    SELECT COUNT(*)
+                    FROM Bookings
+                    WHERE CourtSessionId = @Id AND IsDeleted = 0
+                      AND Status NOT IN ('cancelled', 'expired')
+                      AND NOT (
+                          Status = 'pending'
+                          AND HoldExpiresAt IS NOT NULL
+                          AND HoldExpiresAt <= UTC_TIMESTAMP(6)
+                      )
+                    """,
+                    new { Id = sessionId },
+                    tx,
+                    cancellationToken: cancellationToken));
+                if (taken > 0)
+                {
+                    return ([], $"{court.CourtName} on {HoldWhen(group.TimeZone, startUtc)} is already held.");
+                }
+            }
+            else
+            {
+                return ([], $"{court.CourtName} on {HoldWhen(group.TimeZone, startUtc)} is already held.");
+            }
+
+            var bookingId = Guid.NewGuid();
+            try
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO Bookings
+                        (Id, VenueId, UserId, CourtSessionId, GroupId, SeriesWeeks, RepeatHold, Status, SubtotalAmount, DiscountAmount, TotalAmount,
+                         PointsRedeemed, PointsValue, HoldExpiresAt, IsDeleted, CreatedAt, UpdatedAt)
+                    VALUES
+                        (@Id, @VenueId, @UserId, @SessionId, @GroupId, @SeriesWeeks, 1, 'pending', @Price, 0, @Price,
+                         0, 0, @Hold, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+                    """,
+                    new
+                    {
+                        Id = bookingId,
+                        VenueId = group.VenueId,
+                        UserId = group.UserId,
+                        SessionId = sessionId,
+                        GroupId = group.GroupId,
+                        SeriesWeeks = group.SeriesWeeks,
+                        Price = price,
+                        Hold = startUtc.AddHours(-24),
+                    },
+                    tx,
+                    cancellationToken: cancellationToken));
+            }
+            catch (MySqlException exception) when (exception.Number == 1062)
+            {
+                return ([], $"{court.CourtName} on {HoldWhen(group.TimeZone, startUtc)} is already held.");
+            }
+
+            created.Add(new RepeatAddedRow { VenueId = group.VenueId, UserId = group.UserId, SessionId = sessionId, StartTime = startUtc, EndTime = endUtc });
+        }
+
+        await tx.CommitAsync(cancellationToken);
+        return (created.ToArray(), null);
+    }
+
     public async Task<CourtWeekRow[]> ListCourtWeeksAsync(Guid userId, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
         var rows = await connection.QueryAsync<CourtWeekRow>(new CommandDefinition(
             """
             SELECT b.Id AS BookingId, b.GroupId, b.Status, b.SubtotalAmount AS Price,
+                   CAST(COALESCE(b.SeriesWeeks, 0) AS SIGNED) AS SeriesWeeks,
+                   CAST(b.RepeatHold AS SIGNED) AS RepeatHold, b.RepeatNote,
                    v.Name AS VenueName, v.Slug AS VenueSlug, v.TimeZone, v.Currency,
                    c.Id AS CourtId, c.CourtName, c.CourtNumber, cs.StartTime, cs.EndTime
             FROM Bookings b
@@ -710,7 +1107,9 @@ public sealed class BookingRepository(IConfiguration configuration)
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         var sample = await connection.QuerySingleOrDefaultAsync<WeekSampleRow>(new CommandDefinition(
             """
-            SELECT b.GroupId, b.SubtotalAmount AS Price, cs.StartTime, cs.EndTime
+            SELECT b.GroupId, b.SubtotalAmount AS Price, cs.StartTime, cs.EndTime,
+                   CAST(COALESCE(b.SeriesWeeks, 0) AS SIGNED) AS SeriesWeeks,
+                   CAST(b.RepeatHold AS SIGNED) AS RepeatHold
             FROM Bookings b
             JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
             WHERE b.GroupId = @GroupId AND b.VenueId = @VenueId AND b.UserId = @UserId AND b.IsDeleted = 0
@@ -852,13 +1251,24 @@ public sealed class BookingRepository(IConfiguration configuration)
                 await connection.ExecuteAsync(new CommandDefinition(
                     """
                     INSERT INTO Bookings
-                        (Id, VenueId, UserId, CourtSessionId, GroupId, Status, SubtotalAmount, DiscountAmount, TotalAmount,
+                        (Id, VenueId, UserId, CourtSessionId, GroupId, SeriesWeeks, RepeatHold, Status, SubtotalAmount, DiscountAmount, TotalAmount,
                          PointsRedeemed, PointsValue, HoldExpiresAt, IsDeleted, CreatedAt, UpdatedAt)
                     VALUES
-                        (@Id, @VenueId, @UserId, @SessionId, @GroupId, 'pending', @Price, 0, @Price,
+                        (@Id, @VenueId, @UserId, @SessionId, @GroupId, @SeriesWeeks, @RepeatHold, 'pending', @Price, 0, @Price,
                          0, 0, @Hold, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
                     """,
-                    new { Id = bookingId, VenueId = venueId, UserId = userId, SessionId = sessionId, GroupId = groupId, Price = price, Hold = hold },
+                    new
+                    {
+                        Id = bookingId,
+                        VenueId = venueId,
+                        UserId = userId,
+                        SessionId = sessionId,
+                        GroupId = groupId,
+                        SeriesWeeks = sample.SeriesWeeks > 0 ? sample.SeriesWeeks : (int?)null,
+                        RepeatHold = sample.RepeatHold,
+                        Price = price,
+                        Hold = hold,
+                    },
                     tx,
                     cancellationToken: cancellationToken));
             }
@@ -5243,6 +5653,42 @@ public sealed class WeekSampleRow
     public decimal Price { get; init; }
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
+    public int SeriesWeeks { get; init; }
+    public int RepeatHold { get; init; }
+}
+
+public sealed class RepeatSettingRow
+{
+    public int SeriesWeeks { get; init; }
+    public int RepeatHold { get; init; }
+}
+
+public sealed class RepeatGroupRow
+{
+    public Guid GroupId { get; init; }
+    public Guid UserId { get; init; }
+    public Guid VenueId { get; init; }
+    public int SeriesWeeks { get; init; }
+    public string TimeZone { get; init; } = "";
+    public decimal HourlyRate { get; init; }
+}
+
+public sealed class RepeatSlotRow
+{
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public Guid CourtId { get; init; }
+    public string CourtName { get; init; } = "";
+    public decimal Price { get; init; }
+}
+
+public sealed class RepeatAddedRow
+{
+    public Guid VenueId { get; init; }
+    public Guid UserId { get; init; }
+    public Guid SessionId { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
 }
 
 public sealed class CourtWeekRow
@@ -5251,6 +5697,9 @@ public sealed class CourtWeekRow
     public Guid GroupId { get; init; }
     public string Status { get; init; } = "";
     public decimal Price { get; init; }
+    public int SeriesWeeks { get; init; }
+    public int RepeatHold { get; init; }
+    public string? RepeatNote { get; init; }
     public string VenueName { get; init; } = "";
     public string VenueSlug { get; init; } = "";
     public string TimeZone { get; init; } = "";

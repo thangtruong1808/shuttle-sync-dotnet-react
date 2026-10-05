@@ -358,7 +358,9 @@ public static class VenueEndpoints
             window.StartUtc,
             window.EndUtc,
             body.Weeks <= 0 ? 1 : body.Weeks,
-            cancellationToken);
+            cancellationToken,
+            seriesWeeks: body.Weeks <= 0 ? 1 : Math.Min(body.Weeks, 12),
+            repeatHold: body.Repeat);
         if (opened.Error is not null)
         {
             var status = opened.Error.Contains("already held", StringComparison.Ordinal) || opened.Error.Contains("not available", StringComparison.Ordinal)
@@ -442,7 +444,10 @@ public static class VenueEndpoints
             window.EndUtc,
             1,
             cancellationToken,
-            payWithin24Hours: true);
+            payWithin24Hours: true,
+            joinGroupId: body.GroupId,
+            seriesWeeks: body.Weeks <= 0 ? 1 : Math.Min(body.Weeks, 12),
+            repeatHold: body.Repeat);
         if (opened.Error is not null)
         {
             return Form(opened.Error, StatusCodes.Status400BadRequest);
@@ -1131,7 +1136,7 @@ public static class VenueEndpoints
         Results.Json(new { errors = new Dictionary<string, string[]> { ["form"] = [message] } }, statusCode: status);
 
     private sealed record OpenSessionBody(Guid CourtId, string? Date, string? Start, string? End);
-    private sealed record OpenHoldBody(Guid[]? CourtIds, string? Date, string? Start, string? End, int Weeks = 1);
+    private sealed record OpenHoldBody(Guid[]? CourtIds, string? Date, string? Start, string? End, int Weeks = 1, bool Repeat = false, Guid? GroupId = null);
     private sealed record AddHoldCourtsBody(Guid[]? CourtIds, string? Start, string? End);
 
     private sealed record SocialCheckoutBody(int Points, string? PromotionCode = null);

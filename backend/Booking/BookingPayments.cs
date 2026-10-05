@@ -131,6 +131,17 @@ public sealed class BookingPayments(
     public async Task ReleaseExpiredCourtHoldsAsync(CancellationToken cancellationToken)
     {
         await CancelIntentsAsync(await payments.ReleaseExpiredHoldsAsync(cancellationToken), cancellationToken);
+        try
+        {
+            foreach (var added in await bookings.ExtendRepeatHoldsAsync(cancellationToken))
+            {
+                await SnapshotAsync(added.VenueId, added.SessionId, added.UserId, cancellationToken);
+            }
+        }
+        catch (Exception)
+        {
+            // A repeat hold can be tried again the next time bookings are loaded.
+        }
     }
 
     public async Task<CheckoutResponse> CheckoutGroupAsync(
