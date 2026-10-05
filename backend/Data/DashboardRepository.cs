@@ -316,7 +316,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
         await using var connection = await OpenAsync(cancellationToken);
         var rows = await connection.QueryAsync<DashSocialRow>(new CommandDefinition(
             """
-            SELECT s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly,
+            SELECT s.Id, s.StartTime, s.EndTime, s.Price, s.PlayersPerCourt, s.MaxCourts, s.RepeatWeekly,
                    COUNT(r.Id) + (
                        SELECT COUNT(*) FROM PublicSocialFriends f
                        WHERE f.SocialId = s.Id AND f.Status = 'confirmed'
@@ -325,7 +325,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
             LEFT JOIN PublicSocialRegistrations r ON r.SocialId = s.Id AND r.Status = 'confirmed'
             WHERE s.VenueId = @VenueId AND s.IsDeleted = 0
               AND s.StartTime < @EndUtc AND s.EndTime > @StartUtc
-            GROUP BY s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly
+            GROUP BY s.Id, s.StartTime, s.EndTime, s.Price, s.PlayersPerCourt, s.MaxCourts, s.RepeatWeekly
             ORDER BY s.StartTime
             """,
             new { VenueId = venueId, StartUtc = startUtc, EndUtc = endUtc },
@@ -338,7 +338,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
         await using var connection = await OpenAsync(cancellationToken);
         var rows = await connection.QueryAsync<DashSocialRow>(new CommandDefinition(
             """
-            SELECT s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly,
+            SELECT s.Id, s.StartTime, s.EndTime, s.Price, s.PlayersPerCourt, s.MaxCourts, s.RepeatWeekly,
                    COUNT(r.Id) + (
                        SELECT COUNT(*) FROM PublicSocialFriends f
                        WHERE f.SocialId = s.Id AND f.Status = 'confirmed'
@@ -347,7 +347,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
             LEFT JOIN PublicSocialRegistrations r ON r.SocialId = s.Id AND r.Status = 'confirmed'
             WHERE s.VenueId = @VenueId AND s.IsDeleted = 0
               AND s.StartTime > UTC_TIMESTAMP(6)
-            GROUP BY s.Id, s.StartTime, s.EndTime, s.Price, s.RepeatWeekly
+            GROUP BY s.Id, s.StartTime, s.EndTime, s.Price, s.PlayersPerCourt, s.MaxCourts, s.RepeatWeekly
             ORDER BY s.StartTime
             """,
             new { VenueId = venueId },
@@ -355,7 +355,7 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return rows.ToArray();
     }
 
-    public async Task<string?> CreateSocialAsync(Guid venueId, DateTime start, DateTime end, decimal price, bool repeatWeekly, Guid actorId, string? ip, CancellationToken cancellationToken)
+    public async Task<string?> CreateSocialAsync(Guid venueId, DateTime start, DateTime end, decimal price, int playersPerCourt, int? maxCourts, bool repeatWeekly, Guid actorId, string? ip, CancellationToken cancellationToken)
     {
         if (end <= start)
         {
@@ -373,6 +373,12 @@ public sealed class DashboardRepository(IConfiguration configuration)
         }
 
         await using var connection = await OpenAsync(cancellationToken);
+        var courtError = await SocialCourtLimitErrorAsync(connection, null, venueId, maxCourts, cancellationToken);
+        if (courtError is not null)
+        {
+            return courtError;
+        }
+
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         var overlap = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
             """
@@ -391,18 +397,18 @@ public sealed class DashboardRepository(IConfiguration configuration)
         var id = Guid.NewGuid();
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            INSERT INTO PublicSocials (Id, VenueId, StartTime, EndTime, Price, RepeatWeekly, IsDeleted, CreatedAt, UpdatedAt)
-            VALUES (@Id, @VenueId, @StartTime, @EndTime, @Price, @RepeatWeekly, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            INSERT INTO PublicSocials (Id, VenueId, StartTime, EndTime, Price, PlayersPerCourt, MaxCourts, RepeatWeekly, IsDeleted, CreatedAt, UpdatedAt)
+            VALUES (@Id, @VenueId, @StartTime, @EndTime, @Price, @PlayersPerCourt, @MaxCourts, @RepeatWeekly, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
             """,
-            new { Id = id, VenueId = venueId, StartTime = start, EndTime = end, Price = price, RepeatWeekly = repeatWeekly },
+            new { Id = id, VenueId = venueId, StartTime = start, EndTime = end, Price = price, PlayersPerCourt = playersPerCourt, MaxCourts = maxCourts, RepeatWeekly = repeatWeekly },
             tx,
             cancellationToken: cancellationToken));
-        await AuditAsync(connection, tx, actorId, venueId, "create", "PublicSocial", id, new { start, end, price, repeatWeekly }, ip, cancellationToken);
+        await AuditAsync(connection, tx, actorId, venueId, "create", "PublicSocial", id, new { start, end, price, playersPerCourt, maxCourts, repeatWeekly }, ip, cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return null;
     }
 
-    public async Task<string?> UpdateSocialAsync(Guid venueId, Guid socialId, DateTime start, DateTime end, decimal price, bool repeatWeekly, Guid actorId, string? ip, CancellationToken cancellationToken)
+    public async Task<string?> UpdateSocialAsync(Guid venueId, Guid socialId, DateTime start, DateTime end, decimal price, int playersPerCourt, int? maxCourts, bool repeatWeekly, Guid actorId, string? ip, CancellationToken cancellationToken)
     {
         if (end <= start)
         {
@@ -426,6 +432,36 @@ public sealed class DashboardRepository(IConfiguration configuration)
             return "That drop-in social was not found.";
         }
 
+        var courtError = await SocialCourtLimitErrorAsync(connection, tx, venueId, maxCourts, cancellationToken);
+        if (courtError is not null)
+        {
+            return courtError;
+        }
+
+        var occupied = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM PublicSocialRegistrations
+                 WHERE SocialId = @SocialId
+                   AND (Status = 'confirmed' OR (Status = 'pending' AND HoldExpiresAt > UTC_TIMESTAMP(6))))
+              + (SELECT COUNT(*) FROM PublicSocialFriends
+                 WHERE SocialId = @SocialId
+                   AND (Status = 'confirmed' OR (Status = 'pending' AND HoldExpiresAt > UTC_TIMESTAMP(6))))
+            """,
+            new { SocialId = socialId },
+            tx,
+            cancellationToken: cancellationToken));
+        var activeCourts = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(*) FROM Courts WHERE VenueId = @VenueId AND IsActive = 1 AND IsDeleted = 0",
+            new { VenueId = venueId },
+            tx,
+            cancellationToken: cancellationToken));
+        var capacity = BookingRepository.AllowedCourtCount(activeCourts, maxCourts) * playersPerCourt;
+        if (occupied > capacity)
+        {
+            return $"This social already has {occupied} players. {BookingRepository.AllowedCourtCount(activeCourts, maxCourts)} courts with {playersPerCourt} players each can hold {capacity}.";
+        }
+
         var overlap = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
             """
             SELECT COUNT(*) FROM PublicSocials
@@ -443,13 +479,15 @@ public sealed class DashboardRepository(IConfiguration configuration)
         await connection.ExecuteAsync(new CommandDefinition(
             """
             UPDATE PublicSocials
-            SET StartTime = @StartTime, EndTime = @EndTime, Price = @Price, RepeatWeekly = @RepeatWeekly, UpdatedAt = UTC_TIMESTAMP(6)
+            SET StartTime = @StartTime, EndTime = @EndTime, Price = @Price,
+                PlayersPerCourt = @PlayersPerCourt, MaxCourts = @MaxCourts,
+                RepeatWeekly = @RepeatWeekly, UpdatedAt = UTC_TIMESTAMP(6)
             WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0
             """,
-            new { Id = socialId, VenueId = venueId, StartTime = start, EndTime = end, Price = price, RepeatWeekly = repeatWeekly },
+            new { Id = socialId, VenueId = venueId, StartTime = start, EndTime = end, Price = price, PlayersPerCourt = playersPerCourt, MaxCourts = maxCourts, RepeatWeekly = repeatWeekly },
             tx,
             cancellationToken: cancellationToken));
-        await AuditAsync(connection, tx, actorId, venueId, "update", "PublicSocial", socialId, new { start, end, price, repeatWeekly }, ip, cancellationToken);
+        await AuditAsync(connection, tx, actorId, venueId, "update", "PublicSocial", socialId, new { start, end, price, playersPerCourt, maxCourts, repeatWeekly }, ip, cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return null;
     }
@@ -1658,6 +1696,33 @@ public sealed class DashboardRepository(IConfiguration configuration)
             tx, cancellationToken: cancellationToken));
     }
 
+    private static async Task<string?> SocialCourtLimitErrorAsync(
+        MySqlConnection connection,
+        MySqlTransaction? tx,
+        Guid venueId,
+        int? maxCourts,
+        CancellationToken cancellationToken)
+    {
+        if (maxCourts is null)
+        {
+            return null;
+        }
+
+        var activeCourts = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(*) FROM Courts WHERE VenueId = @VenueId AND IsActive = 1 AND IsDeleted = 0",
+            new { VenueId = venueId },
+            tx,
+            cancellationToken: cancellationToken));
+        if (maxCourts > activeCourts)
+        {
+            return activeCourts == 0
+                ? "Add a court before setting a court limit."
+                : $"This venue has {activeCourts} court{(activeCourts == 1 ? "" : "s")}.";
+        }
+
+        return null;
+    }
+
     private static async Task AuditAsync(
         MySqlConnection connection,
         MySqlTransaction? tx,
@@ -1965,6 +2030,8 @@ public sealed class DashSocialRow
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
     public decimal Price { get; init; }
+    public int PlayersPerCourt { get; init; }
+    public int? MaxCourts { get; init; }
     public bool RepeatWeekly { get; init; }
     public int PlayerCount { get; init; }
 }

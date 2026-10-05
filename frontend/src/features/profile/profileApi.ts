@@ -7,6 +7,7 @@ export type BookingFriend = {
   status: string;
   amount: number;
   canCancel: boolean;
+  courtName?: string;
 };
 
 export type BookingRow = {

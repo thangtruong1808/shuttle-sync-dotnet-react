@@ -24,6 +24,7 @@ public static class ProfileEndpoints
         int? pageSize,
         AuthRepository authRepository,
         BookingRepository repository,
+        BookingPayments payments,
         CancellationToken cancellationToken)
     {
         var userId = await RequireUserAsync(http, authRepository, cancellationToken);
@@ -32,6 +33,7 @@ public static class ProfileEndpoints
             return SignInAgain();
         }
 
+        await payments.RefundStartedWaitlistsAsync(cancellationToken);
         var filter = status is "past" or "cancelled" ? status : "upcoming";
         var (pageNumber, size, offset) = Page(page, pageSize);
         var (items, total) = await repository.ListBookingsAsync(userId.Value, filter, offset, size, cancellationToken);
@@ -53,7 +55,7 @@ public static class ProfileEndpoints
                 currency = item.Currency,
                 status = item.Status,
                 totalAmount = item.TotalAmount,
-                canCancel = item.Status is "pending" or "confirmed" && item.StartTime > now,
+                canCancel = (item.Status is "pending" or "confirmed" or "waitlist") && item.StartTime > now,
                 socialId = item.SocialId,
                 friends = (friendsByRegistration.TryGetValue(item.Id, out var mine) ? mine : Array.Empty<FriendBookingRow>()).Select(friend => new
                 {
@@ -61,6 +63,7 @@ public static class ProfileEndpoints
                     name = friend.DisplayName,
                     status = friend.Status,
                     amount = friend.Amount,
+                    courtName = friend.CourtName,
                     canCancel = friend.Status == "confirmed" && friend.StartTime > now,
                 }),
             }),
@@ -88,6 +91,10 @@ public static class ProfileEndpoints
         var filter = status is "past" or "cancelled" ? status : "upcoming";
         var (pageNumber, size, offset) = Page(page, pageSize);
         var (items, total) = await repository.ListFriendSpotsAsync(userId.Value, filter, offset, size, cancellationToken);
+        var activeSocials = items.Length == 0
+            ? []
+            : await repository.ListMySocialStatesAsync(userId.Value, items.Select(item => item.SocialId).Distinct().ToArray(), cancellationToken);
+        var stillIn = activeSocials.Select(row => row.SocialId).ToHashSet();
         var now = DateTime.UtcNow;
         return Results.Ok(new
         {
@@ -106,9 +113,9 @@ public static class ProfileEndpoints
                 socialId = item.SocialId,
                 startTime = VenueClock.AsUtc(item.StartTime),
                 endTime = VenueClock.AsUtc(item.EndTime),
-                youLeft = item.RegistrationStatus is "cancelled" or "expired",
-                canCancel = item.Status == "confirmed" && item.StartTime > now,
-                canRename = item.Status is "pending" or "confirmed" && item.StartTime > now,
+                youLeft = !stillIn.Contains(item.SocialId),
+                canCancel = (item.Status is "confirmed" or "waitlist") && item.StartTime > now,
+                canRename = (item.Status is "pending" or "confirmed" or "waitlist") && item.StartTime > now,
             }),
             page = pageNumber,
             pageSize = size,

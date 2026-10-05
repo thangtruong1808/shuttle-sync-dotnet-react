@@ -58,6 +58,10 @@ export type CourtSocial = {
   players: number;
   totalPlayers?: number;
   courtsUsed?: number;
+  playersPerCourt?: number;
+  courtLimit?: number;
+  full?: boolean;
+  waitlistCount?: number;
 };
 
 export type PublicSocial = {
@@ -70,7 +74,10 @@ export type PublicSocial = {
   yourCourtName: string | null;
   yourCourtNumber: number | null;
   repeatWeekly?: boolean;
+  playersPerCourt?: number;
+  courtLimit?: number;
   full?: boolean;
+  waitlistCount?: number;
   courts?: SocialCourtLoad[];
 };
 
@@ -186,16 +193,29 @@ export type SocialOffer = {
   endTime: string;
   price: number;
   playerCount: number;
+  playersPerCourt?: number;
   courtCount?: number;
   courts?: SocialCourtLoad[];
   yourStatus?: string | null;
   yourCourtName: string | null;
   yourCourtNumber: number | null;
   incentivePoints: number;
+  full?: boolean;
+  waitlistCount?: number;
 };
 
 export function openSocials(slug: string): Promise<{ venue: Venue; courtCount: number; socials: PublicSocial[] }> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/socials`, "no-store");
+}
+
+export type SocialRosterCourt = {
+  courtName: string;
+  courtNumber: number;
+  players: string[];
+};
+
+export function socialRoster(slug: string, socialId: string): Promise<{ courts: SocialRosterCourt[] }> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/socials/${socialId}/players`, "no-store");
 }
 
 export function socialOffer(slug: string, socialId: string): Promise<SocialOffer> {
@@ -207,6 +227,14 @@ export function startSocialBatchCheckout(slug: string, socialIds: string[], poin
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ socialIds, points, promotionCode: promotionCode || null }),
+  });
+}
+
+export function startWaitlistCheckout(slug: string, socialId: string, points: number, promotionCode: string): Promise<SocialCheckout> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/socials/${socialId}/waitlist`, "no-store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ points, promotionCode: promotionCode || null }),
   });
 }
 

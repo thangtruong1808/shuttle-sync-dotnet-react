@@ -198,7 +198,7 @@ export default function HomePage() {
                           ))}
                         </ul>
                       )}
-                      <SocialTimes times={court.socials ?? []} timeZone={availability.venue.timeZone} now={now} />
+                      <SocialTimes times={court.socials ?? []} timeZone={availability.venue.timeZone} now={now} slug={availability.venue.slug} courtNumber={court.courtNumber} />
                     </li>
                   );
                 })}

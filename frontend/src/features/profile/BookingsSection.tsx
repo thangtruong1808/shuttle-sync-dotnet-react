@@ -38,6 +38,7 @@ export function BookingsSection() {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pageMove, setPageMove] = useState<"prev" | "next" | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -127,7 +128,7 @@ export function BookingsSection() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="font-medium text-white">{booking.venueName}</p>
-                  <p className="text-sm text-mist/70">{booking.courtName} · Court {booking.courtNumber}</p>
+                  <p className="text-sm text-mist/70">{booking.status === "waitlist" ? "Waitlist · waiting for a place" : `${booking.courtName} · Court ${booking.courtNumber}`}</p>
                   <p className="text-sm text-mist/70">{formatVenueDateTime(booking.startTime, booking.timeZone)}</p>
                   <p className="text-sm text-mist/70">{formatVenueRange(booking.startTime, booking.endTime, booking.timeZone)}</p>
                 </div>
@@ -136,7 +137,7 @@ export function BookingsSection() {
                   <p className="mt-2 font-semibold text-white"><Money amount={booking.totalAmount} currency={booking.currency} /></p>
                 </div>
               </div>
-              {booking.socialId && booking.canCancel ? (
+              {booking.socialId && booking.canCancel && booking.status !== "waitlist" ? (
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Link to={`/${booking.venueSlug}/social/${booking.socialId}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
                     <UserPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -160,6 +161,30 @@ export function BookingsSection() {
                 ) : (
                   <Button className="mt-3" variant="secondary" disabled={pendingId !== null} onClick={() => setConfirmId(booking.id)}>Cancel</Button>
                 )
+              ) : null}
+              {tab === "upcoming" && booking.socialId ? (
+                <div className="mt-4">
+                  <Button variant="secondary" className="w-full sm:w-auto" onClick={() => setOpenId(openId === booking.id ? null : booking.id)}>
+                    {openId === booking.id ? "Hide registration" : "View registration"}
+                  </Button>
+                  {openId === booking.id ? (
+                    <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+                      <p className="text-sm font-medium text-white">Your place</p>
+                      <p className="text-sm text-mist/80">{booking.status === "waitlist" ? "Waitlist · waiting for a place" : `${booking.courtName} · Court ${booking.courtNumber}`}</p>
+                      <p className="text-sm text-mist/70">{formatVenueRange(booking.startTime, booking.endTime, booking.timeZone)}</p>
+                      <p className="mt-3 text-sm font-medium text-white">Friends</p>
+                      {(booking.friends ?? []).length === 0 ? (
+                        <p className="text-sm text-mist/70">No friends on this social.</p>
+                      ) : (
+                        <ul className="mt-1">
+                          {(booking.friends ?? []).map((friend) => (
+                            <li key={friend.id} className="text-sm text-mist/80">{friend.name} · {friend.courtName || "Waitlist"} · {friend.status}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
             </li>
           ))}

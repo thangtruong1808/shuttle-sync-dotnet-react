@@ -40,6 +40,7 @@ function groupBySocial(items: FriendSpot[]) {
 
 function statusLabel(status: string) {
   if (status === "confirmed") return "On court";
+  if (status === "waitlist") return "Waitlist";
   if (status === "pending") return "Waiting for payment";
   if (status === "cancelled") return "Cancelled";
   return "Expired";
@@ -228,7 +229,7 @@ export function FriendSpotsSection() {
                             <div className="min-w-0">
                               <p className="truncate font-medium text-white">{spot.name}</p>
                               <p className="truncate text-sm text-mist/70">
-                                {spot.courtName} · Court {spot.courtNumber}
+                                {spot.status === "waitlist" ? "Waitlist · waiting for a place" : `${spot.courtName} · Court ${spot.courtNumber}`}
                                 {" · "}
                                 {statusLabel(spot.status)}
                                 {spot.status === "confirmed" ? <> · <Money amount={spot.amount} currency={spot.currency} /></> : null}

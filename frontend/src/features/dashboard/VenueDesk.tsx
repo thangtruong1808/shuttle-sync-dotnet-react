@@ -526,7 +526,8 @@ function Slots({ venueId, currency }: { venueId: string; currency: string }) {
   const [success, setSuccess] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);
-  const [draft, setDraft] = useState({ start: "18:00", end: "20:00", price: "", repeatWeekly: false });
+  const [courtTotal, setCourtTotal] = useState<number | null>(null);
+  const [draft, setDraft] = useState({ start: "18:00", end: "20:00", price: "", playersPerCourt: "8", courtLimit: "", repeatWeekly: false });
   const { busy, run } = useBusy();
 
   useEffect(() => {
@@ -540,6 +541,13 @@ function Slots({ venueId, currency }: { venueId: string; currency: string }) {
       })
       .finally(() => {
         if (active) setRetrying(false);
+      });
+    listCourts(venueId)
+      .then((courts) => {
+        if (active) setCourtTotal(courts.filter((court) => court.isActive).length);
+      })
+      .catch(() => {
+        if (active) setCourtTotal(null);
       });
     return () => {
       active = false;
@@ -556,7 +564,15 @@ function Slots({ venueId, currency }: { venueId: string; currency: string }) {
           setSuccess(null);
           void run("create", async () => {
             try {
-              await createSocial(venueId, { date, start: draft.start, end: draft.end, price: Number(draft.price), repeatWeekly: draft.repeatWeekly });
+              await createSocial(venueId, {
+                date,
+                start: draft.start,
+                end: draft.end,
+                price: Number(draft.price),
+                playersPerCourt: Number(draft.playersPerCourt),
+                maxCourts: draft.courtLimit.trim() ? Number(draft.courtLimit) : null,
+                repeatWeekly: draft.repeatWeekly,
+              });
               setRows(await listSocials(venueId));
               setDraft((current) => ({ ...current, repeatWeekly: false }));
               setSuccess(draft.repeatWeekly
@@ -580,6 +596,12 @@ function Slots({ venueId, currency }: { venueId: string; currency: string }) {
         <Field label="Session price">
           <input className={control} type="number" min={0.01} step="0.01" required value={draft.price} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, price: event.target.value })} />
         </Field>
+        <Field label="Players per court">
+          <input className={control} type="number" min={1} max={32} step={1} required value={draft.playersPerCourt} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, playersPerCourt: event.target.value })} />
+        </Field>
+        <Field label="Court limit">
+          <input className={control} type="number" min={1} max={courtTotal ?? 50} step={1} placeholder="All courts" value={draft.courtLimit} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, courtLimit: event.target.value })} />
+        </Field>
         <label className="flex items-start gap-2 text-sm text-mist sm:col-span-2 lg:col-span-3">
           <input
             type="checkbox"
@@ -590,11 +612,14 @@ function Slots({ venueId, currency }: { venueId: string; currency: string }) {
           />
           <span>Repeat this slot weekly. After this session ends, the same hours and price are added for the next week.</span>
         </label>
-        <p className="text-sm text-mist/70 sm:col-span-2 lg:col-span-3">Players pay this session price. Court bookings still use the hourly rate. Eight players fill court 1, then court 2, and so on.</p>
+        <p className="text-sm text-mist/70 sm:col-span-2 lg:col-span-3">
+          Players pay this session price. Court bookings still use the hourly rate. Court 1 fills first, then the next court, up to the court limit.
+          {courtTotal === null ? "" : ` This venue has ${courtTotal} court${courtTotal === 1 ? "" : "s"}. Leave the court limit blank to use all of them.`}
+        </p>
         <div className="sm:col-span-2 lg:col-span-3 flex flex-wrap items-center gap-2">
           <Notice message={message} />
           <Success message={success} />
-          <Button type="submit" loading={busy === "create"} disabled={(busy !== null && busy !== "create") || !(Number(draft.price) > 0)}>
+          <Button type="submit" loading={busy === "create"} disabled={(busy !== null && busy !== "create") || !(Number(draft.price) > 0) || !(Number(draft.playersPerCourt) >= 1)}>
             Add public social
           </Button>
         </div>
@@ -623,6 +648,8 @@ function SocialRow({ venueId, currency, row, onChanged }: { venueId: string; cur
     start: venueLocalTime(row.startTime, row.timeZone),
     end: venueLocalTime(row.endTime, row.timeZone),
     price: String(row.price ?? ""),
+    playersPerCourt: String(row.playersPerCourt || 8),
+    courtLimit: row.maxCourts == null ? "" : String(row.maxCourts),
     repeatWeekly: row.repeatWeekly,
   });
   const [message, setMessage] = useState<string | null>(null);
@@ -635,6 +662,7 @@ function SocialRow({ venueId, currency, row, onChanged }: { venueId: string; cur
         <span className="whitespace-nowrap">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span>
         <span className="font-semibold text-white"><Money amount={row.price} currency={currency} /></span>
         <span className="text-white">{row.playerCount} player{row.playerCount === 1 ? "" : "s"}</span>
+        <span>{row.playersPerCourt} per court · {row.maxCourts == null ? "all courts" : `${row.maxCourts} court${row.maxCourts === 1 ? "" : "s"}`}</span>
         <Button variant="secondary" disabled={busy !== null} onClick={() => { setMessage(null); setEditing((open) => !open); }}>Edit</Button>
         <Button variant="danger" loading={busy === "delete"} disabled={busy !== null && busy !== "delete"} onClick={() => {
           void run("delete", async () => {
@@ -663,15 +691,29 @@ function SocialRow({ venueId, currency, row, onChanged }: { venueId: string; cur
           <Field label="Session price">
             <input className={control} type="number" min={0.01} step="0.01" required value={form.price} disabled={busy !== null} onChange={(event) => setForm({ ...form, price: event.target.value })} />
           </Field>
+          <Field label="Players per court">
+            <input className={control} type="number" min={1} max={32} step={1} required value={form.playersPerCourt} disabled={busy !== null} onChange={(event) => setForm({ ...form, playersPerCourt: event.target.value })} />
+          </Field>
+          <Field label="Court limit">
+            <input className={control} type="number" min={1} step={1} placeholder="All courts" value={form.courtLimit} disabled={busy !== null} onChange={(event) => setForm({ ...form, courtLimit: event.target.value })} />
+          </Field>
           <label className="flex items-start gap-2 text-sm text-mist sm:col-span-2">
             <input type="checkbox" className="mt-0.5 accent-line" checked={form.repeatWeekly} disabled={busy !== null} onChange={(event) => setForm({ ...form, repeatWeekly: event.target.checked })} />
             <span>Repeat this slot weekly</span>
           </label>
           <div className="flex items-end">
-            <Button loading={busy === "save"} disabled={busy !== null && busy !== "save"} onClick={() => {
+            <Button loading={busy === "save"} disabled={(busy !== null && busy !== "save") || !(Number(form.playersPerCourt) >= 1)} onClick={() => {
               void run("save", async () => {
                 try {
-                  await updateSocial(venueId, row.id, { date: form.date, start: form.start, end: form.end, price: Number(form.price), repeatWeekly: form.repeatWeekly });
+                  await updateSocial(venueId, row.id, {
+                    date: form.date,
+                    start: form.start,
+                    end: form.end,
+                    price: Number(form.price),
+                    playersPerCourt: Number(form.playersPerCourt),
+                    maxCourts: form.courtLimit.trim() ? Number(form.courtLimit) : null,
+                    repeatWeekly: form.repeatWeekly,
+                  });
                   setEditing(false);
                   onChanged("Drop-in social saved.");
                 } catch (reason) {

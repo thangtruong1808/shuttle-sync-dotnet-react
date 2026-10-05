@@ -3,7 +3,7 @@ import { useSelector } from "react-redux";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { RootState } from "../../app/store";
 import { ErrorState, Money, venueToday } from "../../components/format";
-import { PageSection, useVenues } from "../../components/layout/SiteLayout";
+import { useVenues } from "../../components/layout/SiteLayout";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import { AuthRequestError } from "../auth/authApi";
 import { openPlayerSession, rememberVenueSlug, venueAvailability, type AvailableCourt } from "../venues/venueApi";
@@ -86,19 +86,21 @@ export default function BookCourtPage() {
   }
 
   return (
-    <main>
-      <PageSection>
-        <Link to={`/${slug}`} className="text-sm text-line hover:underline">Back to the venue</Link>
-        <h1 className="mt-3 font-display text-3xl text-white">Book a court</h1>
-        <p className="mt-2 max-w-xl text-sm text-mist/75">Choose a court and a time. You can use a promotion code and reward points on the next page.</p>
+    <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
+      <Link to={`/${slug}`} className="text-sm text-line hover:underline">Back to the venue</Link>
+      <div className="mt-3 grid items-start gap-4 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+        <div>
+          <h1 className="font-display text-3xl text-white">Book a court</h1>
+          <p className="mt-2 text-sm leading-relaxed text-mist/75">Choose a court and a time. You can use a promotion code and reward points on the next page.</p>
+        </div>
         {status === "unknown" || (!date && !venue) ? (
-          <div className="mt-6 space-y-2" aria-busy="true">
+          <div aria-busy="true">
             <span className="sr-only">Loading booking form</span>
-            <Skeleton className="h-24" />
+            <Skeleton className="h-28" />
           </div>
         ) : (
-          <form className="mt-6 grid max-w-xl gap-3 rounded-3xl border border-white/10 bg-pine/80 p-6 sm:grid-cols-2" onSubmit={onContinue}>
-            <label className="text-sm sm:col-span-2">
+          <form className="grid gap-3 rounded-3xl border border-white/10 bg-pine/80 p-4 sm:grid-cols-2 xl:grid-cols-4" onSubmit={onContinue}>
+            <label className="text-sm sm:col-span-2 xl:col-span-1">
               <span className="mb-1 block text-mist/70">Court</span>
               <select
                 required
@@ -117,17 +119,15 @@ export default function BookCourtPage() {
               <span className="mb-1 flex items-center gap-2 text-mist/70">Date {loading ? <Spinner className="h-3.5 w-3.5" /> : null}</span>
               <PickerInput type="date" required value={date} disabled={busy || loading} onChange={(event) => setDate(event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
             </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="text-sm">
-                <span className="mb-1 block text-mist/70">Start</span>
-                <PickerInput type="time" required value={form.start} disabled={busy} onChange={(event) => setForm({ ...form, start: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
-              </label>
-              <label className="text-sm">
-                <span className="mb-1 block text-mist/70">End</span>
-                <PickerInput type="time" required value={form.end} disabled={busy} onChange={(event) => setForm({ ...form, end: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
-              </label>
-            </div>
-            <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row sm:items-center sm:justify-between">
+            <label className="text-sm">
+              <span className="mb-1 block text-mist/70">Start</span>
+              <PickerInput type="time" required value={form.start} disabled={busy} onChange={(event) => setForm({ ...form, start: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-mist/70">End</span>
+              <PickerInput type="time" required value={form.end} disabled={busy} onChange={(event) => setForm({ ...form, end: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
+            </label>
+            <div className="flex flex-col gap-3 sm:col-span-2 sm:flex-row sm:items-center sm:justify-between xl:col-span-4">
               <p className="text-sm text-mist/75">
                 {hourlyPreview(form.start, form.end, rate, currency) ?? "At least 30 minutes. The price uses the court hourly rate."}
                 {rate > 0 ? <> · <Money amount={rate} currency={currency} /> / hour</> : null}
@@ -136,11 +136,11 @@ export default function BookCourtPage() {
                 Continue
               </Button>
             </div>
-            {error ? <div className="sm:col-span-2"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div> : null}
-            {formError ? <p className="text-sm text-mist sm:col-span-2" role="alert">{formError}</p> : null}
+            {error ? <div className="sm:col-span-2 xl:col-span-4"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div> : null}
+            {formError ? <p className="text-sm text-mist sm:col-span-2 xl:col-span-4" role="alert">{formError}</p> : null}
           </form>
         )}
-      </PageSection>
+      </div>
     </main>
   );
 }

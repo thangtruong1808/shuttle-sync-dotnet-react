@@ -224,6 +224,8 @@ public static class DashboardEndpoints
             startTime = VenueClock.AsUtc(row.StartTime),
             endTime = VenueClock.AsUtc(row.EndTime),
             price = row.Price,
+            playersPerCourt = row.PlayersPerCourt,
+            maxCourts = row.MaxCourts,
             repeatWeekly = row.RepeatWeekly,
             playerCount = row.PlayerCount,
             timeZone = venue.TimeZone,
@@ -237,21 +239,43 @@ public static class DashboardEndpoints
         var venue = await repo.FindVenueAsync(venueId, cancellationToken);
         if (venue is null) return Missing();
         if (body.Price <= 0) return Form("Enter a session price greater than 0.");
+        if (SocialRoomError(body) is string roomError) return Form(roomError);
         if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var error)) return Form(error);
-        error = await repo.CreateSocialAsync(venueId, window.StartUtc, window.EndUtc, body.Price, body.RepeatWeekly, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
+        error = await repo.CreateSocialAsync(venueId, window.StartUtc, window.EndUtc, body.Price, body.PlayersPerCourt, body.MaxCourts, body.RepeatWeekly, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
     }
 
-    private static async Task<IResult> UpdateSocialAsync(Guid venueId, Guid socialId, SocialBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> UpdateSocialAsync(Guid venueId, Guid socialId, SocialBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken)
     {
         var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
         if (gate.Error is not null) return gate.Error;
         var venue = await repo.FindVenueAsync(venueId, cancellationToken);
         if (venue is null) return Missing();
         if (body.Price <= 0) return Form("Enter a session price greater than 0.");
+        if (SocialRoomError(body) is string roomError) return Form(roomError);
         if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var error)) return Form(error);
-        error = await repo.UpdateSocialAsync(venueId, socialId, window.StartUtc, window.EndUtc, body.Price, body.RepeatWeekly, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
+        error = await repo.UpdateSocialAsync(venueId, socialId, window.StartUtc, window.EndUtc, body.Price, body.PlayersPerCourt, body.MaxCourts, body.RepeatWeekly, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
+        if (error is null)
+        {
+            await bookings.RepackSocialAsync(socialId, cancellationToken);
+        }
+
         return error is null ? Results.NoContent() : Form(error);
+    }
+
+    private static string? SocialRoomError(SocialBody body)
+    {
+        if (body.PlayersPerCourt < 1 || body.PlayersPerCourt > BookingRepository.MaxPlayersPerCourtSetting)
+        {
+            return $"Enter 1 to {BookingRepository.MaxPlayersPerCourtSetting} players per court.";
+        }
+
+        if (body.MaxCourts is < 1 or > 50)
+        {
+            return "Enter 1 to 50 courts, or leave the court limit empty to use every court.";
+        }
+
+        return null;
     }
 
     private static async Task<IResult> DeleteSocialAsync(Guid venueId, Guid socialId, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
@@ -926,7 +950,7 @@ public static class DashboardEndpoints
 
     private sealed record SessionBody(Guid CourtId, string? Date, string? Start, string? End, decimal Price, string? Until);
 
-    private sealed record SocialBody(string? Date, string? Start, string? End, decimal Price, bool RepeatWeekly = false);
+    private sealed record SocialBody(string? Date, string? Start, string? End, decimal Price, int PlayersPerCourt = 8, int? MaxCourts = null, bool RepeatWeekly = false);
 
     private sealed record SessionEditBody(Guid CourtId, string? Date, string? Start, string? End, decimal Price);
 

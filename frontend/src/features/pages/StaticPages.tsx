@@ -210,6 +210,7 @@ export function RewardsPage() {
               <li>If you paid for several socials together, cancelling one returns that session's share. The others stay registered.</li>
               <li>If you added friends on one payment, cancelling one friend refunds only that friend's share. The others stay registered.</li>
               <li>Cancelling does not award the incentive. Those points arrive only if you are still registered when the social ends.</li>
+              <li>A full social has a paid waitlist. The same 24-hour rule applies if you leave the waitlist. Points you used follow that rule too. If the session starts before a place opens, the waitlist payment and those points are refunded in full, and the incentive is not added.</li>
             </ul>
           </article>
           <article className="rounded-3xl border border-white/10 bg-pine/80 p-5 lg:col-span-2">
@@ -242,7 +243,7 @@ export function ContactPage() {
 export function CancellationPage() {
   return (
     <StaticPage title="Cancellation policy">
-      You can cancel a pending or confirmed booking before the session starts. More than 24 hours before the start, the payment is refunded in full, including any reward points used. Within 24 hours, the venue keeps the late-cancel percent set in the dashboard and refunds the rest. The same percent of points used is kept.
+      You can cancel a pending or confirmed booking, a public social, or a waitlist place before the session starts. More than 24 hours before the start, the payment is refunded in full, including any reward points used. Within 24 hours, the venue keeps the late-cancel percent set in the dashboard and refunds the rest. The same percent of points used is kept. If a public social starts before a waitlist place opens, that waitlist payment and the points used on it are refunded in full.
     </StaticPage>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatVenueDay, formatVenueRange } from "../../components/format";
-import type { Availability, CourtSocial, ScheduleBooking, SocialCourtLoad } from "../venues/venueApi";
+import { Button } from "../../components/ui";
+import { socialRoster, type SocialRosterCourt, type Availability, type CourtSocial, type ScheduleBooking, type SocialCourtLoad } from "../venues/venueApi";
 
 function clock(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -21,7 +22,67 @@ export function useNow(): number {
   return now;
 }
 
-export function SocialTimes({ times, timeZone, now }: { times: CourtSocial[]; timeZone: string; now: number }) {
+export function RegistrationNames({ courts }: { courts: SocialRosterCourt[] }) {
+  if (courts.length === 0) {
+    return <p className="mt-2 text-sm text-mist/70">No one is registered yet.</p>;
+  }
+
+  return (
+    <ul className="mt-2 space-y-2">
+      {courts.map((court) => (
+        <li key={court.courtNumber}>
+          <p className="text-sm font-medium text-white">{court.courtName}: {court.players.length} {court.players.length === 1 ? "player" : "players"}</p>
+          <ul className="mt-1">
+            {court.players.map((name, index) => (
+              <li key={`${court.courtNumber}-${index}`} className="text-sm text-mist/80">{name}</li>
+            ))}
+          </ul>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function CourtRoster({ slug, socialId, courtNumber }: { slug: string; socialId: string; courtNumber?: number }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [courts, setCourts] = useState<SocialRosterCourt[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggle() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    if (courts) {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await socialRoster(slug, socialId);
+      setCourts(typeof courtNumber === "number" ? next.courts.filter((court) => court.courtNumber === courtNumber) : next.courts);
+    } catch {
+      setError("Registration could not be loaded.");
+      setOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      <Button type="button" variant="secondary" className="w-full" loading={loading} onClick={() => void toggle()}>
+        {open ? "Hide registration" : "View registration"}
+      </Button>
+      {error ? <p className="mt-2 text-sm text-mist" role="alert">{error}</p> : null}
+      {open && courts ? <RegistrationNames courts={courts} /> : null}
+    </div>
+  );
+}
+
+export function SocialTimes({ times, timeZone, now, slug, courtNumber }: { times: CourtSocial[]; timeZone: string; now: number; slug?: string; courtNumber?: number }) {
   const open = times.filter((time) => new Date(time.endTime).getTime() > now);
   if (open.length === 0) {
     return null;
@@ -31,21 +92,41 @@ export function SocialTimes({ times, timeZone, now }: { times: CourtSocial[]; ti
     <div className="mt-3">
       <p className="text-sm font-semibold text-white">Drop-in social</p>
       <ul className="mt-2 grid gap-2">
-        {open.map((time) => (
+        {open.map((time) => {
+          const each = time.playersPerCourt ?? 8;
+          const full = time.full === true || (
+            typeof time.totalPlayers === "number" &&
+            typeof time.courtLimit === "number" &&
+            time.courtLimit > 0 &&
+            time.totalPlayers >= time.courtLimit * each
+          );
+          return (
           <li key={time.id} className="rounded-2xl border border-line/40 px-3 py-2">
             <p className="text-sm font-semibold text-white">{formatVenueDay(time.startTime, timeZone)}</p>
             <p className="whitespace-nowrap text-sm text-white">{formatVenueRange(time.startTime, time.endTime, timeZone)}</p>
-            <p className="text-sm text-mist/80">{time.players === 0 ? "No one on this court yet" : `${time.players} of 8 on this court`}</p>
+            <p className="text-sm text-mist/80">{time.players === 0 ? "No one on this court yet" : `${time.players} of ${each} on this court`}</p>
             {typeof time.totalPlayers === "number" ? (
               <p className="text-sm text-mist/70">
-                {time.totalPlayers} registered · {time.courtsUsed ?? 0} court{(time.courtsUsed ?? 0) === 1 ? "" : "s"} · 8 players each
+                {time.totalPlayers} registered
+                {" · "}
+                {typeof time.courtLimit === "number" ? `${time.courtsUsed ?? 0} of ${time.courtLimit} courts` : `${time.courtsUsed ?? 0} courts`}
+                {" · "}
+                {each} players each
               </p>
             ) : (
-              <p className="text-sm text-mist/70">Each court holds 8 players.</p>
+              <p className="text-sm text-mist/70">Each court holds {each} players.</p>
             )}
+            {full ? (
+              <p className="mt-1 text-sm text-line">This social is full. Join the waitlist from Register for public social. If someone cancels, the first person waiting gets the place.</p>
+            ) : null}
+            {typeof time.waitlistCount === "number" && (full || time.waitlistCount > 0) ? (
+              <p className="text-sm text-mist/70">{time.waitlistCount} {time.waitlistCount === 1 ? "person" : "people"} on the waitlist.</p>
+            ) : null}
             <SessionClock start={time.startTime} end={time.endTime} />
+            {slug ? <CourtRoster slug={slug} socialId={time.id} courtNumber={courtNumber} /> : null}
           </li>
-        ))}
+          );
+        })}
       </ul>
     </div>
   );
@@ -88,12 +169,17 @@ export function IncentiveNote({ points, startsOn, endsOn }: { points: number; st
 export function SocialRoster({
   playerCount,
   courtCount,
+  playersPerCourt = 8,
   courts,
+  compact = false,
 }: {
   playerCount: number;
   courtCount: number;
+  playersPerCourt?: number;
   courts: SocialCourtLoad[];
+  compact?: boolean;
 }) {
+  const each = playersPerCourt > 0 ? playersPerCourt : 8;
   const used = [...courts].sort((left, right) => left.courtNumber - right.courtNumber);
   const courtsUsed = used.length;
   return (
@@ -105,13 +191,15 @@ export function SocialRoster({
           {courtCount > 0 ? `${courtsUsed} of ${courtCount} courts in use` : `${courtsUsed} court${courtsUsed === 1 ? "" : "s"} in use`}
         </span>
       </p>
-      <p className="mt-1 text-sm leading-snug text-mist/75">Each court holds 8 players. The next player uses another court only after the earlier court is full. If someone leaves, the next player moves up.</p>
+      {compact ? null : (
+        <p className="mt-1 text-sm leading-snug text-mist/75">Each court holds {each} players. The next player uses another court only after the earlier court is full{courtCount > 0 ? `, up to ${courtCount} courts` : ""}. If someone leaves, the next player moves up.</p>
+      )}
       {used.length > 0 ? (
         <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {used.map((court) => (
             <li key={court.courtNumber} className="rounded-xl border border-white/10 px-2.5 py-2">
               <p className="truncate text-xs text-mist/60">{court.courtName}</p>
-              <p className="text-sm font-semibold text-white">{court.players} / 8</p>
+              <p className="text-sm font-semibold text-white">{court.players} / {each}</p>
             </li>
           ))}
         </ul>

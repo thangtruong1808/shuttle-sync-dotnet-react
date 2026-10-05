@@ -331,6 +331,13 @@ public sealed class BookingPayments(
                     return Results.Ok();
                 }
 
+                if (IsWaitlist(intent.Metadata))
+                {
+                    await ApplyWaitlistIntentAsync(intent, cancellationToken);
+                    await payments.FinishWebhookAsync(stripeEvent.Id, "processed", null, cancellationToken);
+                    return Results.Ok();
+                }
+
                 if (IsSocial(intent.Metadata))
                 {
                     await ApplySocialIntentAsync(intent, cancellationToken);
@@ -585,6 +592,11 @@ public sealed class BookingPayments(
             return await ApplyFriendCheckoutAsync(eventType, session, cancellationToken);
         }
 
+        if (IsWaitlist(session.Metadata))
+        {
+            return await ApplyWaitlistCheckoutAsync(eventType, session, cancellationToken);
+        }
+
         if (IsSocial(session.Metadata) || await bookings.SocialPaymentExistsAsync(session.Id, cancellationToken))
         {
             return await ApplySocialCheckoutAsync(eventType, session, cancellationToken);
@@ -698,7 +710,8 @@ public sealed class BookingPayments(
         string? promotionCode,
         string successUrl,
         string cancelUrl,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool waitlist = false)
     {
         if (settings.IsConfigured)
         {
@@ -706,7 +719,9 @@ public sealed class BookingPayments(
         }
 
         await bookings.ExpirePublicSocialHoldsAsync(cancellationToken);
-        var hold = await bookings.BeginPublicSocialCheckoutAsync(venueId, socialId, userId, currency, requestedPoints, promotionCode, cancellationToken);
+        var hold = waitlist
+            ? await bookings.BeginSocialWaitlistCheckoutAsync(venueId, socialId, userId, currency, requestedPoints, promotionCode, cancellationToken)
+            : await bookings.BeginPublicSocialCheckoutAsync(venueId, socialId, userId, currency, requestedPoints, promotionCode, cancellationToken);
         if (hold.Error is not null)
         {
             return SocialCheckoutResponse.Fail(hold.Error, hold.StatusCode);
@@ -964,7 +979,7 @@ public sealed class BookingPayments(
             return CancelResponse.Fail("That friend was not found.", StatusCodes.Status404NotFound);
         }
 
-        if (context.Status != "confirmed" || context.StartTime <= DateTime.UtcNow)
+        if (context.Status is not ("confirmed" or "waitlist") || context.StartTime <= DateTime.UtcNow)
         {
             return CancelResponse.Fail("This friend can no longer be cancelled.", StatusCodes.Status409Conflict);
         }
@@ -1052,7 +1067,7 @@ public sealed class BookingPayments(
             return CancelResponse.Fail("That booking was not found.", StatusCodes.Status404NotFound);
         }
 
-        if (context.Status is not ("pending" or "confirmed") || context.StartTime <= DateTime.UtcNow)
+        if (context.Status is not ("pending" or "confirmed" or "waitlist") || context.StartTime <= DateTime.UtcNow)
         {
             return CancelResponse.Fail("This booking can no longer be cancelled.", StatusCodes.Status409Conflict);
         }
@@ -1230,6 +1245,164 @@ public sealed class BookingPayments(
         return true;
     }
 
+    public async Task RefundStartedWaitlistsAsync(CancellationToken cancellationToken)
+    {
+        if (settings.IsConfigured)
+        {
+            StripeConfiguration.ApiKey = settings.SecretKey;
+        }
+
+        var rows = await bookings.ListStartedWaitlistsAsync(cancellationToken);
+        foreach (var row in rows)
+        {
+            var cardPaid = row.Amount > 0
+                && row.PaymentStatus == "succeeded"
+                && !string.IsNullOrWhiteSpace(row.StripePaymentIntentId)
+                && !row.StripePaymentIntentId.StartsWith("cs_", StringComparison.Ordinal);
+            if (cardPaid)
+            {
+                if (!settings.IsConfigured)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var refund = await new RefundService().CreateAsync(
+                        new RefundCreateOptions { PaymentIntent = row.StripePaymentIntentId, Amount = Cents(row.Amount) },
+                        new RequestOptions { IdempotencyKey = "refund-waitlist-start-" + row.Id.ToString("N") },
+                        cancellationToken);
+                    await bookings.CompleteStartedWaitlistAsync(row.Id, refund.Id, MapRefundStatus(refund.Status), cancellationToken);
+                }
+                catch (StripeException)
+                {
+                    // Leave the waitlist row so the next page load can try the refund again.
+                }
+
+                continue;
+            }
+
+            await bookings.CompleteStartedWaitlistAsync(row.Id, null, "succeeded", cancellationToken);
+        }
+
+        var friends = await bookings.ListStartedFriendWaitlistsAsync(cancellationToken);
+        foreach (var row in friends)
+        {
+            var cardPaid = row.Amount > 0
+                && row.PaymentStatus is "succeeded" or "partially_refunded"
+                && !string.IsNullOrWhiteSpace(row.StripePaymentIntentId)
+                && !row.StripePaymentIntentId.StartsWith("cs_", StringComparison.Ordinal);
+            if (cardPaid)
+            {
+                if (!settings.IsConfigured)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var refund = await new RefundService().CreateAsync(
+                        new RefundCreateOptions { PaymentIntent = row.StripePaymentIntentId, Amount = Cents(row.Amount) },
+                        new RequestOptions { IdempotencyKey = "refund-friend-waitlist-start-" + row.Id.ToString("N") },
+                        cancellationToken);
+                    await bookings.CompleteStartedFriendWaitlistAsync(row.Id, refund.Id, MapRefundStatus(refund.Status), cancellationToken);
+                }
+                catch (StripeException)
+                {
+                    // Leave the friend on the waitlist so the next page load can try the refund again.
+                }
+
+                continue;
+            }
+
+            await bookings.CompleteStartedFriendWaitlistAsync(row.Id, null, "succeeded", cancellationToken);
+        }
+    }
+
+    private async Task<bool> ApplyWaitlistCheckoutAsync(string eventType, Session session, CancellationToken cancellationToken)
+    {
+        if (eventType == "checkout.session.expired")
+        {
+            await bookings.FailSocialPendingAsync(session.Id, "cancelled", cancellationToken);
+            return true;
+        }
+
+        if (eventType is not ("checkout.session.completed" or "checkout.session.async_payment_succeeded" or "checkout.session.async_payment_failed"))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(session.PaymentIntentId))
+        {
+            return false;
+        }
+
+        var registrationRaw = session.ClientReferenceId;
+        if (string.IsNullOrWhiteSpace(registrationRaw) && session.Metadata is not null)
+        {
+            session.Metadata.TryGetValue("registrationId", out registrationRaw);
+        }
+
+        if (!Guid.TryParse(registrationRaw, out var registrationId)
+            || !await bookings.BindSocialPaymentIntentAsync(registrationId, session.PaymentIntentId, cancellationToken))
+        {
+            return false;
+        }
+
+        var intent = await new PaymentIntentService().GetAsync(session.PaymentIntentId, cancellationToken: cancellationToken);
+        if (eventType == "checkout.session.async_payment_failed")
+        {
+            await bookings.FailSocialPendingAsync(intent.Id, "failed", cancellationToken);
+            return true;
+        }
+
+        await ApplyWaitlistIntentAsync(intent, cancellationToken);
+        return true;
+    }
+
+    private async Task ApplyWaitlistIntentAsync(PaymentIntent intent, CancellationToken cancellationToken)
+    {
+        if (intent.Metadata is not null
+            && intent.Metadata.TryGetValue("registrationId", out var registrationRaw)
+            && Guid.TryParse(registrationRaw, out var registrationId))
+        {
+            await bookings.BindSocialPaymentIntentAsync(registrationId, intent.Id, cancellationToken);
+        }
+
+        switch (intent.Status)
+        {
+            case "succeeded":
+                var transition = await bookings.MarkWaitlistPaidAsync(intent.Id, intent.LatestChargeId, cancellationToken);
+                if (transition is { Action: "refund", Amount: > 0 })
+                {
+                    var refund = await new RefundService().CreateAsync(
+                        new RefundCreateOptions { PaymentIntent = intent.Id, Amount = Cents(transition.Amount) },
+                        new RequestOptions { IdempotencyKey = "refund-waitlist-late-" + transition.RegistrationId.ToString("N") },
+                        cancellationToken);
+                    await bookings.RecordSocialRefundAsync(intent.Id, refund.Id, transition.Amount, MapRefundStatus(refund.Status), cancellationToken);
+                }
+
+                return;
+            case "processing":
+                var type = await MethodTypeAsync(intent, cancellationToken);
+                var until = type switch
+                {
+                    "au_becs_debit" => DateTime.UtcNow.AddDays(5),
+                    "payto" => DateTime.UtcNow.AddMinutes(60),
+                    _ => (DateTime?)null,
+                };
+                if (until is not null)
+                {
+                    await bookings.ExtendSocialHoldAsync(intent.Id, until.Value, cancellationToken);
+                }
+
+                return;
+            case "canceled":
+                await bookings.FailSocialPendingAsync(intent.Id, "cancelled", cancellationToken);
+                return;
+        }
+    }
+
     private async Task ApplySocialIntentAsync(PaymentIntent intent, CancellationToken cancellationToken)
     {
         if (intent.Metadata is not null
@@ -1288,7 +1461,7 @@ public sealed class BookingPayments(
             types.Add("payto");
         }
 
-        var key = "social-checkout-" + hold.RegistrationId.ToString("N");
+        var key = (hold.Waitlist ? "waitlist-checkout-" : "social-checkout-") + hold.RegistrationId.ToString("N");
         if (!includePayTo)
         {
             key += "-card";
@@ -1301,7 +1474,7 @@ public sealed class BookingPayments(
 
         var metadata = new Dictionary<string, string>
         {
-            ["kind"] = "social",
+            ["kind"] = hold.Waitlist ? "social-waitlist" : "social",
             ["registrationId"] = hold.RegistrationId.ToString(),
         };
         return await new SessionService().CreateAsync(
@@ -1328,7 +1501,7 @@ public sealed class BookingPayments(
                         {
                             Currency = hold.Currency.ToLowerInvariant(),
                             UnitAmount = Cents(hold.Amount),
-                            ProductData = new SessionLineItemPriceDataProductDataOptions { Name = "Drop-in social" },
+                            ProductData = new SessionLineItemPriceDataProductDataOptions { Name = hold.Waitlist ? "Drop-in social waitlist" : "Drop-in social" },
                         },
                     },
                 ],
@@ -1479,7 +1652,7 @@ public sealed class BookingPayments(
                         {
                             Currency = hold.Currency.ToLowerInvariant(),
                             UnitAmount = Cents(hold.Amount),
-                            ProductData = new SessionLineItemPriceDataProductDataOptions { Name = $"Drop-in social · {people}" },
+                            ProductData = new SessionLineItemPriceDataProductDataOptions { Name = hold.Waitlist ? $"Drop-in social waitlist · {people}" : $"Drop-in social · {people}" },
                         },
                     },
                 ],
@@ -1490,6 +1663,9 @@ public sealed class BookingPayments(
 
     private static bool IsFriend(IDictionary<string, string>? metadata) =>
         metadata is not null && metadata.TryGetValue("kind", out var kind) && kind == "social-friends";
+
+    private static bool IsWaitlist(IDictionary<string, string>? metadata) =>
+        metadata is not null && metadata.TryGetValue("kind", out var kind) && kind == "social-waitlist";
 
     private static bool IsSocial(IDictionary<string, string>? metadata) =>
         metadata is not null && metadata.TryGetValue("kind", out var kind) && kind == "social";

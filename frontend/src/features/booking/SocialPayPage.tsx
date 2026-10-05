@@ -5,13 +5,12 @@ import { Link, Navigate, useLocation, useParams } from "react-router-dom";
 import { CalendarDays, CircleCheck } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { ErrorState, Money, formatVenueDateTime } from "../../components/format";
-import { PageSection } from "../../components/layout/SiteLayout";
 import { Button, Skeleton } from "../../components/ui";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { SocialRoster } from "../courts/CourtSchedule";
 import { cancelBooking, renameFriend } from "../profile/profileApi";
-import { socialFriends, socialOffer, socialRegistration, startFriendCheckout, startSocialCheckout, venuePromotions, type Promotion, type SocialFriend, type SocialOffer, type SocialRegistration } from "../venues/venueApi";
+import { socialFriends, socialOffer, socialRegistration, startFriendCheckout, startSocialCheckout, startWaitlistCheckout, venuePromotions, type Promotion, type SocialFriend, type SocialOffer, type SocialRegistration } from "../venues/venueApi";
 
 const checkoutKey = "shuttle-sync-social-checkout";
 const friendKey = "shuttle-sync-friend-group";
@@ -40,6 +39,9 @@ async function waitForSocial(slug: string, id: string) {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const row = await socialRegistration(slug, id);
     if (row.status === "confirmed" || row.status === "expired" || row.paymentStatus === "failed") {
+      return row;
+    }
+    if (row.status === "waitlist" && (row.paymentStatus === "succeeded" || row.cashAmount === 0)) {
       return row;
     }
     await new Promise((resolve) => window.setTimeout(resolve, 1500));
@@ -71,10 +73,10 @@ export default function SocialPayPage() {
     socialOffer(slug, socialId)
       .then((next) => {
         setOffer(next);
-        if (next.yourStatus === "confirmed") {
+        if (next.yourStatus === "confirmed" || next.yourStatus === "waitlist") {
           setOutcome({
             id: next.id,
-            status: "confirmed",
+            status: next.yourStatus,
             courtName: next.yourCourtName ?? "",
             courtNumber: next.yourCourtNumber ?? 0,
             paymentStatus: "succeeded",
@@ -98,7 +100,7 @@ export default function SocialPayPage() {
       setFormError("Payment was cancelled. You can register again when you're ready.");
       return;
     }
-    if (returned !== "success" || status !== "authenticated") {
+    if ((returned !== "success" && returned !== "waitlist") || status !== "authenticated") {
       return;
     }
     const id = sessionStorage.getItem(checkoutKey);
@@ -135,6 +137,7 @@ export default function SocialPayPage() {
   const maxPoints = Math.min(balance, payable <= 0 ? 0 : Math.floor(payable * rate));
   const preview = offer ? quote(Math.min(points, maxPoints), balance, rate, payable) : null;
   const cashTooSmall = preview ? preview.cash > 0 && preview.cash < 0.5 : false;
+  const joining = offer?.full === true && offer.yourStatus !== "confirmed" && offer.yourStatus !== "waitlist";
 
   function choosePercent(percent: number) {
     setPoints(Math.floor(maxPoints * percent / 100));
@@ -149,16 +152,17 @@ export default function SocialPayPage() {
     }
     setPaying(true);
     try {
-      const result = await startSocialCheckout(slug, socialId, preview.points, appliedCode?.code ?? "");
+      const joining = offer.full === true && offer.yourStatus !== "confirmed";
+      const result = await (joining ? startWaitlistCheckout : startSocialCheckout)(slug, socialId, preview.points, appliedCode?.code ?? "");
       sessionStorage.setItem(checkoutKey, result.registrationId);
       if (result.checkoutUrl) {
         window.location.assign(result.checkoutUrl);
         return;
       }
-      if (result.alreadyJoined || result.status === "confirmed" || result.cashAmount === 0) {
+      if (result.alreadyJoined || result.status === "confirmed" || result.status === "waitlist" || result.cashAmount === 0) {
         setOutcome({
           id: result.registrationId,
-          status: result.status === "confirmed" || result.alreadyJoined ? "confirmed" : result.status,
+          status: result.status === "waitlist" ? "waitlist" : result.status === "confirmed" || result.alreadyJoined ? "confirmed" : result.status,
           courtName: result.courtName,
           courtNumber: result.courtNumber,
           paymentStatus: result.status === "confirmed" || result.cashAmount === 0 ? "succeeded" : null,
@@ -177,9 +181,13 @@ export default function SocialPayPage() {
 
   return (
     <main>
-      <PageSection>
-        <Link to={`/${slug}/social`} className="text-sm text-line hover:underline">Back to drop-in times</Link>
-        <h1 className="mt-3 font-display text-3xl text-white">Pay and register</h1>
+      <div className="w-full px-4 py-4 sm:px-6 lg:px-8">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <Link to={`/${slug}/social`} className="text-sm text-line hover:underline">Back to drop-in times</Link>
+            <h1 className="mt-1 font-display text-2xl text-white sm:text-3xl">{joining ? "Join the waitlist" : outcome ? "Your public social" : "Pay and register"}</h1>
+          </div>
+        </div>
         {status === "unknown" || (!offer && !error) ? (
           <div className="mt-6 space-y-2" aria-busy="true">
             <span className="sr-only">Loading drop-in social</span>
@@ -189,23 +197,35 @@ export default function SocialPayPage() {
         ) : error ? (
           <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
         ) : offer && preview ? (
-          <article className="mt-6 max-w-xl rounded-3xl border border-white/10 bg-pine/80 p-6">
-            <h2 className="font-display text-2xl text-white">Drop-in social</h2>
-            <p className="mt-2 text-mist/75">{formatVenueDateTime(offer.startTime, offer.venue.timeZone)} – {formatVenueDateTime(offer.endTime, offer.venue.timeZone)}</p>
-            <SocialRoster playerCount={offer.playerCount} courtCount={offer.courtCount ?? offer.courts?.length ?? 0} courts={offer.courts ?? []} />
+          <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
+          <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5">
+            <h2 className="font-display text-xl text-white sm:text-2xl">Drop-in social</h2>
+            <p className="mt-1 text-sm text-mist/75">{formatVenueDateTime(offer.startTime, offer.venue.timeZone)} – {formatVenueDateTime(offer.endTime, offer.venue.timeZone)}</p>
+            <SocialRoster compact playerCount={offer.playerCount} courtCount={offer.courtCount ?? offer.courts?.length ?? 0} playersPerCourt={offer.playersPerCourt} courts={offer.courts ?? []} />
             <p className="mt-4 text-lg font-semibold text-white">
               {discount > 0 ? <span className="mr-2 text-base font-normal text-mist/50 line-through"><Money amount={offer.price} currency={offer.venue.currency} /></span> : null}
               <Money amount={discount > 0 ? payable : offer.price} currency={offer.venue.currency} />
             </p>
-            {offer.incentivePoints ? <p className="mt-2 text-sm font-semibold text-line">+{offer.incentivePoints} pts after the session ends</p> : null}
+            {offer.incentivePoints ? (
+              <p className="mt-2 text-sm font-semibold text-line">
+                +{offer.incentivePoints} pts after the session ends{joining ? ", if a place opens and you play" : ""}
+              </p>
+            ) : null}
+            {typeof offer.waitlistCount === "number" ? (
+              <p className="mt-2 text-sm text-mist/70">{offer.waitlistCount} {offer.waitlistCount === 1 ? "person is" : "people are"} on the waitlist.</p>
+            ) : null}
+            {joining ? (
+              <p className="mt-2 text-sm text-line">This social is full. Pay to join the waitlist. If someone cancels before the start, the first person waiting gets the place. If the session starts first, you are refunded in full.</p>
+            ) : null}
             <p className="mt-4 text-sm text-mist/75">
-              More than 24 hours before the start, you get a full refund. Within 24 hours, the venue keeps {percentLabel(fee)}% and refunds the rest. Those points can offset a later booking.
+              More than 24 hours before the start, you get a full refund. Within 24 hours, the venue keeps {percentLabel(fee)}% and refunds the rest. Points you used follow the same rule.
             </p>
-            {outcome ? (
-              <Outcome row={outcome} />
-            ) : (
+            {outcome ? <Outcome row={outcome} /> : null}
+          </section>
+          <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5">
+            {outcome ? null : (
               <form
-                className="mt-6 space-y-4"
+                className="space-y-4"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void onPay();
@@ -293,13 +313,14 @@ export default function SocialPayPage() {
                 {cashTooSmall ? <p className="text-sm text-mist">Use enough points to cover the registration, or leave at least $0.50 to pay.</p> : null}
                 {formError ? <p className="text-sm text-mist" role="alert">{formError}</p> : null}
                 {waiting ? <p className="text-sm text-mist" role="status">Checking the payment…</p> : null}
-                <Button type="submit" loading={paying || waiting} disabled={cashTooSmall}>
-                  {preview.cash === 0 ? "Register with points" : "Continue to Stripe"}
+                <Button type="submit" className="w-full sm:w-auto" loading={paying || waiting} disabled={cashTooSmall}>
+                  {joining ? (preview.cash === 0 ? "Join with points" : "Pay to join the waitlist") : preview.cash === 0 ? "Register with points" : "Continue to Stripe"}
                 </Button>
               </form>
             )}
             {outcome?.status === "confirmed" && new Date(offer.startTime).getTime() > Date.now() ? (
               <FriendPanel
+                focusFriends={new URLSearchParams(location.search).get("add") === "friends"}
                 slug={slug}
                 socialId={socialId}
                 price={offer.price}
@@ -311,10 +332,13 @@ export default function SocialPayPage() {
                 promotions={promotions}
                 returning={new URLSearchParams(location.search).get("checkout")}
               />
+            ) : outcome ? (
+              <p className="text-sm text-mist/70">Friends can be added after you are registered and before the social starts.</p>
             ) : null}
-          </article>
+          </section>
+          </div>
         ) : null}
-      </PageSection>
+      </div>
     </main>
   );
 }
@@ -322,7 +346,7 @@ export default function SocialPayPage() {
 function Outcome({ row }: { row: SocialRegistration }) {
   if (row.status === "confirmed") {
     return (
-      <div className="mt-6 space-y-3 rounded-2xl border border-line/30 bg-line/10 p-4" role="status">
+      <div className="mt-3 space-y-2 rounded-2xl border border-line/30 bg-line/10 p-3" role="status">
         <p className="flex items-center gap-2 text-base font-semibold text-line">
           <CircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
           You're registered{row.courtName ? ` on ${row.courtName}` : ""}. Have a good game.
@@ -331,6 +355,25 @@ function Outcome({ row }: { row: SocialRegistration }) {
           {row.pointsRedeemed > 0 ? `${row.pointsRedeemed} points were used. ` : ""}
           {row.cashAmount > 0 ? "Your payment is confirmed. " : "No card payment was needed. "}
           {row.incentivePoints > 0 ? `${row.incentivePoints} points are added after the session ends, and you can use them on a later booking.` : "Reward points from this session can offset a later booking."}
+        </p>
+        <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-line hover:underline">
+          <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
+          View my bookings
+        </Link>
+      </div>
+    );
+  }
+  if (row.status === "waitlist" && (row.paymentStatus === "succeeded" || row.cashAmount === 0)) {
+    return (
+      <div className="mt-3 space-y-2 rounded-2xl border border-line/30 bg-line/10 p-3" role="status">
+        <p className="flex items-center gap-2 text-base font-semibold text-line">
+          <CircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
+          You're on the waitlist. If someone cancels, you are first in line.
+        </p>
+        <p className="text-sm text-mist/80">
+          {row.pointsRedeemed > 0 ? `${row.pointsRedeemed} points were used. ` : ""}
+          {row.cashAmount > 0 ? "Your payment is confirmed. " : "No card payment was needed. "}
+          {row.incentivePoints > 0 ? `${row.incentivePoints} points are added after the session ends only if a place opens and you play.` : "If the session starts before a place opens, this is refunded in full."}
         </p>
         <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-line hover:underline">
           <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -361,6 +404,7 @@ function FriendPanel({
   incentivePoints,
   promotions,
   returning,
+  focusFriends = false,
 }: {
   slug: string;
   socialId: string;
@@ -372,6 +416,7 @@ function FriendPanel({
   incentivePoints: number;
   promotions: Promotion[] | null;
   returning: string | null;
+  focusFriends?: boolean;
 }) {
   const dispatch = useDispatch<AppDispatch>();
   const [friends, setFriends] = useState<SocialFriend[]>([]);
@@ -426,7 +471,13 @@ function FriendPanel({
         setPlacesLeft(next.placesLeft);
         const mine = next.friends.filter((friend) => friend.checkoutGroupId === group);
         if (mine.length > 0 && mine.every((friend) => friend.status !== "pending")) {
-          setNotice(mine.every((friend) => friend.status === "confirmed") ? "Your friends are registered." : "The payment did not finish. Those seats were released and your points are back.");
+          setNotice(
+            mine.every((friend) => friend.status === "confirmed")
+              ? "Your friends are registered."
+              : mine.every((friend) => friend.status === "waitlist")
+                ? "Your friends are on the waitlist. If someone cancels, the first person waiting gets the place."
+                : "The payment did not finish. Those seats were released and your points are back.",
+          );
           void dispatch(loadCurrentUser());
           setWaiting(false);
           return;
@@ -528,8 +579,15 @@ function FriendPanel({
     }
   }
 
+  useEffect(() => {
+    if (!focusFriends || !loaded) return;
+    document.getElementById("add-friends")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focusFriends, loaded]);
+
+  const friendLimit = placesLeft > 0 ? placesLeft : 8;
+
   return (
-    <section className="mt-6 border-t border-white/10 pt-6">
+    <section id="add-friends">
       <h3 className="font-display text-2xl text-white">Add friends</h3>
       {!loaded ? (
         <div className="mt-4 space-y-2" aria-busy="true">
@@ -540,14 +598,17 @@ function FriendPanel({
       <p className="mt-2 text-sm leading-relaxed text-mist/75">
         Each friend takes a place and is charged the session price. Cancelling one friend refunds only that person. More than 24 hours before the start, that share comes back in full. Within 24 hours, the venue keeps {percentLabel(fee)}% of that friend's share.
       </p>
+      {loaded && placesLeft === 0 ? (
+        <p className="mt-2 text-sm leading-relaxed text-line">This social is full. Pay to put these friends on the waitlist. If someone cancels, the first person waiting gets the place. If the session starts first, that friend's payment is refunded in full.</p>
+      ) : null}
       {incentivePoints > 0 ? (
         <p className="mt-2 text-sm font-semibold text-line">
-          +{incentivePoints} pts for each friend after the session ends
+          +{incentivePoints} pts for each friend after the session ends{placesLeft === 0 ? ", if a place opens and they play" : ""}
           {filled.length > 0 ? `. These ${filled.length} friend${filled.length === 1 ? "" : "s"} add +${incentivePoints * filled.length} pts.` : "."}
         </p>
       ) : null}
       {friends.length > 0 ? (
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-3 grid gap-2">
           {friends.map((friend) => (
             <li key={friend.id} className="rounded-2xl border border-white/10 px-3 py-2.5">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -577,7 +638,7 @@ function FriendPanel({
                     <>
                       <p className="truncate font-semibold text-white">{friend.name}</p>
                       <p className="text-sm text-mist/70">
-                        {friend.status === "confirmed" ? friend.courtName : "Waiting for payment"}
+                        {friend.status === "confirmed" ? friend.courtName : friend.status === "waitlist" ? "Waitlist" : "Waiting for payment"}
                         {friend.status === "confirmed" ? <> · <Money amount={friend.amount} currency={currency} /></> : null}
                       </p>
                     </>
@@ -604,7 +665,7 @@ function FriendPanel({
         </ul>
       ) : null}
       {pendingFriends ? <p className="mt-3 text-sm text-mist/70">Unpaid friends are replaced when you pay for a new list.</p> : null}
-      {placesLeft > 0 ? (
+      {loaded ? (
         <form
           className="mt-4 space-y-4"
           onSubmit={(event) => {
@@ -631,10 +692,10 @@ function FriendPanel({
               </div>
             ))}
           </div>
-          <Button type="button" variant="secondary" disabled={paying || waiting || names.length >= placesLeft} onClick={() => setNames((current) => [...current, ""])}>
+          <Button type="button" variant="secondary" disabled={paying || waiting || names.length >= friendLimit} onClick={() => setNames((current) => [...current, ""])}>
             Add another friend
           </Button>
-          <p className="text-sm text-mist/70">{placesLeft} place{placesLeft === 1 ? "" : "s"} left. {filled.length} friend{filled.length === 1 ? "" : "s"} · <Money amount={subtotal} currency={currency} /></p>
+          <p className="text-sm text-mist/70">{placesLeft > 0 ? `${placesLeft} place${placesLeft === 1 ? "" : "s"} left. ` : "These friends join the waitlist. "}{filled.length} friend{filled.length === 1 ? "" : "s"} · <Money amount={subtotal} currency={currency} /></p>
           {promotions === null ? (
             <div className="space-y-2" aria-busy="true">
               <span className="sr-only">Loading promotion codes</span>
@@ -697,11 +758,9 @@ function FriendPanel({
           {notice ? <p className="text-sm text-mist" role="status">{notice}</p> : null}
           {waiting ? <p className="text-sm text-mist" role="status">Checking the payment…</p> : null}
           <Button type="submit" loading={paying || waiting} disabled={filled.length === 0 || cashTooSmall}>
-            {preview?.cash === 0 ? "Add friends with points" : "Pay for friends"}
+            {placesLeft === 0 ? (preview?.cash === 0 ? "Join with points" : "Pay to join the waitlist") : preview?.cash === 0 ? "Add friends with points" : "Pay for friends"}
           </Button>
         </form>
-      ) : loaded ? (
-        <p className="mt-4 text-sm text-mist/70">This drop-in social has no places left for more friends.</p>
       ) : null}
       {placesLeft === 0 && error ? <p className="mt-3 text-sm text-mist" role="alert">{error}</p> : null}
     </section>

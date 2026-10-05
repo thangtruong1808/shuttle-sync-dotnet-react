@@ -48,6 +48,8 @@ export type DashSocial = {
   startTime: string;
   endTime: string;
   price: number;
+  playersPerCourt: number;
+  maxCourts: number | null;
   repeatWeekly: boolean;
   playerCount: number;
   timeZone: string;
@@ -238,11 +240,11 @@ export function listSocials(venueId: string): Promise<DashSocial[]> {
   return read(`/api/dashboard/venues/${venueId}/socials?upcoming=true`);
 }
 
-export function createSocial(venueId: string, body: { date: string; start: string; end: string; price: number; repeatWeekly: boolean }): Promise<void> {
+export function createSocial(venueId: string, body: { date: string; start: string; end: string; price: number; playersPerCourt: number; maxCourts: number | null; repeatWeekly: boolean }): Promise<void> {
   return send(`/api/dashboard/venues/${venueId}/socials`, "POST", body);
 }
 
-export function updateSocial(venueId: string, socialId: string, body: { date: string; start: string; end: string; price: number; repeatWeekly: boolean }): Promise<void> {
+export function updateSocial(venueId: string, socialId: string, body: { date: string; start: string; end: string; price: number; playersPerCourt: number; maxCourts: number | null; repeatWeekly: boolean }): Promise<void> {
   return send(`/api/dashboard/venues/${venueId}/socials/${socialId}`, "PUT", body);
 }
 
