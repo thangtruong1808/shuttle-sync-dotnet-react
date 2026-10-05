@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { ChevronLeft, ChevronRight, Clock, History, LogOut } from "lucide-react";
 import type { AppDispatch, RootState } from "../../app/store";
 import { Button, Skeleton } from "../../components/ui";
 import { EmptyState, ErrorState, formatVenueDateTime, formatVenueRange } from "../../components/format";
@@ -10,16 +11,19 @@ import { myPayments, myRewards, type Page, type PaymentRow, type PendingReward, 
 export function RewardsSection() {
   const dispatch = useDispatch<AppDispatch>();
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [pendingPage, setPendingPage] = useState(1);
+  const [pendingPageSize, setPendingPageSize] = useState(20);
   const [data, setData] = useState<(Page<RewardRow> & { balance: number; pending: number; pendingItems: PendingReward[] }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [pageMove, setPageMove] = useState<"prev" | "next" | null>(null);
+  const [pageMove, setPageMove] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    myRewards(page)
+    myRewards(page, pageSize)
       .then((next) => {
         if (active) {
           setData(next);
@@ -39,7 +43,7 @@ export function RewardsSection() {
     return () => {
       active = false;
     };
-  }, [page, attempt, dispatch]);
+  }, [page, pageSize, attempt, dispatch]);
 
   return (
     <div>
@@ -63,57 +67,56 @@ export function RewardsSection() {
               <p className="mt-1 text-sm text-mist/75">Waiting until the session ends.</p>
             </article>
           </div>
-          {(data.pendingItems ?? []).length > 0 ? (
-            <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-              {(data.pendingItems ?? []).map((item) => (
-                <li key={`${item.kind}-${item.id}`} className="rounded-2xl border border-white/10 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-line">{item.kind}</p>
-                      <p className="mt-1 truncate font-medium text-white">{item.venueName}</p>
-                      <p className="truncate text-sm text-mist/75">{item.courtName}</p>
-                      <p className="text-sm text-mist/65">{formatVenueRange(item.startTime, item.endTime, item.timeZone)}</p>
-                    </div>
-                    <p className="shrink-0 font-semibold text-line">+{item.points}</p>
-                  </div>
-                  <p className="mt-3 text-sm text-mist/60">Added to your balance after this session ends.</p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-4 text-sm text-mist/70">No points are waiting. A new court, public social, or friend spot with an incentive shows up here until that session ends.</p>
-          )}
-          <h2 className="mt-8 font-display text-2xl text-white">History</h2>
-          {data.items.length === 0 ? (
-            <div className="mt-4"><EmptyState title="No points yet" body="Points appear here after a session with an active incentive ends." /></div>
-          ) : (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[36rem] text-left text-sm">
-                <caption className="sr-only">Reward point history</caption>
-                <thead className="text-mist/60">
-                  <tr>
-                    <th className="py-2 font-medium">Date</th>
-                    <th className="py-2 font-medium">Venue</th>
-                    <th className="py-2 font-medium">Court</th>
-                    <th className="py-2 font-medium">Session</th>
-                    <th className="py-2 font-medium">Points</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.items.map((row) => (
-                    <tr key={row.id} className="border-t border-white/10">
-                      <td className="py-3">{formatVenueDateTime(row.awardedAt, row.timeZone)}</td>
-                      <td>{row.venueName}</td>
-                      <td>{row.courtName}</td>
-                      <td>{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</td>
-                      <td className="font-semibold text-line">+{row.points}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <Pager page={page} pageSize={data.pageSize} total={data.total} loading={loading} pageMove={pageMove} onPage={(next, move) => { setLoading(true); setPageMove(move); setPage(next); }} />
+          <h2 className="mt-8 flex items-center gap-2 font-display text-2xl text-white"><Clock className="h-5 w-5 text-line" aria-hidden="true" />Pending</h2>
+          <RewardTable
+            caption="Pending reward points"
+            rows={slicePage(data.pendingItems ?? [], pendingPage, pendingPageSize).map((item) => ({
+              id: `${item.kind}-${item.id}`,
+              kind: item.kind,
+              when: "After the session ends",
+              venueName: item.venueName,
+              courtName: item.courtName,
+              session: formatVenueRange(item.startTime, item.endTime, item.timeZone),
+              points: item.points,
+              status: "Pending",
+            }))}
+            emptyTitle="No points are waiting"
+            emptyBody="A court, public social, or friend spot with an incentive shows up here until that session ends."
+          />
+          <RewardPages
+            page={pendingPage}
+            pageSize={pendingPageSize}
+            total={(data.pendingItems ?? []).length}
+            loading={false}
+            pageMove={null}
+            onPage={(next) => setPendingPage(next)}
+            onPageSize={(size) => { setPendingPageSize(size); setPendingPage(1); }}
+          />
+          <h2 className="mt-8 flex items-center gap-2 font-display text-2xl text-white"><History className="h-5 w-5 text-line" aria-hidden="true" />History</h2>
+          <RewardTable
+            caption="Reward point history"
+            rows={data.items.map((row) => ({
+              id: row.id,
+              kind: row.kind || "Reward",
+              when: formatVenueDateTime(row.awardedAt, row.timeZone),
+              venueName: row.venueName,
+              courtName: row.courtName,
+              session: formatVenueRange(row.startTime, row.endTime, row.timeZone),
+              points: row.points,
+              status: "Added",
+            }))}
+            emptyTitle="No points yet"
+            emptyBody="Points appear here after a session with an active incentive ends."
+          />
+          <RewardPages
+            page={page}
+            pageSize={data.pageSize || pageSize}
+            total={data.total}
+            loading={loading}
+            pageMove={pageMove}
+            onPage={(next, move) => { setLoading(true); setPageMove(move); setPage(next); }}
+            onPageSize={(size) => { setLoading(true); setPageMove(`size-${size}`); setPageSize(size); setPage(1); }}
+          />
         </>
       ) : null}
     </div>
@@ -235,6 +238,7 @@ export function SecuritySection() {
           <h2 className="text-lg font-semibold text-white">Devices</h2>
           <Button
             variant="secondary"
+            icon={<LogOut className="h-4 w-4" aria-hidden="true" />}
             loading={pending === "others"}
             disabled={pending !== null && pending !== "others" && pending !== "logins"}
             onClick={() => {
@@ -259,6 +263,7 @@ export function SecuritySection() {
                 <Button
                   className="mt-3"
                   variant="danger"
+                  icon={<LogOut className="h-4 w-4" aria-hidden="true" />}
                   loading={pending === session.id}
                   disabled={pending !== null && pending !== session.id && pending !== "logins"}
                   onClick={() => {
@@ -272,6 +277,152 @@ export function SecuritySection() {
             ))}
           </ul>
         )}
+      </div>
+    </div>
+  );
+}
+
+const rewardPageSizes = [10, 20, 50] as const;
+
+function slicePage<T>(items: T[], page: number, pageSize: number) {
+  const start = Math.max(0, (page - 1) * pageSize);
+  return items.slice(start, start + pageSize);
+}
+
+function RewardTable({
+  caption,
+  rows,
+  emptyTitle,
+  emptyBody,
+}: {
+  caption: string;
+  rows: { id: string; kind: string; when: string; venueName: string; courtName: string; session: string; points: number; status: string }[];
+  emptyTitle: string;
+  emptyBody: string;
+}) {
+  if (rows.length === 0) {
+    return <div className="mt-4"><EmptyState title={emptyTitle} body={emptyBody} /></div>;
+  }
+  return (
+    <div className="mt-4">
+      <ul className="grid gap-3 md:hidden">
+        {rows.map((row) => (
+          <li key={row.id} className="rounded-2xl border border-white/10 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-line">{row.kind}</p>
+                <p className="mt-1 font-medium text-white">{row.venueName}</p>
+                <p className="text-sm text-mist/75">{row.courtName}</p>
+              </div>
+              <p className="shrink-0 font-semibold text-line">+{row.points}</p>
+            </div>
+            <p className="mt-2 text-sm text-mist/70">{row.session}</p>
+            <p className="text-sm text-mist/60">{row.when}</p>
+            <p className="mt-2">
+              <span className={`rounded-full px-2 py-1 text-xs font-semibold ${row.status === "Added" ? "bg-line/15 text-line" : "bg-white/10 text-mist"}`}>{row.status}</span>
+            </p>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto md:block">
+      <table className="w-full min-w-[52rem] text-left text-sm">
+        <caption className="sr-only">{caption}</caption>
+        <thead className="text-mist/60">
+          <tr>
+            <th className="py-2 pr-3 font-medium">Type</th>
+            <th className="py-2 pr-3 font-medium">When</th>
+            <th className="py-2 pr-3 font-medium">Venue</th>
+            <th className="py-2 pr-3 font-medium">Court</th>
+            <th className="py-2 pr-3 font-medium">Session</th>
+            <th className="py-2 pr-3 font-medium">Status</th>
+            <th className="py-2 font-medium">Points</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id} className="border-t border-white/10">
+              <td className="py-3 pr-3 text-white">{row.kind}</td>
+              <td className="pr-3">{row.when}</td>
+              <td className="pr-3">{row.venueName}</td>
+              <td className="pr-3">{row.courtName}</td>
+              <td className="whitespace-nowrap pr-3">{row.session}</td>
+              <td className="pr-3">
+                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${row.status === "Added" ? "bg-line/15 text-line" : "bg-white/10 text-mist"}`}>{row.status}</span>
+              </td>
+              <td className="font-semibold text-line">+{row.points}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  );
+}
+
+function RewardPages({
+  page,
+  pageSize,
+  total,
+  loading,
+  pageMove,
+  onPage,
+  onPageSize,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  loading: boolean;
+  pageMove: string | null;
+  onPage: (page: number, move: string) => void;
+  onPageSize: (size: number) => void;
+}) {
+  const size = Math.max(pageSize, 1);
+  const pages = Math.max(1, Math.ceil(total / size));
+  const safePage = Math.min(page, pages);
+  const from = total === 0 ? 0 : (safePage - 1) * size + 1;
+  const to = Math.min(total, safePage * size);
+  const windowStart = Math.max(1, safePage - 2);
+  const windowEnd = Math.min(pages, windowStart + 4);
+  const numbers = Array.from({ length: windowEnd - windowStart + 1 }, (_, index) => windowStart + index);
+  return (
+    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm font-medium text-white" aria-live="polite">View {from}–{to} of {total}</p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {rewardPageSizes.map((option) => (
+            <Button
+              key={option}
+              variant={option === pageSize ? "primary" : "secondary"}
+              aria-label={`View ${option} per page`}
+              aria-pressed={option === pageSize}
+              loading={pageMove === `size-${option}`}
+              disabled={option === pageSize || loading}
+              onClick={() => onPageSize(option)}
+            >
+              {option}
+            </Button>
+          ))}
+          <span className="text-sm text-mist/80">per page</span>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Button variant="secondary" icon={<ChevronLeft className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "prev"} disabled={safePage <= 1 || loading} onClick={() => onPage(safePage - 1, "prev")}>Previous</Button>
+        {numbers.map((number) => (
+          <Button
+            key={number}
+            variant={number === safePage ? "primary" : "secondary"}
+            className="min-w-10 px-2.5"
+            aria-label={`Page ${number}`}
+            aria-current={number === safePage ? "page" : undefined}
+            loading={loading && pageMove === `page-${number}`}
+            disabled={number === safePage || loading}
+            onClick={() => onPage(number, `page-${number}`)}
+          >
+            {number}
+          </Button>
+        ))}
+        <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "next"} disabled={safePage >= pages || loading} onClick={() => onPage(safePage + 1, "next")}>Next</Button>
+        <span className="text-sm text-mist/70">Page {safePage} of {pages}</span>
       </div>
     </div>
   );
@@ -298,9 +449,9 @@ function Pager({
   const pages = Math.ceil(total / pageSize);
   return (
     <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-      <Button variant="secondary" loading={loading && pageMove === "prev"} disabled={page <= 1 || loading} onClick={() => onPage(page - 1, "prev")}>Previous</Button>
+      <Button variant="secondary" icon={<ChevronLeft className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "prev"} disabled={page <= 1 || loading} onClick={() => onPage(page - 1, "prev")}>Previous</Button>
       <span>Page {page} of {pages}</span>
-      <Button variant="secondary" loading={loading && pageMove === "next"} disabled={page >= pages || loading} onClick={() => onPage(page + 1, "next")}>Next</Button>
+      <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "next"} disabled={page >= pages || loading} onClick={() => onPage(page + 1, "next")}>Next</Button>
     </div>
   );
 }

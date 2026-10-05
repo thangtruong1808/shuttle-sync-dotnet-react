@@ -1,27 +1,28 @@
 import { Link, useParams } from "react-router-dom";
+import { CircleHelp, ExternalLink, Gift, MapPin, Phone, Scale, Shield, Ticket, type LucideIcon } from "lucide-react";
 import { useVenues } from "./SiteLayout";
 
-const columns: { title: string; links: { label: string; href: (slug: string) => string }[] }[] = [
+const columns: { title: string; links: { label: string; href: (slug: string) => string; icon: LucideIcon }[] }[] = [
   {
     title: "Book",
     links: [
-      { label: "Promotions", href: () => "/promotions" },
-      { label: "Rewards", href: () => "/rewards" },
+      { label: "Promotions", href: () => "/promotions", icon: Ticket },
+      { label: "Rewards", href: () => "/rewards", icon: Gift },
     ],
   },
   {
     title: "Support",
     links: [
-      { label: "FAQ", href: () => "/faq" },
-      { label: "Contact", href: () => "/contact" },
-      { label: "Cancellation policy", href: () => "/cancellation" },
+      { label: "FAQ", href: () => "/faq", icon: CircleHelp },
+      { label: "Contact", href: () => "/contact", icon: Phone },
+      { label: "Cancellation policy", href: () => "/cancellation", icon: Scale },
     ],
   },
   {
     title: "Legal",
     links: [
-      { label: "Terms", href: () => "/terms" },
-      { label: "Privacy", href: () => "/privacy" },
+      { label: "Terms", href: () => "/terms", icon: Scale },
+      { label: "Privacy", href: () => "/privacy", icon: Shield },
     ],
   },
 ];
@@ -65,7 +66,7 @@ export function Footer() {
             {venue?.address ? <p>{[venue.address, venue.suburb, venue.state, venue.postcode].filter(Boolean).join(", ")}</p> : <p>Select a venue to see its address.</p>}
             {venue?.phone ? <p><a className="hover:text-white" href={`tel:${venue.phone}`}>{venue.phone}</a></p> : null}
             {venue?.email ? <p><a className="hover:text-white" href={`mailto:${venue.email}`}>{venue.email}</a></p> : null}
-            {map ? <p><a className="text-line hover:underline" href={map} target="_blank" rel="noreferrer">Open map</a></p> : null}
+            {map ? <p><a className="inline-flex items-center gap-1.5 text-line hover:underline" href={map} target="_blank" rel="noreferrer"><MapPin className="h-3.5 w-3.5" aria-hidden="true" />Open map</a></p> : null}
           </address>
         </div>
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-3">
@@ -75,7 +76,8 @@ export function Footer() {
               <ul className="mt-3 space-y-2 text-sm text-mist/70">
                 {column.links.map((link) => (
                   <li key={link.label}>
-                    <Link className="hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line" to={link.href(activeSlug)}>
+                    <Link className="inline-flex items-center gap-1.5 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line" to={link.href(activeSlug)}>
+                      <link.icon className="h-3.5 w-3.5" aria-hidden="true" />
                       {link.label}
                     </Link>
                   </li>
@@ -90,8 +92,8 @@ export function Footer() {
           <p>© {new Date().getFullYear()} Shuttle Sync</p>
           <div className="flex items-center gap-4">
             <span className="inline-flex gap-3" aria-label="Social">
-              <a className="hover:text-white" href="https://instagram.com" target="_blank" rel="noreferrer">Instagram</a>
-              <a className="hover:text-white" href="https://facebook.com" target="_blank" rel="noreferrer">Facebook</a>
+              <a className="inline-flex items-center gap-1.5 hover:text-white" href="https://instagram.com" target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" aria-hidden="true" />Instagram</a>
+              <a className="inline-flex items-center gap-1.5 hover:text-white" href="https://facebook.com" target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" aria-hidden="true" />Facebook</a>
             </span>
             <span className="rounded-full border border-white/15 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-mist/80">Powered by Stripe</span>
           </div>

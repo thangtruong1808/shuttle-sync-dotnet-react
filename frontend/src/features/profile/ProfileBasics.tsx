@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { CalendarDays, Gift, LogOut, Save, Users, Wallet } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../app/store";
 import { formatVenueRange } from "../../components/format";
@@ -59,10 +60,10 @@ export function OverviewSection() {
         <p className="mt-4 text-sm text-mist/70">No upcoming booking.</p>
       )}
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Link className="rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/bookings">My bookings</Link>
-        <Link className="rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/friend-spots">Friend spots</Link>
-        <Link className="rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/rewards">Reward history</Link>
-        <Link className="rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/payments">Payments</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/bookings"><CalendarDays className="h-4 w-4 text-line" aria-hidden="true" />My bookings</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/friend-spots"><Users className="h-4 w-4 text-line" aria-hidden="true" />Friend spots</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/rewards"><Gift className="h-4 w-4 text-line" aria-hidden="true" />Reward history</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/payments"><Wallet className="h-4 w-4 text-line" aria-hidden="true" />Payments</Link>
       </div>
     </div>
   );
@@ -154,7 +155,7 @@ export function DetailsSection() {
         {user.emailVerified ? <span className="ml-2 rounded-full bg-line/15 px-2 py-0.5 text-xs font-semibold text-line">Verified</span> : <span className="ml-2 text-xs text-mist/50">Not verified</span>}
       </p>
       {message ? <p className="text-sm text-mist" role="status">{message}</p> : null}
-      <Button type="submit" loading={saving} disabled={uploading}>Save</Button>
+      <Button type="submit" icon={<Save className="h-4 w-4" aria-hidden="true" />} loading={saving} disabled={uploading}>Save</Button>
     </form>
   );
 }
@@ -202,6 +203,7 @@ export function LogoutSection() {
       <Button
         className="mt-4"
         variant="danger"
+        icon={<LogOut className="h-4 w-4" aria-hidden="true" />}
         loading={leaving}
         onClick={() => {
           setLeaving(true);

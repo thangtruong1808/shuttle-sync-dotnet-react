@@ -2,7 +2,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch } from "../../app/store";
-import { Mic, SlidersHorizontal, Tag, X } from "lucide-react";
+import { CalendarDays, ChevronRight, Mic, Send, SlidersHorizontal, Tag, Users, X } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { Button, PickerInput, Skeleton } from "../../components/ui";
 import { CourtImage, EmptyState, ErrorState, Money, addDays, venueToday } from "../../components/format";
@@ -108,7 +108,7 @@ export default function HomePage() {
           <h1 className="mt-3 max-w-4xl font-display text-4xl font-semibold tracking-tight text-white sm:text-5xl">
             Find a court at {venue?.name ?? "your venue"}.
           </h1>
-          <p className="mt-3 max-w-xl text-mist/75">Pick a day to see who is booked on each court.</p>
+          <p className="mt-3 max-w-4xl text-mist/75">Choose a day to find a free court. A court with no bookings is available. Booked times are shown on that court.</p>
           <form className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onSubmit={onFilter}>
             <label className="text-sm">
               <span className="mb-1 block text-mist/70">Date</span>
@@ -124,8 +124,8 @@ export default function HomePage() {
             </label>
             <div className="flex flex-wrap items-center gap-2 sm:col-span-2 lg:col-span-3">
               <Button type="submit" className="w-full sm:w-auto" icon={<SlidersHorizontal className="h-4 w-4" aria-hidden="true" />} loading={busy === "filter"} disabled={!draft.date || (busy !== null && busy !== "filter")}>Filter</Button>
-              <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => navigate(`/${slug}/book`)}>Book a court</Button>
-              <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => navigate(`/${slug}/social`)}>Register for public social</Button>
+              <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<CalendarDays className="h-4 w-4" aria-hidden="true" />} onClick={() => navigate(`/${slug}/book`)}>Book a court</Button>
+              <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<Users className="h-4 w-4" aria-hidden="true" />} onClick={() => navigate(`/${slug}/social`)}>Register for public social</Button>
               {filtered || busy === "clear" ? (
                 <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<X className="h-4 w-4" aria-hidden="true" />} loading={busy === "clear"} disabled={busy !== null && busy !== "clear"} onClick={onClear}>Clear</Button>
               ) : null}
@@ -208,7 +208,7 @@ export default function HomePage() {
             <div className="mt-4 space-y-3">
               <EmptyState title="No courts on this day" body="Try the next day or look at another venue." />
               {nextDay ? (
-                <Button variant="secondary" loading={busy === "next"} disabled={busy !== null && busy !== "next"} onClick={() => {
+                <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={busy === "next"} disabled={busy !== null && busy !== "next"} onClick={() => {
                   setDraft((current) => ({ ...current, date: nextDay }));
                   setBusy("next");
                   setApplied((current) => ({ ...current, date: nextDay }));
@@ -458,7 +458,7 @@ function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueS
                   }
                 }}
               />
-              <Button type="submit" className="shrink-0" loading={sending} disabled={sending || draft.trim().length === 0}>Send</Button>
+              <Button type="submit" className="shrink-0" icon={<Send className="h-4 w-4" aria-hidden="true" />} loading={sending} disabled={sending || draft.trim().length === 0}>Send</Button>
             </form>
           ) : (
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">

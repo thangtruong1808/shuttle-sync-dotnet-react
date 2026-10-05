@@ -228,8 +228,9 @@ public static class ProfileEndpoints
             return SignInAgain();
         }
 
-        var (pageNumber, size, offset) = Page(page, pageSize);
-        var (items, total) = await repository.ListRewardsAsync(userId.Value, offset, size, cancellationToken);
+        var pageNumber = page is null or < 1 ? 1 : page.Value;
+        var size = pageSize is 10 or 20 or 50 ? pageSize.Value : 20;
+        var (items, total) = await repository.ListRewardsAsync(userId.Value, (pageNumber - 1) * size, size, cancellationToken);
         var pending = await repository.ListPendingRewardsAsync(userId.Value, cancellationToken);
         return Results.Ok(new
         {
@@ -249,6 +250,7 @@ public static class ProfileEndpoints
             items = items.Select(item => new
             {
                 id = item.Id,
+                kind = item.Kind,
                 points = item.Points,
                 awardedAt = VenueClock.AsUtc(item.AwardedAt),
                 venueName = item.VenueName,

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "../../components/ui";
 
 export const control =
@@ -82,13 +83,13 @@ export function Pager({
   if (!numbered) {
     return (
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Button variant="secondary" loading={busy === "prev"} disabled={page <= 1 || busy !== null} onClick={() => onPage(page - 1, "prev")}>
+        <Button variant="secondary" icon={<ChevronLeft className="h-4 w-4" aria-hidden="true" />} loading={busy === "prev"} disabled={page <= 1 || busy !== null} onClick={() => onPage(page - 1, "prev")}>
           Previous
         </Button>
         <span className="text-sm text-mist/70">
           {page} / {pages}
         </span>
-        <Button variant="secondary" loading={busy === "next"} disabled={page >= pages || busy !== null} onClick={() => onPage(page + 1, "next")}>
+        <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={busy === "next"} disabled={page >= pages || busy !== null} onClick={() => onPage(page + 1, "next")}>
           Next
         </Button>
       </div>
@@ -102,7 +103,7 @@ export function Pager({
         Page {page} of {pages}
       </p>
       <div className="flex flex-wrap items-center gap-1.5">
-        <Button variant="secondary" loading={pending === "prev"} disabled={page <= 1 || moving} onClick={() => onPage(page - 1, "prev")}>
+        <Button variant="secondary" icon={<ChevronLeft className="h-4 w-4" aria-hidden="true" />} loading={pending === "prev"} disabled={page <= 1 || moving} onClick={() => onPage(page - 1, "prev")}>
           Previous
         </Button>
         {pageWindow(page, pages).map((item, index) =>
@@ -123,7 +124,7 @@ export function Pager({
             </Button>
           ),
         )}
-        <Button variant="secondary" loading={pending === "next"} disabled={page >= pages || moving} onClick={() => onPage(page + 1, "next")}>
+        <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={pending === "next"} disabled={page >= pages || moving} onClick={() => onPage(page + 1, "next")}>
           Next
         </Button>
       </div>

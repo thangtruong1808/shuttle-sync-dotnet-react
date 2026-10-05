@@ -21,7 +21,7 @@ const sections = [
 
 function Tip({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <span className="group/tip relative inline-flex">
+    <span className="group/tip relative flex w-full min-w-0">
       {children}
       <span
         role="tooltip"
@@ -56,21 +56,21 @@ export default function ProfileLayout() {
   }
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium ${isActive ? "bg-line/15 text-line" : "text-mist/80 hover:bg-white/5"} ${open ? "" : "px-2"}`;
+    `flex min-w-0 items-center rounded-xl text-sm font-medium ${isActive ? "bg-line/15 text-line" : "text-mist/80 hover:bg-white/5"} ${open ? "w-full gap-2 px-3 py-2.5" : "h-12 w-full justify-center"}`;
 
   return (
-    <div className={`grid w-full gap-6 px-4 py-8 sm:px-6 lg:px-8 ${open ? "lg:grid-cols-[16rem_1fr]" : "lg:grid-cols-[4.5rem_1fr]"}`}>
-      <aside className={`rounded-3xl border border-white/10 bg-pine/80 lg:min-h-[32rem] ${open ? "p-4" : "p-2"}`}>
+    <div className={`grid w-full min-w-0 gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${open ? "lg:grid-cols-[16rem_1fr]" : "lg:grid-cols-[5rem_1fr]"}`}>
+      <aside className={`min-w-0 rounded-3xl border border-white/10 bg-pine/80 lg:min-h-[32rem] ${open ? "p-4" : "p-3"}`}>
         <Tip label={open ? "Close sidebar" : "Open sidebar"}>
           <button
             type="button"
             title={open ? "Close sidebar" : "Open sidebar"}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-mist hover:bg-white/5"
+            className={`flex items-center justify-center rounded-xl border border-white/10 text-mist hover:bg-white/5 ${open ? "h-10 w-10" : "h-12 w-full"}`}
             aria-expanded={open}
             aria-controls="profile-nav"
             onClick={() => setOpen((value) => !value)}
           >
-            {open ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeftOpen className="h-5 w-5" />}
+            {open ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeftOpen className="h-6 w-6" />}
             <span className="sr-only">{open ? "Close sidebar" : "Open sidebar"}</span>
           </button>
         </Tip>
@@ -88,12 +88,12 @@ export default function ProfileLayout() {
             </div>
           </div>
         ) : null}
-        <nav id="profile-nav" className={`mt-4 flex gap-2 lg:flex-col ${open ? "overflow-auto" : "flex-wrap overflow-visible"}`} aria-label="Profile">
+        <nav id="profile-nav" className={`mt-4 gap-2 ${open ? "grid grid-cols-1 min-[420px]:grid-cols-2 lg:flex lg:flex-col" : "grid w-full grid-cols-4 sm:grid-cols-8 lg:grid-cols-1"}`} aria-label="Profile">
           {sections.map((section) => {
             const Icon = section.icon;
             const link = (
               <NavLink key={section.to} to={section.to} end={section.end} title={section.label} className={linkClass}>
-                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <Icon className={open ? "h-4 w-4 shrink-0" : "h-6 w-6 shrink-0"} aria-hidden="true" />
                 {open ? section.label : <span className="sr-only">{section.label}</span>}
               </NavLink>
             );
@@ -105,7 +105,7 @@ export default function ProfileLayout() {
               title="Log out"
               disabled={leaving}
               aria-busy={leaving}
-              className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => {
                 setLeaving(true);
                 void dispatch(logout())
@@ -123,7 +123,7 @@ export default function ProfileLayout() {
                 title="Log out"
                 disabled={leaving}
                 aria-busy={leaving}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-12 w-full items-center justify-center rounded-xl text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={() => {
                   setLeaving(true);
                   void dispatch(logout())
@@ -131,7 +131,7 @@ export default function ProfileLayout() {
                     .finally(() => setLeaving(false));
                 }}
               >
-                {leaving ? <Spinner className="h-4 w-4" /> : <LogOut className="h-4 w-4" aria-hidden="true" />}
+                {leaving ? <Spinner className="h-6 w-6" /> : <LogOut className="h-6 w-6" aria-hidden="true" />}
                 <span className="sr-only">Log out</span>
               </button>
             </Tip>

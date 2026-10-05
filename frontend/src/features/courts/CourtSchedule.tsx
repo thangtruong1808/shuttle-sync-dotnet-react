@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatVenueDay, formatVenueRange } from "../../components/format";
+import { Eye } from "lucide-react";
 import { Button } from "../../components/ui";
 import { socialRoster, type SocialRosterCourt, type Availability, type CourtSocial, type ScheduleBooking, type SocialCourtLoad } from "../venues/venueApi";
 
@@ -73,7 +74,7 @@ export function CourtRoster({ slug, socialId, courtNumber }: { slug: string; soc
 
   return (
     <div className="mt-2">
-      <Button type="button" variant="secondary" className="w-full" loading={loading} onClick={() => void toggle()}>
+      <Button type="button" variant="secondary" className="w-full" icon={<Eye className="h-4 w-4" aria-hidden="true" />} loading={loading} onClick={() => void toggle()}>
         {open ? "Hide registration" : "View registration"}
       </Button>
       {error ? <p className="mt-2 text-sm text-mist" role="alert">{error}</p> : null}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
 import { Link } from "react-router-dom";
-import { UserPlus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, UserPlus, X } from "lucide-react";
 import type { AppDispatch } from "../../app/store";
 import { Button, Skeleton, Spinner } from "../../components/ui";
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
@@ -145,26 +145,26 @@ export function BookingsSection() {
                   </Link>
                   {confirmId === booking.id ? (
                     <>
-                      <Button variant="danger" className="w-full sm:w-auto" loading={pendingId === booking.id} onClick={() => void onCancel(booking.id)}>Confirm cancel</Button>
+                      <Button variant="danger" className="w-full sm:w-auto" icon={<X className="h-4 w-4" aria-hidden="true" />} loading={pendingId === booking.id} onClick={() => void onCancel(booking.id)}>Confirm cancel</Button>
                       <Button variant="secondary" className="w-full sm:w-auto" disabled={pendingId === booking.id} onClick={() => setConfirmId(null)}>Keep booking</Button>
                     </>
                   ) : (
-                    <Button variant="secondary" className="w-full sm:w-auto" disabled={pendingId !== null} onClick={() => setConfirmId(booking.id)}>Cancel</Button>
+                    <Button variant="secondary" className="w-full sm:w-auto" icon={<X className="h-4 w-4" aria-hidden="true" />} disabled={pendingId !== null} onClick={() => setConfirmId(booking.id)}>Cancel</Button>
                   )}
                 </div>
               ) : booking.canCancel ? (
                 confirmId === booking.id ? (
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Button variant="danger" loading={pendingId === booking.id} onClick={() => void onCancel(booking.id)}>Confirm cancel</Button>
+                    <Button variant="danger" icon={<X className="h-4 w-4" aria-hidden="true" />} loading={pendingId === booking.id} onClick={() => void onCancel(booking.id)}>Confirm cancel</Button>
                     <Button variant="secondary" disabled={pendingId === booking.id} onClick={() => setConfirmId(null)}>Keep booking</Button>
                   </div>
                 ) : (
-                  <Button className="mt-3" variant="secondary" disabled={pendingId !== null} onClick={() => setConfirmId(booking.id)}>Cancel</Button>
+                  <Button className="mt-3" variant="secondary" icon={<X className="h-4 w-4" aria-hidden="true" />} disabled={pendingId !== null} onClick={() => setConfirmId(booking.id)}>Cancel</Button>
                 )
               ) : null}
               {tab === "upcoming" && booking.socialId ? (
                 <div className="mt-4">
-                  <Button variant="secondary" className="w-full sm:w-auto" onClick={() => setOpenId(openId === booking.id ? null : booking.id)}>
+                  <Button variant="secondary" className="w-full sm:w-auto" icon={<Eye className="h-4 w-4" aria-hidden="true" />} onClick={() => setOpenId(openId === booking.id ? null : booking.id)}>
                     {openId === booking.id ? "Hide registration" : "View registration"}
                   </Button>
                   {openId === booking.id ? (
@@ -194,9 +194,9 @@ export function BookingsSection() {
       )}
       {data && data.total > data.pageSize ? (
         <div className="mt-4 flex items-center gap-3 text-sm">
-          <Button variant="secondary" loading={loading && pageMove === "prev"} disabled={page <= 1 || loading} onClick={() => { setLoading(true); setPageMove("prev"); setPage((value) => value - 1); }}>Previous</Button>
+          <Button variant="secondary" icon={<ChevronLeft className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "prev"} disabled={page <= 1 || loading} onClick={() => { setLoading(true); setPageMove("prev"); setPage((value) => value - 1); }}>Previous</Button>
           <span>Page {page} of {pages}</span>
-          <Button variant="secondary" loading={loading && pageMove === "next"} disabled={page >= pages || loading} onClick={() => { setLoading(true); setPageMove("next"); setPage((value) => value + 1); }}>Next</Button>
+          <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "next"} disabled={page >= pages || loading} onClick={() => { setLoading(true); setPageMove("next"); setPage((value) => value + 1); }}>Next</Button>
         </div>
       ) : null}
     </div>

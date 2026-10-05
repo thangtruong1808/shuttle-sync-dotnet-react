@@ -518,7 +518,7 @@ public sealed class BookingRepository(IConfiguration configuration)
     {
         await using var connection = await OpenAsync(cancellationToken);
         const string awards = """
-            SELECT a.Id, a.Points, a.AwardedAt, v.Name AS VenueName, v.TimeZone,
+            SELECT a.Id, 'Court booking' AS Kind, a.Points, a.AwardedAt, v.Name AS VenueName, v.TimeZone,
                    c.CourtName, cs.StartTime, cs.EndTime
             FROM RewardPointAwards a
             JOIN Venues v ON v.Id = a.VenueId
@@ -526,15 +526,16 @@ public sealed class BookingRepository(IConfiguration configuration)
             JOIN Courts c ON c.Id = cs.CourtId
             WHERE a.UserId = @UserId
             UNION ALL
-            SELECT r.Id, r.IncentivePoints, r.IncentiveAwardedAt, v.Name, v.TimeZone,
-                   'Drop-in social', s.StartTime, s.EndTime
+            SELECT r.Id, 'Public social', r.IncentivePoints AS Points, r.IncentiveAwardedAt, v.Name, v.TimeZone,
+                   COALESCE(c.CourtName, 'Your place'), s.StartTime, s.EndTime
             FROM PublicSocialRegistrations r
             JOIN PublicSocials s ON s.Id = r.SocialId
             JOIN Venues v ON v.Id = r.VenueId
+            LEFT JOIN Courts c ON c.Id = r.CourtId
             WHERE r.UserId = @UserId AND r.IncentiveAwardedAt IS NOT NULL AND r.IncentivePoints > 0
             UNION ALL
-            SELECT f.Id, f.IncentivePoints, f.IncentiveAwardedAt, v.Name, v.TimeZone,
-                   CONCAT('Friend · ', f.DisplayName), s.StartTime, s.EndTime
+            SELECT f.Id, 'Friend', f.IncentivePoints AS Points, f.IncentiveAwardedAt, v.Name, v.TimeZone,
+                   f.DisplayName, s.StartTime, s.EndTime
             FROM PublicSocialFriends f
             JOIN PublicSocialRegistrations r ON r.Id = f.RegistrationId
             JOIN PublicSocials s ON s.Id = f.SocialId
@@ -549,7 +550,7 @@ public sealed class BookingRepository(IConfiguration configuration)
         var rows = await connection.QueryAsync<RewardAwardRow>(
             new CommandDefinition(
                 $"""
-                SELECT Id, Points, AwardedAt, VenueName, TimeZone, CourtName, StartTime, EndTime
+                SELECT Id, Kind, Points, AwardedAt, VenueName, TimeZone, CourtName, StartTime, EndTime
                 FROM ({awards}) awards
                 ORDER BY AwardedAt DESC
                 LIMIT @Take OFFSET @Skip
@@ -4981,6 +4982,7 @@ public sealed class PendingRewardRow
 public sealed class RewardAwardRow
 {
     public Guid Id { get; init; }
+    public string Kind { get; init; } = "";
     public int Points { get; init; }
     public DateTime AwardedAt { get; init; }
     public string VenueName { get; init; } = "";

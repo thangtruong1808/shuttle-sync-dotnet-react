@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ArrowRight, Clock, UserPlus, Users } from "lucide-react";
 import { useSelector } from "react-redux";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { RootState } from "../../app/store";
@@ -113,7 +114,7 @@ export default function SocialPage() {
                   />
                 ))}
               </div>
-              <Button type="button" className="mt-4 w-full sm:w-auto" disabled={selected.length === 0} onClick={continueRegistration}>
+              <Button type="button" className="mt-4 w-full sm:w-auto" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} disabled={selected.length === 0} onClick={continueRegistration}>
                 {selected.length > 1 ? `Continue with ${selected.length} times` : "Continue"}
               </Button>
             </>
@@ -187,16 +188,16 @@ function SessionCard({
       )}
       <div className="mt-auto flex flex-col gap-2 pt-4">
         {full && yours !== "confirmed" && yours !== "waitlist" ? (
-          <Button type="button" className="w-full" onClick={() => onOpen(false)}>Join the waitlist</Button>
+          <Button type="button" className="w-full" icon={<Clock className="h-4 w-4" aria-hidden="true" />} onClick={() => onOpen(false)}>Join the waitlist</Button>
         ) : null}
         {full && yours === "confirmed" ? (
-          <Button type="button" className="w-full" onClick={() => onOpen(true)}>Add friends to the waitlist</Button>
+          <Button type="button" className="w-full" icon={<UserPlus className="h-4 w-4" aria-hidden="true" />} onClick={() => onOpen(true)}>Add friends to the waitlist</Button>
         ) : null}
         {yours === "waitlist" ? (
-          <Button type="button" className="w-full" onClick={() => onOpen(false)}>View waitlist place</Button>
+          <Button type="button" className="w-full" icon={<Users className="h-4 w-4" aria-hidden="true" />} onClick={() => onOpen(false)}>View waitlist place</Button>
         ) : null}
         {yours === "confirmed" && !full ? (
-          <Button type="button" className="w-full" onClick={() => onOpen(true)}>Add friends</Button>
+          <Button type="button" className="w-full" icon={<UserPlus className="h-4 w-4" aria-hidden="true" />} onClick={() => onOpen(true)}>Add friends</Button>
         ) : null}
         <CourtRoster slug={slug} socialId={social.id} />
       </div>

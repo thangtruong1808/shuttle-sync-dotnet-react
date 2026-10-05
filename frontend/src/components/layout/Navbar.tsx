@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { ChevronDown, Menu, X } from "lucide-react";
+import { CalendarDays, ChevronDown, Gift, House, LayoutDashboard, LogIn, Menu, UserPlus, X } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { initials } from "../format";
 import { Skeleton } from "../ui";
@@ -9,9 +9,9 @@ import { rememberVenueSlug } from "../../features/venues/venueApi";
 import { useVenues } from "./SiteLayout";
 
 const links = [
-  { label: "Home", to: (slug: string) => `/${slug}` },
-  { label: "My Bookings", to: () => "/profile/bookings" },
-  { label: "Rewards", to: () => "/rewards" },
+  { label: "Home", to: (slug: string) => `/${slug}`, icon: House },
+  { label: "My Bookings", to: () => "/profile/bookings", icon: CalendarDays },
+  { label: "Rewards", to: () => "/rewards", icon: Gift },
 ];
 
 export function Navbar() {
@@ -64,7 +64,7 @@ export function Navbar() {
   }
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `rounded-lg px-3 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line ${
+    `inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line ${
       isActive ? "bg-line/15 text-line" : "text-mist/80 hover:bg-white/5 hover:text-white"
     }`;
 
@@ -104,11 +104,12 @@ export function Navbar() {
         <nav className="ml-auto hidden items-center gap-1 lg:flex" aria-label="Primary">
           {links.map((link) => (
             <NavLink key={link.label} to={link.to(activeSlug)} className={linkClass} end={link.label === "Home"}>
+              <link.icon className="h-4 w-4" aria-hidden="true" />
               {link.label}
             </NavLink>
           ))}
           {user && (user.role === "staff" || user.role === "admin") ? (
-            <NavLink to="/dashboard" className={linkClass}>Dashboard</NavLink>
+            <NavLink to="/dashboard" className={linkClass}><LayoutDashboard className="h-4 w-4" aria-hidden="true" />Dashboard</NavLink>
           ) : null}
         </nav>
 
@@ -120,8 +121,8 @@ export function Navbar() {
             </div>
           ) : status !== "authenticated" || !user ? (
             <div className="hidden items-center gap-2 sm:flex">
-              <NavLink to="/login" className="rounded-xl px-3 py-2 text-sm font-semibold text-mist hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line">Log in</NavLink>
-              <NavLink to="/register" className="rounded-xl bg-line px-3 py-2 text-sm font-semibold text-ink hover:bg-lime-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line">Sign up</NavLink>
+              <NavLink to="/login" className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-mist hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line"><LogIn className="h-4 w-4" aria-hidden="true" />Log in</NavLink>
+              <NavLink to="/register" className="inline-flex items-center gap-2 rounded-xl bg-line px-3 py-2 text-sm font-semibold text-ink hover:bg-lime-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line"><UserPlus className="h-4 w-4" aria-hidden="true" />Sign up</NavLink>
             </div>
           ) : (
             <NavLink
@@ -168,11 +169,12 @@ export function Navbar() {
           <nav className="flex flex-col gap-1" aria-label="Mobile">
             {links.map((link) => (
               <NavLink key={link.label} to={link.to(activeSlug)} className={linkClass} end={link.label === "Home"}>
+                <link.icon className="h-4 w-4" aria-hidden="true" />
                 {link.label}
               </NavLink>
             ))}
             {user && (user.role === "staff" || user.role === "admin") ? (
-              <NavLink to="/dashboard" className={linkClass}>Dashboard</NavLink>
+              <NavLink to="/dashboard" className={linkClass}><LayoutDashboard className="h-4 w-4" aria-hidden="true" />Dashboard</NavLink>
             ) : null}
             {status === "unknown" ? (
               <div aria-busy="true">
@@ -181,8 +183,8 @@ export function Navbar() {
               </div>
             ) : status !== "authenticated" ? (
               <>
-                <NavLink to="/login" className={linkClass}>Log in</NavLink>
-                <NavLink to="/register" className={linkClass}>Sign up</NavLink>
+                <NavLink to="/login" className={linkClass}><LogIn className="h-4 w-4" aria-hidden="true" />Log in</NavLink>
+                <NavLink to="/register" className={linkClass}><UserPlus className="h-4 w-4" aria-hidden="true" />Sign up</NavLink>
               </>
             ) : null}
           </nav>

@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
+import { ArrowRight } from "lucide-react";
 import { useSelector } from "react-redux";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { RootState } from "../../app/store";
@@ -132,7 +133,7 @@ export default function BookCourtPage() {
                 {hourlyPreview(form.start, form.end, rate, currency) ?? "At least 30 minutes. The price uses the court hourly rate."}
                 {rate > 0 ? <> · <Money amount={rate} currency={currency} /> / hour</> : null}
               </p>
-              <Button type="submit" className="w-full sm:w-auto" loading={busy} disabled={busy || loading || !form.courtId || !date || !form.start || !form.end}>
+              <Button type="submit" className="w-full sm:w-auto" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={busy} disabled={busy || loading || !form.courtId || !date || !form.start || !form.end}>
                 Continue
               </Button>
             </div>

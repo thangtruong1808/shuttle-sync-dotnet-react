@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, Pencil, Save, X } from "lucide-react";
 import { useDispatch } from "react-redux";
 import type { AppDispatch } from "../../app/store";
 import { Button, Skeleton, Spinner } from "../../components/ui";
@@ -217,7 +218,7 @@ export function FriendSpotsSection() {
                               onChange={(event) => setDraftName(event.target.value)}
                             />
                           </label>
-                          <Button type="submit" className="w-full sm:w-auto" loading={savingId === spot.id}>Save name</Button>
+                          <Button type="submit" className="w-full sm:w-auto" icon={<Save className="h-4 w-4" aria-hidden="true" />} loading={savingId === spot.id}>Save name</Button>
                           <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={savingId === spot.id} onClick={() => setEditingId(null)}>Cancel</Button>
                         </form>
                       ) : (
@@ -238,7 +239,7 @@ export function FriendSpotsSection() {
                           </div>
                           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                             {spot.canRename ? (
-                              <Button variant="secondary" className="w-full sm:w-auto" disabled={pendingId !== null || savingId !== null} onClick={() => { setEditingId(spot.id); setDraftName(spot.name); setConfirmId(null); }}>Edit name</Button>
+                              <Button variant="secondary" className="w-full sm:w-auto" icon={<Pencil className="h-4 w-4" aria-hidden="true" />} disabled={pendingId !== null || savingId !== null} onClick={() => { setEditingId(spot.id); setDraftName(spot.name); setConfirmId(null); }}>Edit name</Button>
                             ) : null}
                             {spot.canCancel ? (
                               confirmId === spot.id ? (
@@ -247,7 +248,7 @@ export function FriendSpotsSection() {
                                   <Button variant="secondary" className="w-full sm:w-auto" disabled={pendingId === spot.id} onClick={() => setConfirmId(null)}>Keep friend</Button>
                                 </>
                               ) : (
-                                <Button variant="secondary" className="w-full sm:w-auto" disabled={pendingId !== null || savingId !== null} onClick={() => setConfirmId(spot.id)}>Cancel friend</Button>
+                                <Button variant="secondary" className="w-full sm:w-auto" icon={<X className="h-4 w-4" aria-hidden="true" />} disabled={pendingId !== null || savingId !== null} onClick={() => setConfirmId(spot.id)}>Cancel friend</Button>
                               )
                             ) : null}
                           </div>
@@ -265,9 +266,9 @@ export function FriendSpotsSection() {
       )}
       {data && data.total > data.pageSize ? (
         <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-          <Button variant="secondary" loading={loading && pageMove === "prev"} disabled={page <= 1 || loading} onClick={() => { setLoading(true); setPageMove("prev"); setPage((value) => value - 1); }}>Previous</Button>
+          <Button variant="secondary" icon={<ChevronLeft className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "prev"} disabled={page <= 1 || loading} onClick={() => { setLoading(true); setPageMove("prev"); setPage((value) => value - 1); }}>Previous</Button>
           <span>Page {page} of {pages}</span>
-          <Button variant="secondary" loading={loading && pageMove === "next"} disabled={page >= pages || loading} onClick={() => { setLoading(true); setPageMove("next"); setPage((value) => value + 1); }}>Next</Button>
+          <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "next"} disabled={page >= pages || loading} onClick={() => { setLoading(true); setPageMove("next"); setPage((value) => value + 1); }}>Next</Button>
         </div>
       ) : null}
     </div>

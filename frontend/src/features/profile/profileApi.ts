@@ -29,6 +29,7 @@ export type BookingRow = {
 
 export type RewardRow = {
   id: string;
+  kind?: string;
   points: number;
   awardedAt: string;
   venueName: string;
@@ -147,8 +148,8 @@ export function bookingPayment(id: string): Promise<BookingPayment> {
   return readPage(`/api/me/bookings/${id}`);
 }
 
-export function myRewards(page: number): Promise<Page<RewardRow> & { balance: number; pending: number; pendingItems: PendingReward[] }> {
-  return readPage(`/api/me/rewards?page=${page}`);
+export function myRewards(page: number, pageSize = 20): Promise<Page<RewardRow> & { balance: number; pending: number; pendingItems: PendingReward[] }> {
+  return readPage(`/api/me/rewards?page=${page}&pageSize=${pageSize}`);
 }
 
 export function myPayments(page: number): Promise<Page<PaymentRow>> {
