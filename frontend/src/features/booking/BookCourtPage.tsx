@@ -7,7 +7,23 @@ import { ErrorState, Money, formatVenueDateTime, venueToday } from "../../compon
 import { useVenues } from "../../components/layout/SiteLayout";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import { AuthRequestError } from "../auth/authApi";
-import { courtPrice, openCourtHold, payNowHold, rememberVenueSlug, venueAvailability, type AvailableCourt, type ScheduleClosure } from "../venues/venueApi";
+import { abandonCourtCheckout, courtPrice, forgetOpenCheckout, openCourtHold, payNowHold, readOpenCheckout, rememberOpenCheckout, rememberVenueSlug, venueAvailability, venuePromotions, type AvailableCourt, type Promotion, type ScheduleClosure } from "../venues/venueApi";
+
+const pointPercents = [25, 50, 75, 100] as const;
+
+function promoDiscount(price: number, promo: Promotion | null) {
+  if (!promo) return 0;
+  const amount = promo.discountType === "percent" ? Math.round(price * promo.discountValue) / 100 : promo.discountValue;
+  return Math.min(price, Math.max(0, amount));
+}
+
+function pointsQuote(requested: number, balance: number, rate: number, price: number) {
+  const safeRate = rate < 1 ? 100 : rate;
+  const points = Math.min(Math.max(0, Math.floor(requested)), Math.max(balance, 0), price <= 0 ? 0 : Math.floor(price * safeRate));
+  const value = Math.floor((points * 100) / safeRate) / 100;
+  const cash = Math.round((price - (value <= 0 ? 0 : value)) * 100) / 100;
+  return { points: value <= 0 ? 0 : points, value: value <= 0 ? 0 : value, cash };
+}
 
 function venueInstant(date: string, time: string, timeZone: string) {
   if (!date || !time) return null;
@@ -94,10 +110,23 @@ export default function BookCourtPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const status = useSelector((state: RootState) => state.auth.status);
+  const balance = useSelector((state: RootState) => state.auth.user?.rewardPoints ?? 0);
   const { venues } = useVenues();
   const venue = venues?.find((item) => item.slug === slug) ?? null;
-  const [date, setDate] = useState("");
-  const [form, setForm] = useState({ courtIds: [] as string[], start: "", end: "", weeks: 1, repeat: false });
+  const [prefill] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    const weeks = Number(params.get("weeks"));
+    return {
+      date: /^\d{4}-\d{2}-\d{2}$/.test(params.get("date") ?? "") ? params.get("date") ?? "" : "",
+      start: /^\d{2}:\d{2}$/.test(params.get("start") ?? "") ? params.get("start") ?? "" : "",
+      end: /^\d{2}:\d{2}$/.test(params.get("end") ?? "") ? params.get("end") ?? "" : "",
+      courtIds: (params.get("courts") ?? "").split(",").filter(Boolean),
+      weeks: Number.isInteger(weeks) && weeks >= 1 && weeks <= 12 ? weeks : 1,
+      repeat: params.get("repeat") === "1",
+    };
+  });
+  const [date, setDate] = useState(prefill.date);
+  const [form, setForm] = useState({ courtIds: prefill.courtIds, start: prefill.start, end: prefill.end, weeks: prefill.weeks, repeat: prefill.repeat });
   const [courts, setCourts] = useState<AvailableCourt[] | null>(null);
   const [closures, setClosures] = useState<ScheduleClosure[]>([]);
   const [loading, setLoading] = useState(false);
@@ -108,6 +137,49 @@ export default function BookCourtPage() {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [releasing, setReleasing] = useState(false);
+  const [promotions, setPromotions] = useState<Promotion[] | null>(null);
+  const [appliedCode, setAppliedCode] = useState<Promotion | null>(null);
+  const [points, setPoints] = useState(0);
+
+  useEffect(() => {
+    if (!slug || status !== "authenticated") return;
+    let active = true;
+    venuePromotions(slug)
+      .then((next) => { if (active) setPromotions(next); })
+      .catch(() => { if (active) setPromotions([]); });
+    return () => {
+      active = false;
+    };
+  }, [slug, status]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let active = true;
+    function release() {
+      setBusy(false);
+      const open = readOpenCheckout();
+      if (!open) return;
+      setReleasing(true);
+      abandonCourtCheckout(open.slug, open.groupId)
+        .catch(() => undefined)
+        .finally(() => {
+          forgetOpenCheckout();
+          if (!active) return;
+          setReleasing(false);
+          setAttempt((value) => value + 1);
+        });
+    }
+    function onShow(event: PageTransitionEvent) {
+      if (event.persisted) release();
+    }
+    release();
+    window.addEventListener("pageshow", onShow);
+    return () => {
+      active = false;
+      window.removeEventListener("pageshow", onShow);
+    };
+  }, [status]);
 
   useEffect(() => {
     if (venue) {
@@ -174,6 +246,14 @@ export default function BookCourtPage() {
   const flat = sessionAmount(form.start, form.end, rate);
   const each = quoted ?? (flat === null ? null : flat * form.weeks);
   const payAtRegistration = startsWithin24Hours(date, form.start, venue?.timeZone ?? "Australia/Melbourne");
+  const pointsRate = venue?.pointsPerDollar || 100;
+  const weekSubtotal = each === null || form.courtIds.length === 0 ? 0 : Math.round((each / Math.max(form.weeks, 1)) * form.courtIds.length * 100) / 100;
+  const weekDiscount = promoDiscount(weekSubtotal, appliedCode);
+  const weekPayable = Math.max(0, Math.round((weekSubtotal - weekDiscount) * 100) / 100);
+  const maxPoints = Math.min(balance, weekPayable <= 0 ? 0 : Math.floor(weekPayable * pointsRate));
+  const payPreview = pointsQuote(Math.min(points, maxPoints), balance, pointsRate, weekPayable);
+  const showPayOptions = payAtRegistration && weekSubtotal > 0;
+  const cashTooSmall = showPayOptions && payPreview.cash > 0 && payPreview.cash < 0.5;
 
   async function onContinue(event: FormEvent) {
     event.preventDefault();
@@ -183,12 +263,17 @@ export default function BookCourtPage() {
       setFormError(blocked);
       return;
     }
+    if (cashTooSmall) {
+      setFormError("Use enough points to cover this week, or leave at least $0.50 to pay.");
+      return;
+    }
     setBusy(true);
     try {
       if (payAtRegistration) {
-        const result = await payNowHold(slug, form.courtIds, date, form.start, form.end, form.repeat, form.weeks);
+        const result = await payNowHold(slug, form.courtIds, date, form.start, form.end, form.repeat, form.weeks, undefined, { points: payPreview.points, promotionCode: appliedCode?.code });
         sessionStorage.setItem("shuttle-sync-checkout", result.bookingId);
         if (result.checkoutUrl) {
+          rememberOpenCheckout(slug, result.groupId);
           window.location.assign(result.checkoutUrl);
           return;
         }
@@ -287,6 +372,53 @@ export default function BookCourtPage() {
               />
               <span>Keep {form.weeks} {form.weeks === 1 ? "week" : "weeks"} ahead. When one week passes, the next week is held automatically. You still pay each week before 24 hours of that session.</span>
             </label>
+            {showPayOptions ? (
+              <div className="grid gap-4 rounded-2xl border border-white/10 bg-black/20 p-3 sm:col-span-2 sm:p-4 lg:grid-cols-2 xl:col-span-4">
+                <div className="min-w-0">
+                  <p className="text-sm text-mist/80">Promotion code</p>
+                  {promotions === null ? (
+                    <div className="mt-2" aria-busy="true"><span className="sr-only">Loading promotion codes</span><Skeleton className="h-14" /></div>
+                  ) : promotions.length > 0 ? (
+                    <ul className="mt-2 grid gap-2">
+                      {promotions.map((promotion) => {
+                        const selected = appliedCode?.id === promotion.id;
+                        return (
+                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 transition-colors sm:flex-row sm:items-center sm:justify-between ${selected ? "border-line/60 bg-line/10 hover:bg-line/20" : "border-white/10 bg-black/20 hover:bg-white/10"}`}>
+                            <div className="min-w-0">
+                              <p className="break-all font-semibold text-white">{promotion.code}</p>
+                              <p className="text-sm text-line">{promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}</p>
+                            </div>
+                            <Button type="button" variant={selected ? "primary" : "secondary"} className="w-full sm:w-auto" disabled={busy || releasing} onClick={() => setAppliedCode(selected ? null : promotion)}>
+                              {selected ? "Applied" : "Apply"}
+                            </Button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : <p className="mt-2 text-sm text-mist/70">No active promotion codes right now.</p>}
+                  {appliedCode ? <p className="mt-2 text-sm text-mist" role="status">{appliedCode.code} applied.</p> : null}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-mist/80">Reward points</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {pointPercents.map((percent) => (
+                      <button key={percent} type="button" disabled={busy || releasing || maxPoints === 0} className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-line text-ink hover:bg-lime-300" : "border border-white/15 text-mist hover:bg-white/10"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
+                        {percent}%
+                      </button>
+                    ))}
+                  </div>
+                  <input type="range" min={0} max={Math.max(maxPoints, 1)} step={1} value={Math.min(points, maxPoints)} disabled={busy || releasing || maxPoints === 0} aria-label="Reward points" className="mt-3 w-full accent-line disabled:opacity-60" onChange={(event) => setPoints(Number(event.target.value))} />
+                  <p className="mt-1 text-sm text-mist/70">{Math.min(points, maxPoints)} of {balance} points. {pointsRate} points = {currency} 1.</p>
+                  <dl className="mt-3 grid gap-1 text-sm text-mist/80">
+                    <div className="flex justify-between gap-3"><dt>This week, {form.courtIds.length} {form.courtIds.length === 1 ? "court" : "courts"}</dt><dd><Money amount={weekSubtotal} currency={currency} /></dd></div>
+                    {weekDiscount > 0 ? <div className="flex justify-between gap-3"><dt>Promotion</dt><dd>-<Money amount={weekDiscount} currency={currency} /></dd></div> : null}
+                    <div className="flex justify-between gap-3"><dt>Points value</dt><dd><Money amount={payPreview.value} currency={currency} /></dd></div>
+                    <div className="flex justify-between gap-3 font-semibold text-white"><dt>To pay now</dt><dd><Money amount={payPreview.cash} currency={currency} /></dd></div>
+                  </dl>
+                  {cashTooSmall ? <p className="mt-2 text-sm text-mist">Use enough points to cover this week, or leave at least $0.50 to pay.</p> : null}
+                </div>
+              </div>
+            ) : null}
             <div className="flex flex-col gap-3 sm:col-span-2 xl:col-span-4">
               <div className="text-sm leading-relaxed text-mist/75">
                 {each === null || form.courtIds.length === 0 ? (
@@ -300,10 +432,15 @@ export default function BookCourtPage() {
                   </>
                 )}
               </div>
-              <Button type="submit" className="w-full sm:w-auto" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={busy} disabled={busy || loading || quoting || form.courtIds.length === 0 || !date || !form.start || !form.end}>
-                {payAtRegistration ? "Pay this week now" : "Continue"}
+              <Button type="submit" className="w-full sm:w-auto" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={busy || releasing} disabled={busy || releasing || loading || quoting || cashTooSmall || form.courtIds.length === 0 || !date || !form.start || !form.end}>
+                {payAtRegistration ? (showPayOptions && payPreview.cash === 0 ? "Pay this week with points" : "Pay this week now") : "Continue"}
               </Button>
             </div>
+            {releasing ? (
+              <p className="flex items-center gap-2 text-sm text-mist sm:col-span-2 xl:col-span-4" role="status">
+                <Spinner className="h-4 w-4" /> You left the Stripe page before paying. Releasing that payment so you can book again.
+              </p>
+            ) : null}
             {error ? <div className="sm:col-span-2 xl:col-span-4"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div> : null}
           </form>
         )}

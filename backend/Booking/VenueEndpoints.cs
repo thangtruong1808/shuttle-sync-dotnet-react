@@ -528,8 +528,8 @@ public static class VenueEndpoints
             opened.GroupId,
             current.UserId,
             opened.Rows.Select(row => row.BookingId).ToArray(),
-            0,
-            null,
+            Math.Max(0, body.Points),
+            string.IsNullOrWhiteSpace(body.PromotionCode) ? null : body.PromotionCode.Trim(),
             $"{origin}/{slug}/book/group/{opened.GroupId}?checkout=success",
             $"{origin}/{slug}/book/group/{opened.GroupId}?checkout=cancel",
             cancellationToken,
@@ -674,6 +674,29 @@ public static class VenueEndpoints
         {
             if (await repository.HoldGroupReleasedAsync(venue.Id, current.UserId, groupId, cancellationToken))
             {
+                var released = await repository.ListReleasedHoldAsync(venue.Id, current.UserId, groupId, cancellationToken);
+                object? retry = null;
+                if (released.Length > 0)
+                {
+                    var first = released[0];
+                    var zone = TimeZoneInfo.FindSystemTimeZoneById(venue.TimeZone);
+                    var localStart = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(first.StartTime, DateTimeKind.Utc), zone);
+                    var localEnd = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(first.EndTime, DateTimeKind.Utc), zone);
+                    retry = new
+                    {
+                        date = localStart.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                        start = localStart.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                        end = localEnd.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                        courtIds = released
+                            .Where(row => Math.Abs((row.StartTime - first.StartTime).Ticks) < TimeSpan.TicksPerSecond)
+                            .Select(row => row.CourtId)
+                            .Distinct()
+                            .ToArray(),
+                        weeks = Math.Clamp(released.Max(row => row.SeriesWeeks), 1, 12),
+                        repeat = released.Any(row => row.RepeatHold == 1),
+                    };
+                }
+
                 return Results.Ok(new
                 {
                     currency = venue.Currency,
@@ -681,6 +704,7 @@ public static class VenueEndpoints
                     lateCancelFeePercent = venue.LateCancelFeePercent,
                     timeZone = venue.TimeZone,
                     released = true,
+                    retry,
                     sessions = Array.Empty<object>(),
                 });
             }
@@ -1218,7 +1242,7 @@ public static class VenueEndpoints
         Results.Json(new { errors = new Dictionary<string, string[]> { ["form"] = [message] } }, statusCode: status);
 
     private sealed record OpenSessionBody(Guid CourtId, string? Date, string? Start, string? End);
-    private sealed record OpenHoldBody(Guid[]? CourtIds, string? Date, string? Start, string? End, int Weeks = 1, bool Repeat = false, Guid? GroupId = null);
+    private sealed record OpenHoldBody(Guid[]? CourtIds, string? Date, string? Start, string? End, int Weeks = 1, bool Repeat = false, Guid? GroupId = null, int Points = 0, string? PromotionCode = null);
     private sealed record AddHoldCourtsBody(Guid[]? CourtIds, string? Start, string? End);
 
     private sealed record SocialCheckoutBody(int Points, string? PromotionCode = null);

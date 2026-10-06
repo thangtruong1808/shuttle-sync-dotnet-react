@@ -114,7 +114,11 @@ export type UnpaidHold = {
   venueSlug: string;
   timeZone: string;
   startTime: string;
+  endTime: string;
+  payBy: string;
   courtCount: number;
+  checkoutStarted: boolean;
+  bookingIds: string[];
 };
 
 export const unpaidHoldListeners = new Set<() => void>();

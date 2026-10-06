@@ -8,7 +8,7 @@ import { Button, Skeleton, Spinner } from "../../components/ui";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { bookingPayment, type BookingPayment } from "../profile/profileApi";
-import { abandonCourtCheckout, courtHold, startGroupCheckout, venuePromotions, type CourtHoldSession, type Promotion } from "../venues/venueApi";
+import { abandonCourtCheckout, bookAgainPath, courtHold, forgetOpenCheckout, readOpenCheckout, rememberOpenCheckout, startGroupCheckout, venuePromotions, type CourtHoldSession, type Promotion, type ReleasedRetry } from "../venues/venueApi";
 
 const checkoutKey = "shuttle-sync-checkout";
 const pointPercents = [25, 50, 75, 100] as const;
@@ -66,6 +66,7 @@ export default function CourtGroupPage() {
   const [rate, setRate] = useState(100);
   const [fee, setFee] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [released, setReleased] = useState<{ message: string; retry: ReleasedRetry | null } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [points, setPoints] = useState(0);
@@ -88,19 +89,27 @@ export default function CourtGroupPage() {
     if (status !== "authenticated") return;
     let active = true;
     setError(null);
+    setReleased(null);
     setSessions(null);
-    const cancelled = new URLSearchParams(location.search).get("checkout") === "cancel";
-    const load = cancelled
-      ? abandonCourtCheckout(slug, groupId).catch(() => undefined).then(() => courtHold(slug, groupId))
+    const returned = new URLSearchParams(location.search).get("checkout");
+    const cancelled = returned === "cancel";
+    const open = readOpenCheckout();
+    const leftStripe = !returned && open?.groupId === groupId;
+    if (returned === "success") forgetOpenCheckout();
+    const load = cancelled || leftStripe
+      ? abandonCourtCheckout(slug, groupId).catch(() => undefined).finally(forgetOpenCheckout).then(() => courtHold(slug, groupId))
       : courtHold(slug, groupId);
     load
       .then((hold) => {
         if (!active) return;
         if (hold.released) {
           setSessions([]);
-          setError(cancelled
-            ? "Payment was cancelled on Stripe, so this booking was not saved. Courts are booked only after Stripe confirms the payment."
-            : "That payment was not finished, so the courts due within 24 hours were released. Later weeks stay in My bookings.");
+          setReleased({
+            message: cancelled
+              ? "Payment was cancelled on Stripe, so this booking was not saved. Courts are booked only after Stripe confirms the payment."
+              : "That payment was not finished, so the courts due within 24 hours were released. Later weeks stay in My bookings.",
+            retry: hold.retry ?? null,
+          });
           return;
         }
         setSessions(hold.sessions);
@@ -124,6 +133,16 @@ export default function CourtGroupPage() {
   useEffect(() => {
     venuePromotions(slug).then(setPromotions).catch(() => setPromotions([]));
   }, [slug]);
+
+  useEffect(() => {
+    function onShow(event: PageTransitionEvent) {
+      if (!event.persisted) return;
+      setPaying(false);
+      setAttempt((value) => value + 1);
+    }
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -187,6 +206,7 @@ export default function CourtGroupPage() {
       const result = await startGroupCheckout(slug, groupId, preview.points, appliedCode?.code ?? "", unpaid.map((session) => session.bookingId));
       sessionStorage.setItem(checkoutKey, result.bookingId);
       if (result.checkoutUrl) {
+        rememberOpenCheckout(slug, groupId);
         window.location.assign(result.checkoutUrl);
         return;
       }
@@ -215,7 +235,31 @@ export default function CourtGroupPage() {
       <Link to={`/${slug}/book`} className="text-sm text-line hover:underline">Back to booking</Link>
       <h1 className="mt-3 font-display text-3xl text-white">{paidView ? "This week is paid" : "Pay one week"}</h1>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">{paidView ? "The courts you just paid are secured. Every later week stays held until 24 hours before it starts. Pay those weeks from My bookings. There is no deposit." : "There is no deposit. This payment covers the courts you chose for one week. Later weeks stay held, and you pay each of them from My bookings before 24 hours of that session."}</p>
-      {status === "unknown" || (!sessions && !error) ? (
+      {released ? (
+        <section className="mt-6 max-w-3xl rounded-3xl border border-amber-300/40 bg-amber-400/10 p-4 sm:p-5" role="status">
+          <p className="flex items-start gap-2 text-sm leading-relaxed text-amber-50">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" aria-hidden="true" />
+            <span>{released.message}</span>
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-mist/80">
+            {released.retry
+              ? "Try again opens the booking form with the same date, time, and courts. Check they are still free, then pay to secure them."
+              : "Book the courts again to try another payment."}
+          </p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <Link
+              to={released.retry ? bookAgainPath(slug, released.retry) : `/${slug}/book`}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto"
+            >
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              Try again
+            </Link>
+            <Link to="/profile/bookings" className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-mist hover:bg-white/10 sm:w-auto">
+              My bookings
+            </Link>
+          </div>
+        </section>
+      ) : status === "unknown" || (!sessions && !error) ? (
         <div className="mt-6 space-y-2" aria-busy="true">
           <span className="sr-only">{checkoutState === "cancel" ? "Releasing the cancelled payment" : "Loading court hold"}</span>
           {checkoutState === "cancel" ? <p className="flex items-center gap-2 text-sm text-mist" role="status"><Spinner className="h-4 w-4" /> Payment was cancelled. Releasing this booking until Stripe confirms it.</p> : null}

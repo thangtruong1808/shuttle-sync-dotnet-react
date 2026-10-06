@@ -124,6 +124,7 @@ public static class ProfileEndpoints
         HttpContext http,
         AuthRepository authRepository,
         BookingRepository repository,
+        BookingPayments payments,
         CancellationToken cancellationToken)
     {
         var userId = await RequireUserAsync(http, authRepository, cancellationToken);
@@ -132,6 +133,7 @@ public static class ProfileEndpoints
             return SignInAgain();
         }
 
+        await payments.ReleaseExpiredCourtHoldsAsync(cancellationToken);
         var rows = await repository.ListUnpaidHoldsAsync(userId.Value, cancellationToken);
         return Results.Ok(new
         {
@@ -142,7 +144,11 @@ public static class ProfileEndpoints
                 venueSlug = row.VenueSlug,
                 timeZone = row.TimeZone,
                 startTime = VenueClock.AsUtc(row.StartTime),
+                endTime = VenueClock.AsUtc(row.EndTime),
+                payBy = VenueClock.AsUtc(row.StartTime.AddHours(-24)),
                 courtCount = row.CourtCount,
+                checkoutStarted = row.CheckoutStarted,
+                bookingIds = row.BookingIds,
             }),
         });
     }

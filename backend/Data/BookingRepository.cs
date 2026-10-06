@@ -708,19 +708,9 @@ public sealed class BookingRepository(IConfiguration configuration)
                         return HoldError(OccupiedMessage(court.CourtName, timeZone, busy.Session.StartTime, busy.Session.EndTime, busy.UserId, userId));
                     }
 
-                    sessionId = Guid.NewGuid();
                     try
                     {
-                        await connection.ExecuteAsync(new CommandDefinition(
-                            """
-                            INSERT INTO CourtSessions
-                                (Id, VenueId, CourtId, StartTime, EndTime, Price, IsDeleted, CreatedAt, UpdatedAt)
-                            VALUES
-                                (@Id, @VenueId, @CourtId, @StartTime, @EndTime, @Price, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
-                            """,
-                            new { Id = sessionId, VenueId = venueId, CourtId = court.Id, StartTime = start, EndTime = end, Price = price },
-                            tx,
-                            cancellationToken: cancellationToken));
+                        sessionId = await ReuseOrInsertSessionAsync(connection, tx, overlaps, venueId, court.Id, start, end, price, cancellationToken);
                     }
                     catch (MySqlException exception) when (exception.Number == 1062)
                     {
@@ -838,6 +828,25 @@ public sealed class BookingRepository(IConfiguration configuration)
             new { GroupId = groupId, VenueId = venueId, UserId = userId },
             cancellationToken: cancellationToken));
         return count > 0;
+    }
+
+    public async Task<ReleasedHoldRow[]> ListReleasedHoldAsync(Guid venueId, Guid userId, Guid groupId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<ReleasedHoldRow>(new CommandDefinition(
+            """
+            SELECT cs.CourtId, cs.StartTime, cs.EndTime,
+                   CAST(COALESCE(b.SeriesWeeks, 0) AS SIGNED) AS SeriesWeeks,
+                   CAST(b.RepeatHold AS SIGNED) AS RepeatHold
+            FROM Bookings b
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+            WHERE b.GroupId = @GroupId AND b.VenueId = @VenueId AND b.UserId = @UserId AND b.IsDeleted = 0
+              AND b.Status = 'expired'
+            ORDER BY cs.StartTime
+            """,
+            new { GroupId = groupId, VenueId = venueId, UserId = userId },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
     }
 
     public async Task<RepeatAddedRow[]> ExtendRepeatHoldsAsync(CancellationToken cancellationToken)
@@ -1176,19 +1185,9 @@ public sealed class BookingRepository(IConfiguration configuration)
                     return ([], $"{court.CourtName} on {HoldWhen(group.TimeZone, busy.Session.StartTime)} is already held.");
                 }
 
-                sessionId = Guid.NewGuid();
                 try
                 {
-                    await connection.ExecuteAsync(new CommandDefinition(
-                        """
-                        INSERT INTO CourtSessions
-                            (Id, VenueId, CourtId, StartTime, EndTime, Price, IsDeleted, CreatedAt, UpdatedAt)
-                        VALUES
-                            (@Id, @VenueId, @CourtId, @StartTime, @EndTime, @Price, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
-                        """,
-                        new { Id = sessionId, VenueId = group.VenueId, CourtId = court.Id, StartTime = startUtc, EndTime = endUtc, Price = price },
-                        tx,
-                        cancellationToken: cancellationToken));
+                    sessionId = await ReuseOrInsertSessionAsync(connection, tx, overlaps, group.VenueId, court.Id, startUtc, endUtc, price, cancellationToken);
                 }
                 catch (MySqlException exception) when (exception.Number == 1062)
                 {
@@ -1264,10 +1263,11 @@ public sealed class BookingRepository(IConfiguration configuration)
     public async Task<UnpaidHoldRow[]> ListUnpaidHoldsAsync(Guid userId, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        var rows = await connection.QueryAsync<UnpaidHoldRow>(new CommandDefinition(
+        var rows = (await connection.QueryAsync<UnpaidHoldSourceRow>(new CommandDefinition(
             """
-            SELECT b.GroupId, v.Name AS VenueName, v.Slug AS VenueSlug, v.TimeZone,
-                   MIN(cs.StartTime) AS StartTime, CAST(COUNT(*) AS SIGNED) AS CourtCount
+            SELECT b.Id AS BookingId, b.GroupId, v.Name AS VenueName, v.Slug AS VenueSlug, v.TimeZone,
+                   cs.StartTime, cs.EndTime,
+                   CAST(b.PayGroupId IS NOT NULL AS SIGNED) AS CheckoutStarted
             FROM Bookings b
             JOIN CourtSessions cs ON cs.Id = b.CourtSessionId AND cs.IsDeleted = 0
             JOIN Venues v ON v.Id = b.VenueId
@@ -1276,12 +1276,51 @@ public sealed class BookingRepository(IConfiguration configuration)
               AND b.HoldExpiresAt IS NOT NULL
               AND b.HoldExpiresAt > UTC_TIMESTAMP(6)
               AND cs.StartTime > UTC_TIMESTAMP(6)
-            GROUP BY b.GroupId, v.Name, v.Slug, v.TimeZone
-            ORDER BY MIN(cs.StartTime)
+              AND (
+                  b.PayGroupId IS NOT NULL
+                  OR cs.StartTime <= DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 48 HOUR)
+              )
+              AND NOT (
+                  b.PayGroupId IS NULL
+                  AND cs.StartTime <= DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 24 HOUR)
+              )
+            ORDER BY cs.StartTime
             """,
             new { UserId = userId },
-            cancellationToken: cancellationToken));
-        return rows.ToArray();
+            cancellationToken: cancellationToken))).ToArray();
+        return rows
+            .GroupBy(row => row.GroupId)
+            .Select(group =>
+            {
+                var first = group.First();
+                var week = group.Where(row => SameInstant(row.StartTime, first.StartTime)).ToArray();
+                return new UnpaidHoldRow
+                {
+                    GroupId = first.GroupId,
+                    VenueName = first.VenueName,
+                    VenueSlug = first.VenueSlug,
+                    TimeZone = first.TimeZone,
+                    StartTime = first.StartTime,
+                    EndTime = first.EndTime,
+                    CourtCount = week.Length,
+                    BookingIds = week.Select(row => row.BookingId).ToArray(),
+                    CheckoutStarted = week.Any(row => row.CheckoutStarted == 1),
+                };
+            })
+            .OrderBy(row => row.StartTime)
+            .ToArray();
+    }
+
+    private sealed class UnpaidHoldSourceRow
+    {
+        public Guid BookingId { get; init; }
+        public Guid GroupId { get; init; }
+        public string VenueName { get; init; } = "";
+        public string VenueSlug { get; init; } = "";
+        public string TimeZone { get; init; } = "";
+        public DateTime StartTime { get; init; }
+        public DateTime EndTime { get; init; }
+        public int CheckoutStarted { get; init; }
     }
 
     public async Task<Guid[]> ListFutureConfirmedAsync(Guid userId, Guid groupId, CancellationToken cancellationToken)
@@ -1512,6 +1551,7 @@ public sealed class BookingRepository(IConfiguration configuration)
         }
 
         var movingSessions = rows.Select(row => row.CourtSessionId).ToArray();
+        var staleTargets = new Dictionary<Guid, Guid>();
         foreach (var row in rows)
         {
             var closed = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
@@ -1547,11 +1587,30 @@ public sealed class BookingRepository(IConfiguration configuration)
             {
                 return OccupiedMessage(row.CourtName, sample.TimeZone, busy.Session.StartTime, busy.Session.EndTime, busy.UserId, userId);
             }
+
+            var stale = overlaps.FirstOrDefault(item => SameInstant(item.StartTime, newStartUtc));
+            if (stale is not null)
+            {
+                staleTargets[row.Id] = stale.Id;
+            }
         }
 
         foreach (var row in rows)
         {
-            try
+            if (staleTargets.TryGetValue(row.Id, out var target))
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE CourtSessions SET EndTime = @EndTime, Price = @Price, UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                    new { Id = target, EndTime = newEndUtc, Price = price },
+                    tx,
+                    cancellationToken: cancellationToken));
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE Bookings SET CourtSessionId = @Target, UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                    new { Id = row.Id, Target = target },
+                    tx,
+                    cancellationToken: cancellationToken));
+            }
+            else try
             {
                 await connection.ExecuteAsync(new CommandDefinition(
                     """
@@ -1749,19 +1808,9 @@ public sealed class BookingRepository(IConfiguration configuration)
                     return ([], $"{court.CourtName} is already held for this week.");
                 }
 
-                sessionId = Guid.NewGuid();
                 try
                 {
-                    await connection.ExecuteAsync(new CommandDefinition(
-                        """
-                        INSERT INTO CourtSessions
-                            (Id, VenueId, CourtId, StartTime, EndTime, Price, IsDeleted, CreatedAt, UpdatedAt)
-                        VALUES
-                            (@Id, @VenueId, @CourtId, @StartTime, @EndTime, @Price, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
-                        """,
-                        new { Id = sessionId, VenueId = venueId, CourtId = court.Id, StartTime = startUtc, EndTime = endUtc, Price = price },
-                        tx,
-                        cancellationToken: cancellationToken));
+                    sessionId = await ReuseOrInsertSessionAsync(connection, tx, overlaps, venueId, court.Id, startUtc, endUtc, price, cancellationToken);
                 }
                 catch (MySqlException exception) when (exception.Number == 1062)
                 {
@@ -6403,6 +6452,43 @@ public sealed class BookingRepository(IConfiguration configuration)
 
     private sealed record ActiveOverlap(OverlapSessionRow Session, Guid UserId);
 
+    // Only one live session may start at a given instant on a court, so a stale same-start slot is reused.
+    private static async Task<Guid> ReuseOrInsertSessionAsync(
+        MySqlConnection connection,
+        MySqlTransaction tx,
+        IReadOnlyList<OverlapSessionRow> overlaps,
+        Guid venueId,
+        Guid courtId,
+        DateTime startUtc,
+        DateTime endUtc,
+        decimal price,
+        CancellationToken cancellationToken)
+    {
+        var stale = overlaps.FirstOrDefault(row => SameInstant(row.StartTime, startUtc));
+        if (stale is not null)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE CourtSessions SET EndTime = @EndTime, Price = @Price, UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                new { Id = stale.Id, EndTime = endUtc, Price = price },
+                tx,
+                cancellationToken: cancellationToken));
+            return stale.Id;
+        }
+
+        var id = Guid.NewGuid();
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO CourtSessions
+                (Id, VenueId, CourtId, StartTime, EndTime, Price, IsDeleted, CreatedAt, UpdatedAt)
+            VALUES
+                (@Id, @VenueId, @CourtId, @StartTime, @EndTime, @Price, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            """,
+            new { Id = id, VenueId = venueId, CourtId = courtId, StartTime = startUtc, EndTime = endUtc, Price = price },
+            tx,
+            cancellationToken: cancellationToken));
+        return id;
+    }
+
     private sealed class BusyOwnerRow
     {
         public Guid CourtSessionId { get; init; }
@@ -6602,6 +6688,15 @@ public sealed class ConfirmedBookingRow
     public DateTime EndTime { get; init; }
 }
 
+public sealed class ReleasedHoldRow
+{
+    public Guid CourtId { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public int SeriesWeeks { get; init; }
+    public int RepeatHold { get; init; }
+}
+
 public sealed class UnpaidHoldRow
 {
     public Guid GroupId { get; init; }
@@ -6609,7 +6704,10 @@ public sealed class UnpaidHoldRow
     public string VenueSlug { get; init; } = "";
     public string TimeZone { get; init; } = "";
     public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
     public int CourtCount { get; init; }
+    public bool CheckoutStarted { get; init; }
+    public Guid[] BookingIds { get; init; } = [];
 }
 
 public sealed class PublicClosureRow

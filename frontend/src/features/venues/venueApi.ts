@@ -303,11 +303,11 @@ export function openCourtHold(slug: string, courtIds: string[], date: string, st
   });
 }
 
-export function payNowHold(slug: string, courtIds: string[], date: string, start: string, end: string, repeat = false, weeks = 1, groupId?: string): Promise<CheckoutResult & { groupId: string }> {
+export function payNowHold(slug: string, courtIds: string[], date: string, start: string, end: string, repeat = false, weeks = 1, groupId?: string, discount: { points?: number; promotionCode?: string } = {}): Promise<CheckoutResult & { groupId: string }> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/pay-now`, "no-store", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ courtIds, date, start, end, weeks, repeat, groupId: groupId ?? null }),
+    body: JSON.stringify({ courtIds, date, start, end, weeks, repeat, groupId: groupId ?? null, points: discount.points ?? 0, promotionCode: discount.promotionCode ?? null }),
   });
 }
 
@@ -319,7 +319,47 @@ export async function abandonCourtCheckout(slug: string, groupId: string): Promi
   }
 }
 
-export function courtHold(slug: string, groupId: string): Promise<{ currency: string; pointsPerDollar: number; lateCancelFeePercent: number; timeZone: string; sessions: CourtHoldSession[]; released?: boolean }> {
+const openCheckoutKey = "shuttle-sync-open-checkout";
+
+export function rememberOpenCheckout(slug: string, groupId: string) {
+  sessionStorage.setItem(openCheckoutKey, JSON.stringify({ slug, groupId }));
+}
+
+export function forgetOpenCheckout() {
+  sessionStorage.removeItem(openCheckoutKey);
+}
+
+export function readOpenCheckout(): { slug: string; groupId: string } | null {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(openCheckoutKey) ?? "null") as { slug?: string; groupId?: string } | null;
+    return value?.slug && value.groupId ? { slug: value.slug, groupId: value.groupId } : null;
+  } catch {
+    return null;
+  }
+}
+
+export type ReleasedRetry = {
+  date: string;
+  start: string;
+  end: string;
+  courtIds: string[];
+  weeks: number;
+  repeat: boolean;
+};
+
+export function bookAgainPath(slug: string, retry: ReleasedRetry) {
+  const params = new URLSearchParams({
+    date: retry.date,
+    start: retry.start,
+    end: retry.end,
+    courts: retry.courtIds.join(","),
+    weeks: String(retry.weeks),
+  });
+  if (retry.repeat) params.set("repeat", "1");
+  return `/${encodeURIComponent(slug)}/book?${params}`;
+}
+
+export function courtHold(slug: string, groupId: string): Promise<{ currency: string; pointsPerDollar: number; lateCancelFeePercent: number; timeZone: string; sessions: CourtHoldSession[]; released?: boolean; retry?: ReleasedRetry | null }> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/${groupId}`, "no-store");
 }
 
