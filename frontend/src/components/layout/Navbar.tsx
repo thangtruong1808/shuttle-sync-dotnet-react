@@ -11,7 +11,7 @@ import { useVenues } from "./SiteLayout";
 
 const links = [
   { label: "Home", to: (slug: string) => `/${slug}`, icon: House },
-  { label: "My Bookings", to: () => "/profile/bookings", icon: CalendarDays },
+  { label: "My Bookings", to: (slug: string) => (slug ? `/profile/bookings?venue=${encodeURIComponent(slug)}` : "/profile/bookings"), icon: CalendarDays },
   { label: "Rewards", to: () => "/rewards", icon: Gift },
 ];
 
@@ -28,7 +28,9 @@ export function Navbar() {
   const listId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
   const current = venues?.find((venue) => venue.slug === slug) ?? null;
-  const shown = venueForPage(venues, slug, defaultSlug);
+  const onBookings = location.pathname === "/profile/bookings";
+  const bookingsVenue = onBookings ? new URLSearchParams(location.search).get("venue") ?? undefined : undefined;
+  const shown = venueForPage(venues, slug ?? bookingsVenue, defaultSlug);
   const activeSlug = shown?.slug ?? "";
   const venueLabel = shown ? `${shown.name}${shown.suburb ? ` · ${shown.suburb}` : ""}` : "Choose a venue";
 
@@ -54,6 +56,10 @@ export function Navbar() {
     rememberVenueSlug(nextSlug);
     setOpen(false);
     setQuery("");
+    if (onBookings) {
+      navigate(`/profile/bookings?venue=${encodeURIComponent(nextSlug)}`);
+      return;
+    }
     const suffix = location.pathname.startsWith(`/${slug}/`)
       ? location.pathname.slice(`/${slug}`.length)
       : location.pathname === `/${slug}`

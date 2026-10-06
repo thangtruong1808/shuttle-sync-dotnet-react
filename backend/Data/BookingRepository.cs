@@ -1957,7 +1957,8 @@ public sealed class BookingRepository(IConfiguration configuration)
         string status,
         int offset,
         int pageSize,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? venueSlug = null)
     {
         await AwardEndedSocialIncentivesAsync(cancellationToken);
         var filter = status switch
@@ -1994,18 +1995,19 @@ public sealed class BookingRepository(IConfiguration configuration)
         await using var connection = await OpenAsync(cancellationToken);
         var total = await connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
-                $"SELECT COUNT(*) FROM ({combined}) entries",
-                new { UserId = userId },
+                $"SELECT COUNT(*) FROM ({combined}) entries WHERE (@Venue IS NULL OR VenueSlug = @Venue)",
+                new { UserId = userId, Venue = venueSlug },
                 cancellationToken: cancellationToken));
         var rows = await connection.QueryAsync<BookingListRow>(
             new CommandDefinition(
                 $"""
                 SELECT Id, VenueName, VenueSlug, TimeZone, Currency, CourtName, CourtNumber, StartTime, EndTime, Status, TotalAmount, GroupId, SocialId
                 FROM ({combined}) entries
+                WHERE (@Venue IS NULL OR VenueSlug = @Venue)
                 ORDER BY StartTime DESC
                 LIMIT @Take OFFSET @Skip
                 """,
-                new { UserId = userId, Take = pageSize, Skip = offset },
+                new { UserId = userId, Venue = venueSlug, Take = pageSize, Skip = offset },
                 cancellationToken: cancellationToken));
         return (rows.ToArray(), total);
     }
@@ -2952,7 +2954,31 @@ public sealed class BookingRepository(IConfiguration configuration)
         await tx.CommitAsync(cancellationToken);
     }
 
+    private static readonly SemaphoreSlim AwardGate = new(1, 1);
+
     public async Task AwardEndedSocialIncentivesAsync(CancellationToken cancellationToken)
+    {
+        // Pages load several endpoints at once, and parallel award sweeps lock the same bookings in different orders.
+        if (!await AwardGate.WaitAsync(0, cancellationToken))
+        {
+            return;
+        }
+
+        try
+        {
+            await AwardEndedIncentivesOnceAsync(cancellationToken);
+        }
+        catch (MySqlException exception) when (exception.Number is 1213 or 1205)
+        {
+            // Awards are idempotent, so the next request finishes them.
+        }
+        finally
+        {
+            AwardGate.Release();
+        }
+    }
+
+    private async Task AwardEndedIncentivesOnceAsync(CancellationToken cancellationToken)
     {
         await AwardEndedCourtIncentivesAsync(cancellationToken);
         await using var connection = await OpenAsync(cancellationToken);

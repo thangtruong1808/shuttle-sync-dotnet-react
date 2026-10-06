@@ -150,7 +150,7 @@ export function upcomingBookings<T extends { startTime: string; endTime: string 
 export function BookedTime({ start, end, timeZone, unpaid = false }: { start: string; end: string; timeZone: string; unpaid?: boolean }) {
   return (
     <p className={`text-sm ${unpaid ? "text-amber-100" : "text-white"}`}>
-      <span className={`font-semibold ${unpaid ? "text-amber-200" : ""}`}>{unpaid ? "Unpaid" : "Booked"}</span>
+      <span className={`font-semibold ${unpaid ? "text-amber-200" : ""}`}>{unpaid ? "Held" : "Booked"}</span>
       <span className="text-mist/45"> · </span>
       <span className="whitespace-nowrap">{formatVenueRange(start, end, timeZone)}</span>
     </p>
@@ -242,7 +242,7 @@ function bookingTip(booking: ScheduleBooking, timeZone: string, now: number): st
   const range = formatVenueRange(booking.startTime, booking.endTime, timeZone);
   const startMs = new Date(booking.startTime).getTime();
   const endMs = new Date(booking.endTime).getTime();
-  const label = booking.status === "pending" ? "Unpaid, payment not finished" : "Booked";
+  const label = booking.status === "pending" ? "Held, waiting for payment" : "Booked";
   if (now < startMs) {
     return `${label}, ${range}. Starts in ${clock(startMs - now)}.`;
   }

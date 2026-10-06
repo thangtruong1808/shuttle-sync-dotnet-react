@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
-import { Link } from "react-router-dom";
-import { ChevronDown, ChevronLeft, ChevronRight, CreditCard, Eye, UserPlus, X } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, CreditCard, Eye, UserPlus, X } from "lucide-react";
 import type { AppDispatch } from "../../app/store";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
 import { loadCurrentUser } from "../auth/authSlice";
-import { addHoldCourts, venueAvailability } from "../venues/venueApi";
+import { useVenues } from "../../components/layout/SiteLayout";
+import { addHoldCourts, venueAvailability, venueForPage } from "../venues/venueApi";
 import { AuthRequestError } from "../auth/authApi";
 import { cancelBooking, deleteSeries, deleteUnpaidHold, moveCourtSessions, myBookings, myCourtWeeks, refreshUnpaidHolds, setCourtRepeat, type BookingRow, type CancelResult, type CourtWeekCourt, type Page } from "./profileApi";
 
@@ -107,14 +108,6 @@ function weekSpan(weeks: CourtWeekCourt[][]) {
     return `Weeks ${first.week}–${last.week} of ${first.year}`;
   }
   return `Weeks ${first.week} of ${first.year} to ${last.week} of ${last.year}`;
-}
-
-function weekSummary(courts: CourtWeekCourt[]) {
-  const secured = courts.filter((court) => court.status === "confirmed").length;
-  const held = courts.length - secured;
-  if (held === 0) return "Secured";
-  if (secured === 0) return "Held";
-  return `${secured} secured · ${held} held`;
 }
 
 function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged: () => void }) {
@@ -333,6 +326,34 @@ function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged
   );
 }
 
+function WeekPayStatus({ courts }: { courts: CourtWeekCourt[] }) {
+  const paid = courts.filter((court) => court.status === "confirmed").length;
+  if (paid === courts.length) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-line/40 bg-line/15 px-2 py-0.5 text-xs font-semibold text-line">
+        <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
+        Paid
+      </span>
+    );
+  }
+  const dueAt = new Date(courts[0].startTime).getTime() - 24 * 60 * 60 * 1000;
+  const dueNow = dueAt <= Date.now();
+  const Icon = dueNow ? CircleAlert : Clock;
+  const tone = dueNow ? "border-rose-300/50 bg-rose-500/15 text-rose-100" : "border-amber-300/40 bg-amber-400/15 text-amber-100";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${tone}`}>
+      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+      {paid > 0 ? `Partly paid · ${paid} of ${courts.length}` : dueNow ? "Pay now" : "Held for you"}
+    </span>
+  );
+}
+
+function weekPayNote(courts: CourtWeekCourt[]) {
+  if (courts.every((court) => court.status === "confirmed")) return null;
+  const due = new Date(new Date(courts[0].startTime).getTime() - 24 * 60 * 60 * 1000);
+  return due.getTime() <= Date.now() ? "Pay now to keep this week." : `Pay before ${formatVenueDateTime(due.toISOString(), courts[0].timeZone)}.`;
+}
+
 function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: { weeks: CourtWeekCourt[][]; open: boolean; onToggle: () => void; openWeek: string | null; onOpenWeek: (key: string | null) => void; onChanged: () => void }) {
   const ordered = [...weeks].sort((left, right) => left[0].startTime < right[0].startTime ? -1 : 1);
   const sample = ordered[0][0];
@@ -416,7 +437,7 @@ function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: 
         <div className="mt-4">
           <label className="flex items-start gap-2 text-sm text-mist">
             <input type="checkbox" className="mt-1 accent-line" checked={Boolean(sample.repeatHold)} disabled={repeatBusy} onChange={(event) => void onRepeat(event.target.checked)} />
-            <span>Keep {horizon} weeks ahead. When one week passes, the next free week is held. You still pay each week before 24 hours of that session.</span>
+            <span>Keep {horizon} {horizon === 1 ? "week" : "weeks"} ahead. When one week starts, the next free week is held for you. You still pay each week before 24 hours of that session.</span>
           </label>
           {repeatBusy ? <span className="mt-2 inline-flex items-center gap-2 text-sm text-mist" role="status"><Spinner className="h-3.5 w-3.5" /> Saving repeat</span> : null}
           {note ? <p className="mt-2 text-sm text-mist" role="status">{note}</p> : null}
@@ -428,12 +449,18 @@ function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: 
               const yearWeek = weekOfYear(courts[0].startTime, courts[0].timeZone);
               const amount = courts.reduce((sum, court) => sum + court.price, 0);
               const opened = openWeek === key;
+              const payNote = weekPayNote(courts);
+              const allPaid = payNote === null;
               return (
-                <li key={key} className="rounded-xl border border-white/10">
+                <li key={key} className={`rounded-xl border border-l-4 border-white/10 ${allPaid ? "border-l-line/70" : "border-l-amber-300/70"}`}>
                   <button type="button" className="flex w-full flex-col gap-2 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-line/10 sm:flex-row sm:items-center sm:justify-between" aria-expanded={opened} onClick={() => onOpenWeek(opened ? null : key)}>
                     <span className="min-w-0">
-                      <span className="block font-medium text-white">Week {yearWeek.week} of {yearWeek.year}</span>
-                      <span className="block text-sm text-mist/75">{formatWeekDate(courts[0].startTime, courts[0].timeZone)} · {courts.length} {courts.length === 1 ? "court" : "courts"} · {weekSummary(courts)}</span>
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-white">Week {yearWeek.week} of {yearWeek.year}</span>
+                        <WeekPayStatus courts={courts} />
+                      </span>
+                      <span className="block text-sm text-mist/75">{formatWeekDate(courts[0].startTime, courts[0].timeZone)} · {courts.length} {courts.length === 1 ? "court" : "courts"}</span>
+                      {payNote ? <span className="block text-sm text-amber-100/90">{payNote}</span> : null}
                     </span>
                     <span className="inline-flex shrink-0 items-center gap-2">
                       <span className="text-sm font-semibold text-white"><Money amount={amount} currency={courts[0].currency} /></span>
@@ -467,6 +494,25 @@ function cancelNotice(result: CancelResult) {
 }
 
 export function BookingsSection() {
+  const { venues, defaultSlug } = useVenues();
+  const [params] = useSearchParams();
+  const venue = venueForPage(venues, params.get("venue") ?? undefined, defaultSlug);
+  if (venues === null) {
+    return (
+      <div>
+        <h1 className="font-display text-3xl text-white">My bookings</h1>
+        <div className="mt-4 space-y-3" aria-busy="true">
+          <span className="sr-only">Loading bookings</span>
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+      </div>
+    );
+  }
+  return <VenueBookings key={venue?.slug ?? "all"} venueSlug={venue?.slug ?? null} venueName={venue?.name ?? null} />;
+}
+
+function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; venueName: string | null }) {
   const dispatch = useDispatch<AppDispatch>();
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("upcoming");
   const [page, setPage] = useState(1);
@@ -487,7 +533,7 @@ export function BookingsSection() {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    myBookings(tab, page)
+    myBookings(tab, page, venueSlug)
       .then((next) => {
         if (active) {
           setData(next);
@@ -507,7 +553,7 @@ export function BookingsSection() {
     return () => {
       active = false;
     };
-  }, [tab, page, attempt, dispatch]);
+  }, [tab, page, attempt, dispatch, venueSlug]);
 
   useEffect(() => {
     if (tab !== "upcoming") {
@@ -519,6 +565,7 @@ export function BookingsSection() {
         if (!active) return;
         const grouped = new Map<string, CourtWeekCourt[]>();
         for (const row of result.weeks) {
+          if (venueSlug && row.venueSlug !== venueSlug) continue;
           const key = `${row.groupId}|${row.startTime}`;
           grouped.set(key, [...(grouped.get(key) ?? []), row]);
         }
@@ -530,7 +577,7 @@ export function BookingsSection() {
     return () => {
       active = false;
     };
-  }, [tab, attempt]);
+  }, [tab, attempt, venueSlug]);
 
   async function onCancel(id: string) {
     setPendingId(id);
@@ -553,6 +600,7 @@ export function BookingsSection() {
   return (
     <div>
       <h1 className="font-display text-3xl text-white">My bookings</h1>
+      {venueName ? <p className="mt-1 text-sm leading-relaxed text-mist/75">Showing bookings at <span className="font-semibold text-white">{venueName}</span>. Choose another venue in the menu above to see its bookings.</p> : null}
       <div className="mt-4 flex gap-2" role="tablist" aria-label="Booking status">
         {tabs.map((item) => (
           <button
@@ -696,7 +744,7 @@ export function BookingsSection() {
           ))}
         </ul>
       ) : tab === "upcoming" && weeks && weeks.length > 0 ? null : (
-        <div className="mt-4"><EmptyState title="No bookings here" body="Courts you book will show up in this list." /></div>
+        <div className="mt-4"><EmptyState title="No bookings here" body={venueName ? `Courts you book at ${venueName} will show up in this list.` : "Courts you book will show up in this list."} /></div>
       )}
         </>
       )}

@@ -20,6 +20,14 @@ features_flow/
 # Frontend build
 frontend/dist/
 
+# playwright
+tests/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+playwright/.auth/
+
 # .NET
 bin/
 obj/
@@ -37,3 +45,10 @@ backend/App_Data/
 *.log
 .DS_Store
 Thumbs.db
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

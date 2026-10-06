@@ -175,12 +175,16 @@ public static class AuthEndpoints
             return SignInAgain();
         }
 
+        // Requests already in flight still carry the current CSRF header, so a refresh keeps it.
+        var csrf = AuthCookies.TryGetCsrf(http, out var currentCsrf) && !string.IsNullOrWhiteSpace(currentCsrf)
+            ? currentCsrf
+            : TokenProtection.CreateToken();
         AuthCookies.SetSession(
             http,
             settings,
             tokens.Create(user, rotated.Session.Id),
             nextRefreshToken,
-            TokenProtection.CreateToken(),
+            csrf,
             remaining);
         return Results.Ok(ToUser(user));
     }

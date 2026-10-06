@@ -28,6 +28,7 @@ public static class ProfileEndpoints
         string? status,
         int? page,
         int? pageSize,
+        string? venue,
         AuthRepository authRepository,
         BookingRepository repository,
         BookingPayments payments,
@@ -43,7 +44,7 @@ public static class ProfileEndpoints
         await payments.ReleaseExpiredCourtHoldsAsync(cancellationToken);
         var filter = status is "past" or "cancelled" ? status : "upcoming";
         var (pageNumber, size, offset) = Page(page, pageSize);
-        var (items, total) = await repository.ListBookingsAsync(userId.Value, filter, offset, size, cancellationToken);
+        var (items, total) = await repository.ListBookingsAsync(userId.Value, filter, offset, size, cancellationToken, string.IsNullOrWhiteSpace(venue) ? null : venue.Trim());
         var friends = await repository.ListBookingFriendsAsync(userId.Value, items.Select(item => item.Id).ToArray(), cancellationToken);
         var friendsByRegistration = friends.GroupBy(friend => friend.RegistrationId).ToDictionary(group => group.Key, group => group.ToArray());
         var now = DateTime.UtcNow;

@@ -154,8 +154,9 @@ export function moveCourtSessions(
   });
 }
 
-export function myBookings(status: string, page: number): Promise<Page<BookingRow>> {
+export function myBookings(status: string, page: number, venue?: string | null): Promise<Page<BookingRow>> {
   const params = new URLSearchParams({ status, page: String(page) });
+  if (venue) params.set("venue", venue);
   return readPage(`/api/me/bookings?${params}`);
 }
 
