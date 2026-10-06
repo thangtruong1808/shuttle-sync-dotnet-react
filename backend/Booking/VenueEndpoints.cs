@@ -1,3 +1,4 @@
+using MySqlConnector;
 using ShuttleSync.Api.Auth;
 using ShuttleSync.Api.Data;
 
@@ -17,6 +18,7 @@ public static class VenueEndpoints
         venues.MapPost("/{slug}/sessions", OpenSessionAsync).RequireAuthorization();
         venues.MapPost("/{slug}/holds", OpenHoldAsync).RequireAuthorization();
         venues.MapPost("/{slug}/holds/pay-now", PayNowHoldAsync).RequireAuthorization();
+        venues.MapPost("/{slug}/holds/{groupId:guid}/checkout-cancel", CancelCheckoutAsync).RequireAuthorization();
         venues.MapPost("/{slug}/holds/{groupId:guid}/courts", AddHoldCourtsAsync).RequireAuthorization();
         venues.MapGet("/{slug}/holds/{groupId:guid}", HoldGroupAsync).RequireAuthorization();
         venues.MapGet("/{slug}/socials", ListSocialsAsync);
@@ -133,6 +135,7 @@ public static class VenueEndpoints
             bookings = bookings.Where(booking => booking.CourtId == court.Id).Select(booking => new
             {
                 id = booking.BookingId,
+                status = booking.Status,
                 startTime = VenueClock.AsUtc(booking.StartTime),
                 endTime = VenueClock.AsUtc(booking.EndTime),
             }),
@@ -385,18 +388,27 @@ public static class VenueEndpoints
             return Form(clockError, StatusCodes.Status400BadRequest);
         }
 
-        var opened = await repository.OpenCourtHoldGroupAsync(
-            venue.Id,
-            current.UserId,
-            body.CourtIds,
-            venue.HourlyRate,
-            venue.TimeZone,
-            window.StartUtc,
-            window.EndUtc,
-            body.Weeks <= 0 ? 1 : body.Weeks,
-            cancellationToken,
-            seriesWeeks: body.Weeks <= 0 ? 1 : Math.Min(body.Weeks, 12),
-            repeatHold: body.Repeat);
+        (Guid GroupId, CourtHoldRow[] Rows, string? Error, string? Notice) opened;
+        try
+        {
+            opened = await repository.OpenCourtHoldGroupAsync(
+                venue.Id,
+                current.UserId,
+                body.CourtIds,
+                venue.HourlyRate,
+                venue.TimeZone,
+                window.StartUtc,
+                window.EndUtc,
+                body.Weeks <= 0 ? 1 : body.Weeks,
+                cancellationToken,
+                seriesWeeks: body.Weeks <= 0 ? 1 : Math.Min(body.Weeks, 12),
+                repeatHold: body.Repeat);
+        }
+        catch (MySqlException)
+        {
+            return Form("That date and time could not be saved. It may already be booked. Choose another time and try again.", StatusCodes.Status409Conflict);
+        }
+
         if (opened.Error is not null)
         {
             var status = opened.Error.Contains("already held", StringComparison.Ordinal) || opened.Error.Contains("not available", StringComparison.Ordinal)
@@ -470,20 +482,29 @@ public static class VenueEndpoints
             return Form(clockError, StatusCodes.Status400BadRequest);
         }
 
-        var opened = await repository.OpenCourtHoldGroupAsync(
-            venue.Id,
-            current.UserId,
-            body.CourtIds,
-            venue.HourlyRate,
-            venue.TimeZone,
-            window.StartUtc,
-            window.EndUtc,
-            1,
-            cancellationToken,
-            payWithin24Hours: true,
-            joinGroupId: body.GroupId,
-            seriesWeeks: body.Weeks <= 0 ? 1 : Math.Min(body.Weeks, 12),
-            repeatHold: body.Repeat);
+        (Guid GroupId, CourtHoldRow[] Rows, string? Error, string? Notice) opened;
+        try
+        {
+            opened = await repository.OpenCourtHoldGroupAsync(
+                venue.Id,
+                current.UserId,
+                body.CourtIds,
+                venue.HourlyRate,
+                venue.TimeZone,
+                window.StartUtc,
+                window.EndUtc,
+                1,
+                cancellationToken,
+                payWithin24Hours: true,
+                joinGroupId: body.GroupId,
+                seriesWeeks: body.Weeks <= 0 ? 1 : Math.Min(body.Weeks, 12),
+                repeatHold: body.Repeat);
+        }
+        catch (MySqlException)
+        {
+            return Form("That date and time could not be saved. It may already be booked. Choose another time and try again.", StatusCodes.Status409Conflict);
+        }
+
         if (opened.Error is not null)
         {
             return Form(opened.Error, StatusCodes.Status400BadRequest);
@@ -601,6 +622,31 @@ public static class VenueEndpoints
         }
 
         return Results.Ok(new { added = added.Added.Length });
+    }
+
+    private static async Task<IResult> CancelCheckoutAsync(
+        string slug,
+        Guid groupId,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        PaymentRepository payments,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, authRepository, cancellationToken);
+        if (current is null)
+        {
+            return Form("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Form("That venue was not found.", StatusCodes.Status404NotFound);
+        }
+
+        await payments.AbandonCancelledCheckoutAsync(venue.Id, current.UserId, groupId, cancellationToken);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> HoldGroupAsync(

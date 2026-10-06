@@ -8,7 +8,7 @@ import { Button, Skeleton, Spinner } from "../../components/ui";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { bookingPayment, type BookingPayment } from "../profile/profileApi";
-import { courtHold, startGroupCheckout, venuePromotions, type CourtHoldSession, type Promotion } from "../venues/venueApi";
+import { abandonCourtCheckout, courtHold, startGroupCheckout, venuePromotions, type CourtHoldSession, type Promotion } from "../venues/venueApi";
 
 const checkoutKey = "shuttle-sync-checkout";
 const pointPercents = [25, 50, 75, 100] as const;
@@ -85,13 +85,22 @@ export default function CourtGroupPage() {
   const checkoutState = new URLSearchParams(location.search).get("checkout");
 
   useEffect(() => {
+    if (status !== "authenticated") return;
+    let active = true;
     setError(null);
     setSessions(null);
-    courtHold(slug, groupId)
+    const cancelled = new URLSearchParams(location.search).get("checkout") === "cancel";
+    const load = cancelled
+      ? abandonCourtCheckout(slug, groupId).catch(() => undefined).then(() => courtHold(slug, groupId))
+      : courtHold(slug, groupId);
+    load
       .then((hold) => {
+        if (!active) return;
         if (hold.released) {
           setSessions([]);
-          setError("That payment was not finished, so the courts due within 24 hours were released. Later weeks stay in My bookings.");
+          setError(cancelled
+            ? "Payment was cancelled on Stripe, so this booking was not saved. Courts are booked only after Stripe confirms the payment."
+            : "That payment was not finished, so the courts due within 24 hours were released. Later weeks stay in My bookings.");
           return;
         }
         setSessions(hold.sessions);
@@ -104,8 +113,13 @@ export default function CourtGroupPage() {
         const week = pending.find((session) => requested.includes(session.bookingId))?.startTime ?? pending[0]?.startTime;
         setPicked(pending.filter((session) => session.startTime === week && (requested.length === 0 || requested.includes(session.bookingId))).map((session) => session.bookingId));
       })
-      .catch(() => setError("This court hold could not be loaded."));
-  }, [slug, groupId, attempt]);
+      .catch(() => {
+        if (active) setError("This court hold could not be loaded.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [slug, groupId, attempt, status, location.search]);
 
   useEffect(() => {
     venuePromotions(slug).then(setPromotions).catch(() => setPromotions([]));
@@ -114,8 +128,7 @@ export default function CourtGroupPage() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const returned = params.get("checkout");
-    if (returned === "cancel" && status === "authenticated") {
-      setFormError("Payment was cancelled. The courts stay held until 24 hours before each session.");
+    if (returned === "cancel" || status !== "authenticated") {
       return;
     }
     if ((returned !== "success" && !params.get("redirect_status")) || status !== "authenticated") {
@@ -150,9 +163,9 @@ export default function CourtGroupPage() {
   }
 
   const rows = sessions ?? [];
-  const paidView = checkoutState === "success" || (rows.length > 0 && rows.every((session) => session.status !== "pending"));
   const securedCount = rows.filter((session) => session.status === "confirmed").length;
   const heldCount = rows.filter((session) => session.status === "pending").length;
+  const paidView = (checkoutState === "success" && (waiting || securedCount > 0)) || (checkoutState !== "cancel" && rows.length > 0 && securedCount === rows.length);
   const unpaid = rows.filter((session) => session.status === "pending" && picked.includes(session.bookingId));
   const subtotal = unpaid.reduce((sum, session) => sum + session.price, 0);
   const discount = promoDiscount(subtotal, appliedCode);
@@ -204,7 +217,8 @@ export default function CourtGroupPage() {
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">{paidView ? "The courts you just paid are secured. Every later week stays held until 24 hours before it starts. Pay those weeks from My bookings. There is no deposit." : "There is no deposit. This payment covers the courts you chose for one week. Later weeks stay held, and you pay each of them from My bookings before 24 hours of that session."}</p>
       {status === "unknown" || (!sessions && !error) ? (
         <div className="mt-6 space-y-2" aria-busy="true">
-          <span className="sr-only">Loading court hold</span>
+          <span className="sr-only">{checkoutState === "cancel" ? "Releasing the cancelled payment" : "Loading court hold"}</span>
+          {checkoutState === "cancel" ? <p className="flex items-center gap-2 text-sm text-mist" role="status"><Spinner className="h-4 w-4" /> Payment was cancelled. Releasing this booking until Stripe confirms it.</p> : null}
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
         </div>
@@ -244,7 +258,21 @@ export default function CourtGroupPage() {
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-white">{formatVenueDateTime(week[0].startTime, timeZone)}</p>
                         <p className="text-xs text-mist/60">until {formatVenueDateTime(week[0].endTime, timeZone)}</p>
-                        <p className="mt-1 text-xs text-mist/75">{week.length} {week.length === 1 ? "court" : "courts"} · {securedInWeek} secured · {heldInWeek} held</p>
+                        <p className="mt-1 text-xs text-mist/75">{week.length} {week.length === 1 ? "court" : "courts"}</p>
+                        <p className="mt-2 flex flex-wrap items-center gap-2">
+                          {securedInWeek > 0 ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-line/20 px-2 py-0.5 text-xs font-semibold text-line">
+                              <CircleCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              {heldInWeek === 0 ? "Paid" : `${securedInWeek} paid`}
+                            </span>
+                          ) : null}
+                          {heldInWeek > 0 ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-xs font-semibold text-mist">
+                              <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              {securedInWeek === 0 ? "Unpaid" : `${heldInWeek} unpaid`}
+                            </span>
+                          ) : null}
+                        </p>
                       </div>
                       <button
                         type="button"

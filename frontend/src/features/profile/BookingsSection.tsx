@@ -3,12 +3,12 @@ import { useDispatch } from "react-redux";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronLeft, ChevronRight, CreditCard, Eye, UserPlus, X } from "lucide-react";
 import type { AppDispatch } from "../../app/store";
-import { Button, Skeleton, Spinner } from "../../components/ui";
+import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
 import { loadCurrentUser } from "../auth/authSlice";
 import { addHoldCourts, venueAvailability } from "../venues/venueApi";
 import { AuthRequestError } from "../auth/authApi";
-import { cancelBooking, myBookings, myCourtWeeks, setCourtRepeat, type BookingRow, type CancelResult, type CourtWeekCourt, type Page } from "./profileApi";
+import { cancelBooking, deleteSeries, deleteUnpaidHold, moveCourtSessions, myBookings, myCourtWeeks, refreshUnpaidHolds, setCourtRepeat, type BookingRow, type CancelResult, type CourtWeekCourt, type Page } from "./profileApi";
 
 const tabs = [
   { id: "upcoming", label: "Upcoming" },
@@ -49,6 +49,25 @@ function weekOfYear(value: string, timeZone: string) {
   sunday.setUTCDate(monday.getUTCDate() + 6);
   const day = new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
   return { week, year: thursday.getUTCFullYear(), from: day.format(monday), to: day.format(sunday) };
+}
+
+function venueFields(iso: string, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timeZone || "Australia/Melbourne",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+  const hour = part("hour") === "24" ? "00" : part("hour").padStart(2, "0");
+  return { date: `${part("year")}-${part("month")}-${part("day")}`, time: `${hour}:${part("minute").padStart(2, "0")}` };
+}
+
+function requestMessage(reason: unknown, fallback: string) {
+  return reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? fallback : fallback;
 }
 
 function overlaps(start: string, end: string, otherStart: string, otherEnd: string) {
@@ -106,6 +125,15 @@ function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmPaid, setConfirmPaid] = useState(false);
+  const openedAt = venueFields(first.startTime, first.timeZone);
+  const closedAt = venueFields(first.endTime, first.timeZone);
+  const [when, setWhen] = useState({ date: openedAt.date, start: openedAt.time, end: closedAt.time });
+  const [moving, setMoving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionWhen, setSessionWhen] = useState(when);
+  const locked = saving || loadingCourts || moving || deleting;
   const held = new Set(courts.map((court) => court.courtId));
   const removed = courts.filter((court) => !checked.has(court.courtId));
   const added = [...checked].filter((id) => !held.has(id));
@@ -146,11 +174,61 @@ function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged
         await addHoldCourts(first.venueSlug, first.groupId, first.startTime, first.endTime, added);
       }
       setConfirmPaid(false);
+      refreshUnpaidHolds();
       onChanged();
-    } catch {
-      setError("This week could not be updated.");
+    } catch (reason) {
+      setError(requestMessage(reason, "This week could not be updated."));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveTime(bookingId?: string, fields = when) {
+    const court = bookingId ? courts.find((item) => item.bookingId === bookingId) : first;
+    if (!court) return;
+    setMoving(true);
+    setError(null);
+    try {
+      await moveCourtSessions(first.groupId, {
+        startTime: court.startTime,
+        bookingId,
+        date: fields.date,
+        start: fields.start,
+        end: fields.end,
+      });
+      refreshUnpaidHolds();
+      onChanged();
+    } catch (reason) {
+      setError(requestMessage(reason, "That date and time is not available."));
+    } finally {
+      setMoving(false);
+    }
+  }
+
+  async function removeWeek() {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      const pending = courts.filter((court) => court.status === "pending");
+      const paid = courts.filter((court) => court.status === "confirmed");
+      if (pending.length > 0) {
+        await deleteUnpaidHold(first.groupId, pending.map((court) => court.bookingId));
+      } else if (first.repeatHold) {
+        await setCourtRepeat(first.groupId, false);
+      }
+      for (const court of paid) {
+        await cancelBooking(court.bookingId);
+      }
+      refreshUnpaidHolds();
+      onChanged();
+    } catch (reason) {
+      setError(requestMessage(reason, "This week could not be deleted."));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -167,7 +245,7 @@ function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged
                   type="checkbox"
                   className="h-4 w-4 accent-line"
                   checked={checked.has(court.id)}
-                  disabled={saving || loadingCourts}
+                  disabled={locked}
                   onChange={() => {
                     setConfirmPaid(false);
                     setChecked((current) => {
@@ -181,19 +259,67 @@ function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged
                 <span className="min-w-0">{court.name}</span>
                 <span className="ml-auto text-xs text-mist/60">{row ? (row.status === "confirmed" ? "Paid" : "Held") : "Add"}</span>
               </label>
+              {row ? (
+                <button
+                  type="button"
+                  className="mt-1 text-xs font-semibold text-line hover:underline disabled:opacity-60"
+                  disabled={locked}
+                  onClick={() => {
+                    const clock = venueFields(row.startTime, row.timeZone);
+                    const finish = venueFields(row.endTime, row.timeZone);
+                    setSessionId(row.bookingId);
+                    setSessionWhen({ date: clock.date, start: clock.time, end: finish.time });
+                    setError(null);
+                  }}
+                >
+                  Edit time
+                </button>
+              ) : null}
             </li>
           );
         })}
       </ul>
       <p className="mt-3 text-sm text-mist/75">Untick a court to drop it. The total follows the courts you leave ticked.</p>
       {confirmPaid ? <p className="mt-2 text-sm text-mist" role="status">Paid courts you untick are cancelled under the cancellation policy.</p> : null}
-      {error ? <p className="mt-2 text-sm text-mist" role="alert">{error}</p> : null}
+      {confirmDelete ? <p className="mt-2 text-sm text-mist" role="status">Delete this week? Unpaid courts are released. A paid court is cancelled under the cancellation policy. Keep weeks ahead is turned off so this week is not added back.</p> : null}
+      {error ? <p className="mt-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-100" role="alert">{error}</p> : null}
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <label className="text-sm text-mist">
+          <span className="mb-1 block text-mist/70">Date</span>
+          <PickerInput type="date" required value={when.date} disabled={locked} onChange={(event) => { setError(null); setWhen({ ...when, date: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
+        </label>
+        <label className="text-sm text-mist">
+          <span className="mb-1 block text-mist/70">Start</span>
+          <PickerInput type="time" required value={when.start} disabled={locked} onChange={(event) => { setError(null); setWhen({ ...when, start: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
+        </label>
+        <label className="text-sm text-mist">
+          <span className="mb-1 block text-mist/70">End</span>
+          <PickerInput type="time" required value={when.end} disabled={locked} onChange={(event) => { setError(null); setWhen({ ...when, end: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
+        </label>
+      </div>
+      <p className="mt-2 text-sm text-mist/75">Save this time for every court in the week. A court that is already booked or closed stays where it is, and the reason is shown here.</p>
+      {sessionId ? (
+        <div className="mt-3 rounded-xl border border-white/10 p-3">
+          <p className="text-sm font-medium text-white">Edit {courts.find((court) => court.bookingId === sessionId)?.courtName}</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            <PickerInput type="date" required aria-label="Session date" value={sessionWhen.date} disabled={locked} onChange={(event) => { setError(null); setSessionWhen({ ...sessionWhen, date: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
+            <PickerInput type="time" required aria-label="Session start" value={sessionWhen.start} disabled={locked} onChange={(event) => { setError(null); setSessionWhen({ ...sessionWhen, start: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
+            <PickerInput type="time" required aria-label="Session end" value={sessionWhen.end} disabled={locked} onChange={(event) => { setError(null); setSessionWhen({ ...sessionWhen, end: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
+          </div>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <Button type="button" className="w-full sm:w-auto" loading={moving} disabled={locked && !moving} onClick={() => void saveTime(sessionId, sessionWhen)}>Save this court</Button>
+            <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked} onClick={() => setSessionId(null)}>Close</Button>
+          </div>
+        </div>
+      ) : null}
       <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <Button type="button" className="w-full sm:w-auto" loading={moving} disabled={locked && !moving} onClick={() => void saveTime()}>Save this time</Button>
+        <Button type="button" variant="danger" className="w-full sm:w-auto" loading={deleting} disabled={locked && !deleting} onClick={() => void removeWeek()}>{confirmDelete ? "Confirm delete" : "Delete this week"}</Button>
         {choices === null ? (
-          <Button type="button" variant="secondary" className="w-full sm:w-auto" loading={loadingCourts} disabled={saving} onClick={() => void loadCourts()}>Add another court</Button>
+          <Button type="button" variant="secondary" className="w-full sm:w-auto" loading={loadingCourts} disabled={locked && !loadingCourts} onClick={() => void loadCourts()}>Add another court</Button>
         ) : null}
         {dirty ? (
-          <Button type="button" className="w-full sm:w-auto" loading={saving} onClick={() => void save()}>{confirmPaid ? "Confirm update" : "Update this week"}</Button>
+          <Button type="button" className="w-full sm:w-auto" loading={saving} disabled={locked && !saving} onClick={() => void save()}>{confirmPaid ? "Confirm update" : "Update this week"}</Button>
         ) : pending.length > 0 ? (
           <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pending.map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
             <CreditCard className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -220,6 +346,27 @@ function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: 
   const note = ordered.find((week) => week[0].repeatNote)?.[0].repeatNote;
   const [repeatBusy, setRepeatBusy] = useState(false);
   const [repeatError, setRepeatError] = useState<string | null>(null);
+  const [seriesBusy, setSeriesBusy] = useState(false);
+  const [confirmSeries, setConfirmSeries] = useState(false);
+  const [seriesError, setSeriesError] = useState<string | null>(null);
+
+  async function removeSeries() {
+    if (!confirmSeries) {
+      setConfirmSeries(true);
+      return;
+    }
+    setSeriesBusy(true);
+    setSeriesError(null);
+    try {
+      await deleteSeries(sample.groupId);
+      refreshUnpaidHolds();
+      onChanged();
+    } catch (reason) {
+      setSeriesError(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "This booking could not be deleted." : "This booking could not be deleted.");
+    } finally {
+      setSeriesBusy(false);
+    }
+  }
 
   async function onRepeat(enabled: boolean) {
     setRepeatBusy(true);
@@ -249,15 +396,22 @@ function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: 
             </span>
           </span>
         </button>
-        {nextUnpaid ? (
-          <Link to={`/${sample.venueSlug}/book/group/${sample.groupId}?bookings=${nextUnpaid.filter((court) => court.status === "pending").map((court) => court.bookingId).join(",")}`} className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
-            <CreditCard className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Pay next week
-          </Link>
-        ) : (
-          <p className="text-sm font-semibold text-line sm:pt-1">All weeks are paid.</p>
-        )}
+        <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
+          {nextUnpaid ? (
+            <Link to={`/${sample.venueSlug}/book/group/${sample.groupId}?bookings=${nextUnpaid.filter((court) => court.status === "pending").map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
+              <CreditCard className="h-4 w-4 shrink-0" aria-hidden="true" />
+              Pay next week
+            </Link>
+          ) : (
+            <p className="text-sm font-semibold text-line sm:pt-1">All weeks are paid.</p>
+          )}
+          <Button type="button" variant="danger" className="w-full sm:w-auto" loading={seriesBusy} disabled={seriesBusy || repeatBusy} onClick={() => void removeSeries()}>
+            {confirmSeries ? "Confirm delete" : "Delete all weeks"}
+          </Button>
+        </div>
       </div>
+      {confirmSeries && !seriesBusy ? <p className="mt-3 text-sm text-mist" role="status">Delete every week in this booking? Unpaid courts are released. Paid courts are cancelled under the cancellation policy. Keep weeks ahead is turned off, so no week is added back.</p> : null}
+      {seriesError ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-100" role="alert">{seriesError}</p> : null}
       {open ? (
         <div className="mt-4">
           <label className="flex items-start gap-2 text-sm text-mist">

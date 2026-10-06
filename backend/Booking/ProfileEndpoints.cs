@@ -10,7 +10,11 @@ public static class ProfileEndpoints
         var me = app.MapGroup("/api/me").RequireAuthorization();
         me.MapGet("/bookings", BookingsAsync);
         me.MapGet("/court-weeks", CourtWeeksAsync);
+        me.MapGet("/unpaid-holds", UnpaidHoldsAsync);
         me.MapPut("/holds/{groupId:guid}/repeat", SetRepeatAsync);
+        me.MapPost("/holds/{groupId:guid}/delete-unpaid", DeleteUnpaidAsync);
+        me.MapPost("/holds/{groupId:guid}/delete-series", DeleteSeriesAsync);
+        me.MapPost("/holds/{groupId:guid}/move", MoveHoldAsync);
         me.MapGet("/friend-spots", FriendSpotsAsync);
         me.MapGet("/bookings/{id:guid}", BookingAsync);
         me.MapPost("/bookings/{id:guid}/cancel", CancelAsync);
@@ -114,6 +118,125 @@ public static class ProfileEndpoints
                 repeatNote = row.RepeatNote,
             }),
         });
+    }
+
+    private static async Task<IResult> UnpaidHoldsAsync(
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var userId = await RequireUserAsync(http, authRepository, cancellationToken);
+        if (userId is null)
+        {
+            return SignInAgain();
+        }
+
+        var rows = await repository.ListUnpaidHoldsAsync(userId.Value, cancellationToken);
+        return Results.Ok(new
+        {
+            items = rows.Select(row => new
+            {
+                groupId = row.GroupId,
+                venueName = row.VenueName,
+                venueSlug = row.VenueSlug,
+                timeZone = row.TimeZone,
+                startTime = VenueClock.AsUtc(row.StartTime),
+                courtCount = row.CourtCount,
+            }),
+        });
+    }
+
+    private static async Task<IResult> DeleteUnpaidAsync(
+        Guid groupId,
+        DeleteBookingsBody? body,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var userId = await RequireUserAsync(http, authRepository, cancellationToken);
+        if (userId is null)
+        {
+            return SignInAgain();
+        }
+
+        var error = await repository.DeleteUnpaidBookingsAsync(userId.Value, groupId, body?.BookingIds, cancellationToken);
+        if (error is not null)
+        {
+            return Form(error, StatusCodes.Status409Conflict);
+        }
+
+        return Results.Ok(new { deleted = true });
+    }
+
+    private static async Task<IResult> DeleteSeriesAsync(
+        Guid groupId,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        BookingPayments payments,
+        CancellationToken cancellationToken)
+    {
+        var userId = await RequireUserAsync(http, authRepository, cancellationToken);
+        if (userId is null)
+        {
+            return SignInAgain();
+        }
+
+        var unpaid = await repository.DeleteUnpaidBookingsAsync(userId.Value, groupId, null, cancellationToken);
+        if (unpaid is not null)
+        {
+            return Form(unpaid, StatusCodes.Status409Conflict);
+        }
+
+        var confirmed = await repository.ListFutureConfirmedAsync(userId.Value, groupId, cancellationToken);
+        foreach (var bookingId in confirmed)
+        {
+            var result = await payments.CancelAsync(userId.Value, bookingId, cancellationToken);
+            if (result.Error is not null)
+            {
+                return Form(result.Error, result.StatusCode);
+            }
+        }
+
+        return Results.Ok(new { deleted = true });
+    }
+
+    private static async Task<IResult> MoveHoldAsync(
+        Guid groupId,
+        MoveSessionsBody body,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var userId = await RequireUserAsync(http, authRepository, cancellationToken);
+        if (userId is null)
+        {
+            return SignInAgain();
+        }
+
+        if (!DateTimeOffset.TryParse(body.StartTime, out var current))
+        {
+            return Form("That session was not found.", StatusCodes.Status400BadRequest);
+        }
+
+        var error = await repository.MoveSessionsAsync(
+            userId.Value,
+            groupId,
+            current.UtcDateTime,
+            body.BookingId,
+            body.Date,
+            body.Start,
+            body.End,
+            cancellationToken);
+        if (error is not null)
+        {
+            return Form(error, StatusCodes.Status409Conflict);
+        }
+
+        return Results.Ok(new { moved = true });
     }
 
     private static async Task<IResult> SetRepeatAsync(
@@ -426,6 +549,14 @@ public static class ProfileEndpoints
 
     private sealed record RenameFriendBody(string? Name);
     private sealed record RepeatHoldBody(bool Enabled);
+    private sealed record DeleteBookingsBody(Guid[]? BookingIds);
+    private sealed record MoveSessionsBody(string? StartTime, Guid? BookingId, string? Date, string? Start, string? End);
+
+    private static IResult Form(string message, int status) =>
+        Results.Json(new
+        {
+            errors = new Dictionary<string, string[]> { ["form"] = [message] },
+        }, statusCode: status);
 
     private static IResult SignInAgain() =>
         Results.Json(new

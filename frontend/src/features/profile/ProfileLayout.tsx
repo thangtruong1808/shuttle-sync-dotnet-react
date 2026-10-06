@@ -8,6 +8,7 @@ import { useSelector } from "react-redux";
 import type { RootState } from "../../app/store";
 import { initials } from "../../components/format";
 import { Skeleton, Spinner } from "../../components/ui";
+import { PaymentNotice } from "./PaymentReminder";
 
 const sections = [
   { to: "/profile", label: "Overview", end: true, icon: LayoutDashboard },
@@ -139,6 +140,7 @@ export default function ProfileLayout() {
         </nav>
       </aside>
       <section className="min-w-0">
+        <PaymentNotice />
         <Outlet />
       </section>
     </div>

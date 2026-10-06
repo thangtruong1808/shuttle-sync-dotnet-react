@@ -1174,6 +1174,133 @@ public sealed class PaymentRepository(IConfiguration configuration)
         await tx.CommitAsync(cancellationToken);
     }
 
+    public async Task AbandonCancelledCheckoutAsync(Guid venueId, Guid userId, Guid groupId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        var kept = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT COUNT(*)
+            FROM Bookings b
+            WHERE b.GroupId = @GroupId AND b.VenueId = @VenueId AND b.UserId = @UserId AND b.IsDeleted = 0
+              AND (
+                  b.Status = 'confirmed'
+                  OR EXISTS (
+                      SELECT 1 FROM Payments p
+                      WHERE p.BookingId = b.Id AND p.Status = 'succeeded'
+                  )
+              )
+            """,
+            new { GroupId = groupId, VenueId = venueId, UserId = userId },
+            tx,
+            cancellationToken: cancellationToken));
+        if (kept > 0)
+        {
+            var payGroups = (await connection.QueryAsync<Guid>(new CommandDefinition(
+                """
+                SELECT DISTINCT b.PayGroupId
+                FROM Bookings b
+                JOIN Payments p ON p.BookingId = b.Id AND p.Status = 'pending'
+                WHERE b.GroupId = @GroupId AND b.VenueId = @VenueId AND b.UserId = @UserId
+                  AND b.Status = 'pending' AND b.PayGroupId IS NOT NULL AND b.IsDeleted = 0
+                """,
+                new { GroupId = groupId, VenueId = venueId, UserId = userId },
+                tx,
+                cancellationToken: cancellationToken))).ToArray();
+            foreach (var payGroupId in payGroups)
+            {
+                await ReleasePayGroupAttemptAsync(connection, tx, payGroupId, "cancelled", null, "The payment was cancelled before Stripe confirmed it.", cancellationToken, expireWithin24Hours: true);
+            }
+
+            await tx.CommitAsync(cancellationToken);
+            return;
+        }
+
+        var ids = (await connection.QueryAsync<Guid>(new CommandDefinition(
+            """
+            SELECT Id
+            FROM Bookings
+            WHERE GroupId = @GroupId AND VenueId = @VenueId AND UserId = @UserId AND IsDeleted = 0 AND Status = 'pending'
+            FOR UPDATE
+            """,
+            new { GroupId = groupId, VenueId = venueId, UserId = userId },
+            tx,
+            cancellationToken: cancellationToken))).ToArray();
+        if (ids.Length == 0)
+        {
+            await tx.CommitAsync(cancellationToken);
+            return;
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE Users u
+            JOIN (
+                SELECT UserId, SUM(Points - PointsRestored) AS Points
+                FROM RewardPointRedemptions
+                WHERE BookingId IN @Ids AND Points > PointsRestored
+                GROUP BY UserId
+            ) spent ON spent.UserId = u.Id
+            SET u.RewardPoints = u.RewardPoints + spent.Points, u.UpdatedAt = UTC_TIMESTAMP(6)
+            """,
+            new { Ids = ids },
+            tx,
+            cancellationToken: cancellationToken));
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM RewardPointRedemptions WHERE BookingId IN @Ids",
+            new { Ids = ids },
+            tx,
+            cancellationToken: cancellationToken));
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM PromotionRedemptions WHERE BookingId IN @Ids",
+            new { Ids = ids },
+            tx,
+            cancellationToken: cancellationToken));
+        var promoIds = (await connection.QueryAsync<Guid>(new CommandDefinition(
+            "SELECT DISTINCT PromotionCodeId FROM Bookings WHERE Id IN @Ids AND PromotionCodeId IS NOT NULL",
+            new { Ids = ids },
+            tx,
+            cancellationToken: cancellationToken))).ToArray();
+        foreach (var promoId in promoIds)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE PromotionCodes SET UsedCount = GREATEST(UsedCount - 1, 0), UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                new { Id = promoId },
+                tx,
+                cancellationToken: cancellationToken));
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE Bookings
+            SET Status = 'expired',
+                HoldExpiresAt = UTC_TIMESTAMP(6),
+                PayGroupId = NULL,
+                PromotionCodeId = NULL,
+                PointsRedeemed = 0,
+                PointsValue = 0,
+                DiscountAmount = 0,
+                TotalAmount = SubtotalAmount,
+                UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE Id IN @Ids AND Status = 'pending'
+            """,
+            new { Ids = ids },
+            tx,
+            cancellationToken: cancellationToken));
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE Payments
+            SET Status = 'cancelled',
+                FailureMessage = 'The payment was cancelled before Stripe confirmed it.',
+                UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE BookingId IN @Ids AND Status = 'pending'
+            """,
+            new { Ids = ids },
+            tx,
+            cancellationToken: cancellationToken));
+        await tx.CommitAsync(cancellationToken);
+    }
+
     private static async Task ReleasePayGroupAttemptAsync(
         MySqlConnection connection,
         MySqlTransaction tx,

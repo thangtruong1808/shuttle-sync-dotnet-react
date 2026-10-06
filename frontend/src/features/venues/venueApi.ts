@@ -26,6 +26,7 @@ export type Venue = {
 
 export type ScheduleBooking = {
   id: string;
+  status?: string;
   startTime: string;
   endTime: string;
 };
@@ -308,6 +309,14 @@ export function payNowHold(slug: string, courtIds: string[], date: string, start
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ courtIds, date, start, end, weeks, repeat, groupId: groupId ?? null }),
   });
+}
+
+export async function abandonCourtCheckout(slug: string, groupId: string): Promise<void> {
+  const response = await apiFetch(`/api/venues/${encodeURIComponent(slug)}/holds/${groupId}/checkout-cancel`, { method: "POST", cache: "no-store" });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { errors?: FieldErrors } | null;
+    throw new AuthRequestError(body?.errors ?? { form: ["The cancelled payment could not be released."] });
+  }
 }
 
 export function courtHold(slug: string, groupId: string): Promise<{ currency: string; pointsPerDollar: number; lateCancelFeePercent: number; timeZone: string; sessions: CourtHoldSession[]; released?: boolean }> {

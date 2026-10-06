@@ -207,8 +207,8 @@ export default function HomePage() {
                       {bookings.length === 0 ? null : (
                         <ul className="mt-3 grid grid-cols-2 gap-2">
                           {bookings.map((booking) => (
-                            <li key={booking.id} className="min-w-0 rounded-2xl border border-white/15 px-3 py-2">
-                              <BookedTime start={booking.startTime} end={booking.endTime} timeZone={availability.venue.timeZone} />
+                            <li key={booking.id} className={`min-w-0 rounded-2xl px-3 py-2 ${booking.status === "pending" ? "border border-amber-300/40 bg-amber-400/10" : "border border-white/15"}`}>
+                              <BookedTime start={booking.startTime} end={booking.endTime} timeZone={availability.venue.timeZone} unpaid={booking.status === "pending"} />
                               <SessionClock start={booking.startTime} end={booking.endTime} />
                             </li>
                           ))}

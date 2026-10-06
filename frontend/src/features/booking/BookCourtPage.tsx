@@ -1,19 +1,19 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, CircleAlert } from "lucide-react";
 import { useSelector } from "react-redux";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { RootState } from "../../app/store";
-import { ErrorState, Money, venueToday } from "../../components/format";
+import { ErrorState, Money, formatVenueDateTime, venueToday } from "../../components/format";
 import { useVenues } from "../../components/layout/SiteLayout";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import { AuthRequestError } from "../auth/authApi";
-import { courtPrice, openCourtHold, payNowHold, rememberVenueSlug, venueAvailability, type AvailableCourt } from "../venues/venueApi";
+import { courtPrice, openCourtHold, payNowHold, rememberVenueSlug, venueAvailability, type AvailableCourt, type ScheduleClosure } from "../venues/venueApi";
 
-function startsWithin24Hours(date: string, time: string, timeZone: string) {
-  if (!date || !time) return false;
+function venueInstant(date: string, time: string, timeZone: string) {
+  if (!date || !time) return null;
   const [year, month, day] = date.split("-").map(Number);
   const [hour, minute] = time.split(":").map(Number);
-  if ([year, month, day, hour, minute].some((part) => Number.isNaN(part))) return false;
+  if ([year, month, day, hour, minute].some((part) => Number.isNaN(part))) return null;
   let utc = Date.UTC(year, month - 1, day, hour, minute);
   const target = utc;
   for (let pass = 0; pass < 3; pass += 1) {
@@ -30,8 +30,54 @@ function startsWithin24Hours(date: string, time: string, timeZone: string) {
     const shown = Date.UTC(pick("year"), pick("month") - 1, pick("day"), pick("hour") % 24, pick("minute"));
     utc += target - shown;
   }
+  return utc;
+}
+
+function startsWithin24Hours(date: string, time: string, timeZone: string) {
+  const utc = venueInstant(date, time, timeZone);
+  if (utc === null) return false;
   const untilStart = utc - Date.now();
   return untilStart > 0 && untilStart <= 24 * 60 * 60 * 1000;
+}
+
+function overlaps(start: number, end: number, otherStart: string, otherEnd: string) {
+  const from = new Date(otherStart).getTime();
+  const to = new Date(otherEnd).getTime();
+  return Number.isFinite(from) && Number.isFinite(to) && start < to && end > from;
+}
+
+function unavailableReason(courts: AvailableCourt[], closures: ScheduleClosure[], courtIds: string[], date: string, start: string, end: string, timeZone: string) {
+  const startMs = venueInstant(date, start, timeZone);
+  const endMs = venueInstant(date, end, timeZone);
+  if (startMs === null || endMs === null) return null;
+  if (endMs <= startMs) return "The end time needs to be later than the start time.";
+  if (endMs - startMs < 30 * 60 * 1000) return "Choose at least 30 minutes between the start and the end.";
+  if (startMs <= Date.now()) return "That time has already started. Choose a later time.";
+  const chosen = courts.filter((court) => courtIds.includes(court.id));
+  const booked = chosen.flatMap((court) => court.bookings.filter((booking) => overlaps(startMs, endMs, booking.startTime, booking.endTime)).map((booking) => ({ court, booking })));
+  if (booked.length > 0) {
+    const first = booked[0];
+    const from = formatVenueDateTime(first.booking.startTime, timeZone);
+    const to = formatVenueDateTime(first.booking.endTime, timeZone);
+    const extra = booked.length > 1 ? ` ${booked.length - 1} other selected ${booked.length === 2 ? "court is" : "courts are"} busy then too.` : "";
+    if (first.booking.status === "pending") {
+      return `${first.court.courtName} is already in a booking from ${from} to ${to}, and the payment is not finished.${extra} Complete the payment or delete it in My bookings.`;
+    }
+    return `${first.court.courtName} is already booked from ${from} to ${to}.${extra} Choose another time or another court.`;
+  }
+  const closed = closures.find((closure) => (closure.courtId === null || courtIds.includes(closure.courtId)) && overlaps(startMs, endMs, closure.startTime, closure.endTime));
+  if (closed) {
+    const name = closed.courtId ? chosen.find((court) => court.id === closed.courtId)?.courtName ?? "That court" : "This venue";
+    return `${name} is closed from ${formatVenueDateTime(closed.startTime, timeZone)} to ${formatVenueDateTime(closed.endTime, timeZone)}. Choose another time.`;
+  }
+  return null;
+}
+
+function shownHoldError(message: string | undefined) {
+  if (!message || message === "The request could not be completed.") {
+    return "That date and time is not available for the courts you chose. It may already be booked or closed. Choose another time.";
+  }
+  return message;
 }
 
 function sessionAmount(start: string, end: string, rate: number) {
@@ -53,6 +99,7 @@ export default function BookCourtPage() {
   const [date, setDate] = useState("");
   const [form, setForm] = useState({ courtIds: [] as string[], start: "", end: "", weeks: 1, repeat: false });
   const [courts, setCourts] = useState<AvailableCourt[] | null>(null);
+  const [closures, setClosures] = useState<ScheduleClosure[]>([]);
   const [loading, setLoading] = useState(false);
   const [quoted, setQuoted] = useState<number | null>(null);
   const [scheduledRate, setScheduledRate] = useState(false);
@@ -78,6 +125,7 @@ export default function BookCourtPage() {
       .then((next) => {
         if (controller.signal.aborted) return;
         setCourts(next.courts);
+        setClosures(next.closures ?? []);
         setForm((current) => ({
           ...current,
           courtIds: current.courtIds.filter((id) => next.courts.some((court) => court.id === id)),
@@ -130,16 +178,15 @@ export default function BookCourtPage() {
   async function onContinue(event: FormEvent) {
     event.preventDefault();
     setFormError(null);
+    const blocked = unavailableReason(courts ?? [], closures, form.courtIds, date, form.start, form.end, venue?.timeZone ?? "Australia/Melbourne");
+    if (blocked) {
+      setFormError(blocked);
+      return;
+    }
     setBusy(true);
     try {
       if (payAtRegistration) {
-        let heldGroupId: string | undefined;
-        if (form.weeks > 1) {
-          const opened = await openCourtHold(slug, form.courtIds, date, form.start, form.end, form.weeks, form.repeat);
-          heldGroupId = opened.groupId;
-          sessionStorage.setItem("shuttle-sync-held-note", "The other weeks are held. Pay each one from My bookings before 24 hours of that session.");
-        }
-        const result = await payNowHold(slug, form.courtIds, date, form.start, form.end, form.repeat, form.weeks, heldGroupId);
+        const result = await payNowHold(slug, form.courtIds, date, form.start, form.end, form.repeat, form.weeks);
         sessionStorage.setItem("shuttle-sync-checkout", result.bookingId);
         if (result.checkoutUrl) {
           window.location.assign(result.checkoutUrl);
@@ -152,7 +199,7 @@ export default function BookCourtPage() {
       navigate(`/${slug}/book/group/${opened.groupId}`);
     } catch (reason) {
       sessionStorage.removeItem("shuttle-sync-held-note");
-      setFormError(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "This slot is not available." : "This slot is not available.");
+      setFormError(shownHoldError(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] : undefined));
     } finally {
       setBusy(false);
     }
@@ -185,10 +232,13 @@ export default function BookCourtPage() {
                         className="accent-line"
                         checked={checked}
                         disabled={busy || loading}
-                        onChange={() => setForm({
-                          ...form,
-                          courtIds: checked ? form.courtIds.filter((id) => id !== court.id) : [...form.courtIds, court.id],
-                        })}
+                        onChange={() => {
+                          setFormError(null);
+                          setForm({
+                            ...form,
+                            courtIds: checked ? form.courtIds.filter((id) => id !== court.id) : [...form.courtIds, court.id],
+                          });
+                        }}
                       />
                       <span className="truncate">{court.courtName}</span>
                     </label>
@@ -198,15 +248,15 @@ export default function BookCourtPage() {
             </fieldset>
             <label className="text-sm">
               <span className="mb-1 flex items-center gap-2 text-mist/70">Date {loading ? <Spinner className="h-3.5 w-3.5" /> : null}</span>
-              <PickerInput type="date" required value={date} disabled={busy || loading} onChange={(event) => setDate(event.target.value)} iconClassName="text-[#102117]" className="w-full rounded-xl border border-[#102117]/15 bg-[#f4fbf6] px-3 py-2.5 text-[#102117] [color-scheme:light]" />
+              <PickerInput type="date" required value={date} disabled={busy || loading} onChange={(event) => { setFormError(null); setDate(event.target.value); }} iconClassName="text-[#102117]" className="w-full rounded-xl border border-[#102117]/15 bg-[#f4fbf6] px-3 py-2.5 text-[#102117] [color-scheme:light]" />
             </label>
             <label className="text-sm">
               <span className="mb-1 block text-mist/70">Start</span>
-              <PickerInput type="time" required value={form.start} disabled={busy} onChange={(event) => setForm({ ...form, start: event.target.value })} iconClassName="text-[#102117]" className="w-full rounded-xl border border-[#102117]/15 bg-[#f4fbf6] px-3 py-2.5 text-[#102117] [color-scheme:light]" />
+              <PickerInput type="time" required value={form.start} disabled={busy} onChange={(event) => { setFormError(null); setForm({ ...form, start: event.target.value }); }} iconClassName="text-[#102117]" className="w-full rounded-xl border border-[#102117]/15 bg-[#f4fbf6] px-3 py-2.5 text-[#102117] [color-scheme:light]" />
             </label>
             <label className="text-sm">
               <span className="mb-1 block text-mist/70">End</span>
-              <PickerInput type="time" required value={form.end} disabled={busy} onChange={(event) => setForm({ ...form, end: event.target.value })} iconClassName="text-[#102117]" className="w-full rounded-xl border border-[#102117]/15 bg-[#f4fbf6] px-3 py-2.5 text-[#102117] [color-scheme:light]" />
+              <PickerInput type="time" required value={form.end} disabled={busy} onChange={(event) => { setFormError(null); setForm({ ...form, end: event.target.value }); }} iconClassName="text-[#102117]" className="w-full rounded-xl border border-[#102117]/15 bg-[#f4fbf6] px-3 py-2.5 text-[#102117] [color-scheme:light]" />
             </label>
             <label className="text-sm">
               <span className="mb-1 block text-mist/70">Weeks</span>
@@ -221,6 +271,12 @@ export default function BookCourtPage() {
                 ))}
               </select>
             </label>
+            {formError ? (
+              <p className="flex items-start gap-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-100 sm:col-span-2 xl:col-span-4" role="alert">
+                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-200" aria-hidden="true" />
+                <span>{formError}</span>
+              </p>
+            ) : null}
             <label className="flex items-start gap-2 text-sm text-mist sm:col-span-2 xl:col-span-4">
               <input
                 type="checkbox"
@@ -249,7 +305,6 @@ export default function BookCourtPage() {
               </Button>
             </div>
             {error ? <div className="sm:col-span-2 xl:col-span-4"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div> : null}
-            {formError ? <p className="text-sm text-mist sm:col-span-2 xl:col-span-4" role="alert">{formError}</p> : null}
           </form>
         )}
       </div>

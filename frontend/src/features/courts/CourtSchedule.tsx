@@ -147,10 +147,10 @@ export function upcomingBookings<T extends { startTime: string; endTime: string 
     .sort((left, right) => new Date(left.startTime).getTime() - new Date(right.startTime).getTime());
 }
 
-export function BookedTime({ start, end, timeZone }: { start: string; end: string; timeZone: string }) {
+export function BookedTime({ start, end, timeZone, unpaid = false }: { start: string; end: string; timeZone: string; unpaid?: boolean }) {
   return (
-    <p className="text-sm text-white">
-      <span className="font-semibold">Booked</span>
+    <p className={`text-sm ${unpaid ? "text-amber-100" : "text-white"}`}>
+      <span className={`font-semibold ${unpaid ? "text-amber-200" : ""}`}>{unpaid ? "Unpaid" : "Booked"}</span>
       <span className="text-mist/45"> · </span>
       <span className="whitespace-nowrap">{formatVenueRange(start, end, timeZone)}</span>
     </p>
@@ -242,10 +242,11 @@ function bookingTip(booking: ScheduleBooking, timeZone: string, now: number): st
   const range = formatVenueRange(booking.startTime, booking.endTime, timeZone);
   const startMs = new Date(booking.startTime).getTime();
   const endMs = new Date(booking.endTime).getTime();
+  const label = booking.status === "pending" ? "Unpaid, payment not finished" : "Booked";
   if (now < startMs) {
-    return `Booked, ${range}. Starts in ${clock(startMs - now)}.`;
+    return `${label}, ${range}. Starts in ${clock(startMs - now)}.`;
   }
-  return `Booked, ${range}. Ends in ${clock(endMs - now)}.`;
+  return `${label}, ${range}. Ends in ${clock(endMs - now)}.`;
 }
 
 function clockParts(value: number, timeZone: string) {
@@ -398,7 +399,7 @@ export function DayChart({ schedule, now, compact = false, collapsible = false }
                       <button
                         key={item.booking.id}
                         type="button"
-                        className="group absolute inset-y-0 border border-white/30 bg-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line"
+                        className={`group absolute inset-y-0 border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${item.booking.status === "pending" ? "border-amber-100/40 bg-amber-400 focus-visible:outline-amber-200" : "border-white/30 bg-line focus-visible:outline-line"}`}
                         style={{ left: `${item.left}%`, width: `${item.width}%` }}
                         aria-label={tip}
                       >

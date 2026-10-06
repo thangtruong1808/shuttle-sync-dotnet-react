@@ -5,6 +5,7 @@ import { CalendarDays, ChevronDown, Gift, House, LayoutDashboard, LogIn, Menu, U
 import type { RootState } from "../../app/store";
 import { initials } from "../format";
 import { Skeleton } from "../ui";
+import { PaymentBell } from "../../features/profile/PaymentReminder";
 import { rememberVenueSlug, venueForPage } from "../../features/venues/venueApi";
 import { useVenues } from "./SiteLayout";
 
@@ -127,6 +128,8 @@ export function Navbar() {
               <NavLink to="/register" className="inline-flex items-center gap-2 rounded-xl bg-line px-3 py-2 text-sm font-semibold text-ink hover:bg-lime-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line"><UserPlus className="h-4 w-4" aria-hidden="true" />Sign up</NavLink>
             </div>
           ) : (
+            <>
+            <PaymentBell />
             <NavLink
               to="/profile"
               title={`${user.displayName || user.email}\n${user.email}`}
@@ -139,6 +142,7 @@ export function Navbar() {
                 <span className="mt-1 block text-mist/70">{user.email}</span>
               </span>
             </NavLink>
+            </>
           )}
           <button
             type="button"
@@ -178,6 +182,7 @@ export function Navbar() {
             {user && (user.role === "staff" || user.role === "admin") ? (
               <NavLink to="/dashboard" className={linkClass}><LayoutDashboard className="h-4 w-4" aria-hidden="true" />Dashboard</NavLink>
             ) : null}
+            {status === "authenticated" ? <PaymentBell /> : null}
             {status === "unknown" ? (
               <div aria-busy="true">
                 <span className="sr-only">Checking your session</span>

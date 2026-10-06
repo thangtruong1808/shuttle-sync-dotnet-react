@@ -108,6 +108,48 @@ export function setCourtRepeat(groupId: string, enabled: boolean): Promise<{ rep
   });
 }
 
+export type UnpaidHold = {
+  groupId: string;
+  venueName: string;
+  venueSlug: string;
+  timeZone: string;
+  startTime: string;
+  courtCount: number;
+};
+
+export const unpaidHoldListeners = new Set<() => void>();
+
+export function refreshUnpaidHolds() {
+  unpaidHoldListeners.forEach((listener) => listener());
+}
+
+export function unpaidHolds(): Promise<{ items: UnpaidHold[] }> {
+  return readPage("/api/me/unpaid-holds");
+}
+
+export function deleteSeries(groupId: string): Promise<{ deleted: boolean }> {
+  return readPage(`/api/me/holds/${groupId}/delete-series`, { method: "POST" });
+}
+
+export function deleteUnpaidHold(groupId: string, bookingIds?: string[]): Promise<{ deleted: boolean }> {
+  return readPage(`/api/me/holds/${groupId}/delete-unpaid`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bookingIds: bookingIds ?? null }),
+  });
+}
+
+export function moveCourtSessions(
+  groupId: string,
+  body: { startTime: string; bookingId?: string; date: string; start: string; end: string },
+): Promise<{ moved: boolean }> {
+  return readPage(`/api/me/holds/${groupId}/move`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function myBookings(status: string, page: number): Promise<Page<BookingRow>> {
   const params = new URLSearchParams({ status, page: String(page) });
   return readPage(`/api/me/bookings?${params}`);

@@ -128,19 +128,42 @@ public sealed class BookingPayments(
         return CheckoutResponse.From(prepared, session.Url);
     }
 
+    private static readonly SemaphoreSlim ReleaseGate = new(1, 1);
+
     public async Task ReleaseExpiredCourtHoldsAsync(CancellationToken cancellationToken)
     {
-        await CancelIntentsAsync(await payments.ReleaseExpiredHoldsAsync(cancellationToken), cancellationToken);
+        // Concurrent sweeps lock the same pending rows in different orders and deadlock.
+        if (!await ReleaseGate.WaitAsync(0, cancellationToken))
+        {
+            return;
+        }
+
         try
         {
-            foreach (var added in await bookings.ExtendRepeatHoldsAsync(cancellationToken))
+            try
             {
-                await SnapshotAsync(added.VenueId, added.SessionId, added.UserId, cancellationToken);
+                await CancelIntentsAsync(await payments.ReleaseExpiredHoldsAsync(cancellationToken), cancellationToken);
+            }
+            catch (MySqlConnector.MySqlException exception) when (exception.Number is 1213 or 1205)
+            {
+                return;
+            }
+
+            try
+            {
+                foreach (var added in await bookings.ExtendRepeatHoldsAsync(cancellationToken))
+                {
+                    await SnapshotAsync(added.VenueId, added.SessionId, added.UserId, cancellationToken);
+                }
+            }
+            catch (Exception)
+            {
+                // A repeat hold can be tried again the next time bookings are loaded.
             }
         }
-        catch (Exception)
+        finally
         {
-            // A repeat hold can be tried again the next time bookings are loaded.
+            ReleaseGate.Release();
         }
     }
 
@@ -185,6 +208,7 @@ public sealed class BookingPayments(
                 await SnapshotAsync(venueId, sessionId, userId, cancellationToken);
             }
 
+            await bookings.EnsurePaidSeriesAsync(prepared.BookingId, cancellationToken);
             return CheckoutResponse.From(prepared, null);
         }
 
@@ -510,6 +534,11 @@ public sealed class BookingPayments(
                     foreach (var sessionId in sessions.Distinct())
                     {
                         await SnapshotAsync(transition.VenueId, sessionId, transition.UserId, cancellationToken);
+                    }
+
+                    if (transition.Action == "confirmed")
+                    {
+                        await bookings.EnsurePaidSeriesAsync(transition.BookingId, cancellationToken);
                     }
 
                     return;
