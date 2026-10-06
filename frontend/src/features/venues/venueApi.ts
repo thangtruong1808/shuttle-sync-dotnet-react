@@ -143,6 +143,11 @@ export function listVenues(): Promise<Venue[]> {
   return readJson("/api/venues");
 }
 
+export function courtPrice(slug: string, date: string, start: string, end: string, weeks: number): Promise<{ courtAmount: number; scheduled: boolean }> {
+  const params = new URLSearchParams({ date, start, end, weeks: String(weeks) });
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/court-price?${params}`, "no-store");
+}
+
 export function venueAvailability(slug: string, date: string, from: string, to: string): Promise<Availability> {
   const params = new URLSearchParams({ date });
   if (from) {

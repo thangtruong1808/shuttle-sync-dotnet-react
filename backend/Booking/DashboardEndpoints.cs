@@ -33,6 +33,10 @@ public static class DashboardEndpoints
         dash.MapPost("/venues/{venueId:guid}/incentives", CreateVenueIncentiveAsync);
         dash.MapPut("/venues/{venueId:guid}/incentives/{incentiveId:guid}", UpdateVenueIncentiveAsync);
         dash.MapDelete("/venues/{venueId:guid}/incentives/{incentiveId:guid}", DeleteVenueIncentiveAsync);
+        dash.MapGet("/venues/{venueId:guid}/rates", ListRateWindowsAsync);
+        dash.MapPost("/venues/{venueId:guid}/rates", CreateRateWindowAsync);
+        dash.MapPut("/venues/{venueId:guid}/rates/{rateId:guid}", UpdateRateWindowAsync);
+        dash.MapDelete("/venues/{venueId:guid}/rates/{rateId:guid}", DeleteRateWindowAsync);
         dash.MapGet("/venues/{venueId:guid}/closures", ListClosuresAsync);
         dash.MapPost("/venues/{venueId:guid}/closures", CreateClosureAsync);
         dash.MapPut("/venues/{venueId:guid}/closures/{closureId:guid}", UpdateClosureAsync);
@@ -88,7 +92,7 @@ public static class DashboardEndpoints
         return venue is null ? Missing() : Results.Ok(VenueJson(venue));
     }
 
-    private static async Task<IResult> UpdateVenueAsync(Guid venueId, VenueBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> UpdateVenueAsync(Guid venueId, VenueBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken)
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
@@ -110,6 +114,11 @@ public static class DashboardEndpoints
             };
         if (!TryVenue(merged, venueId, out var write, out var error)) return Form(error);
         error = await repo.UpdateVenueAsync(write, actor.IsAdmin, actor.UserId, actor.Ip, cancellationToken);
+        if (error is null)
+        {
+            await bookings.RepriceOpenHoldsAsync(venueId, write.TimeZone, write.HourlyRate, cancellationToken);
+        }
+
         return error is null ? Results.NoContent() : Form(error);
     }
 
@@ -792,6 +801,25 @@ public static class DashboardEndpoints
         catch (TimeZoneNotFoundException) { error = "Choose a valid timezone."; return false; }
         var currency = string.IsNullOrWhiteSpace(body.Currency) ? "AUD" : body.Currency.Trim().ToUpperInvariant();
         if (currency.Length is < 3 or > 10) { error = "Enter a currency code."; return false; }
+        var country = string.IsNullOrWhiteSpace(body.Country) ? "AU" : body.Country.Trim().ToUpperInvariant();
+        if (country.Length != 2 || !country.All(char.IsAsciiLetter))
+        {
+            error = "Enter a 2-letter country code, such as AU.";
+            return false;
+        }
+
+        if (body.Latitude is < -90 or > 90)
+        {
+            error = "Enter a latitude from -90 to 90.";
+            return false;
+        }
+
+        if (body.Longitude is < -180 or > 180)
+        {
+            error = "Enter a longitude from -180 to 180.";
+            return false;
+        }
+
         var fee = body.LateCancelFeePercent ?? 0;
         if (fee < 0 || fee > 100) { error = "Enter a late cancel fee from 0 to 100."; return false; }
         var pointsPerDollar = body.PointsPerDollar ?? 100;
@@ -800,7 +828,7 @@ public static class DashboardEndpoints
         if (hourlyRate < 0) { error = "Enter a court hourly rate of 0 or more."; return false; }
         var socialPrice = body.SocialPrice ?? 0;
         if (socialPrice < 0) { error = "Enter a social price of 0 or more."; return false; }
-        write = new DashVenueWrite(id, name, slug, Trim(body.Description, 1000), Trim(body.Address, 300), Trim(body.Suburb, 100), Trim(body.State, 50), Trim(body.Postcode, 20), string.IsNullOrWhiteSpace(body.Country) ? "AU" : body.Country.Trim().ToUpperInvariant(), body.Latitude, body.Longitude, Trim(body.Phone, 32), Trim(body.Email, 256), Trim(body.ImageUrl, 500), zone, currency, fee, pointsPerDollar, hourlyRate, socialPrice, body.IsActive);
+        write = new DashVenueWrite(id, name, slug, Trim(body.Description, 1000), Trim(body.Address, 300), Trim(body.Suburb, 100), Trim(body.State, 50), Trim(body.Postcode, 20), country, RoundCoordinate(body.Latitude), RoundCoordinate(body.Longitude), Trim(body.Phone, 32), Trim(body.Email, 256), Trim(body.ImageUrl, 500), zone, currency, fee, pointsPerDollar, hourlyRate, socialPrice, body.IsActive);
         error = "";
         return true;
     }
@@ -852,6 +880,9 @@ public static class DashboardEndpoints
     }
 
     private static bool SlugOk(string slug) => slug.All(character => char.IsAsciiLetterOrDigit(character) || character == '-') && !slug.StartsWith('-') && !slug.EndsWith('-');
+
+    private static decimal? RoundCoordinate(decimal? value) =>
+        value is null ? null : decimal.Round(value.Value, 6, MidpointRounding.AwayFromZero);
 
     private static string? Trim(string? value, int max)
     {
@@ -957,6 +988,119 @@ public static class DashboardEndpoints
     private sealed record IncentiveBody(int Points, bool IsActive);
 
     private sealed record VenueIncentiveBody(string? StartsOn, string? EndsOn, int Points, bool IsActive);
+
+    private sealed record RateWindowBody(bool[]? Days, string? Start, string? End, decimal HourlyRate);
+
+    private static async Task<IResult> ListRateWindowsAsync(Guid venueId, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    {
+        var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
+        if (gate.Error is not null) return gate.Error;
+        var rows = await repo.ListRateWindowsAsync(venueId, cancellationToken);
+        return Results.Ok(rows.Select(RateJson));
+    }
+
+    private static async Task<IResult> CreateRateWindowAsync(Guid venueId, RateWindowBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken)
+    {
+        var saved = await SaveRateWindowAsync(venueId, null, body, http, auth, repo, bookings, cancellationToken);
+        return saved;
+    }
+
+    private static async Task<IResult> UpdateRateWindowAsync(Guid venueId, Guid rateId, RateWindowBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken) =>
+        await SaveRateWindowAsync(venueId, rateId, body, http, auth, repo, bookings, cancellationToken);
+
+    private static async Task<IResult> DeleteRateWindowAsync(Guid venueId, Guid rateId, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken)
+    {
+        var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
+        if (gate.Error is not null) return gate.Error;
+        if (gate.Actor?.IsAdmin != true) return Forbidden();
+        var venue = await repo.FindVenueAsync(venueId, cancellationToken);
+        if (venue is null) return Missing();
+        if (!await repo.DeleteRateWindowAsync(venueId, rateId, cancellationToken)) return Missing();
+        await bookings.RepriceOpenHoldsAsync(venueId, venue.TimeZone, venue.HourlyRate, cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> SaveRateWindowAsync(Guid venueId, Guid? rateId, RateWindowBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken)
+    {
+        var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
+        if (gate.Error is not null) return gate.Error;
+        if (gate.Actor?.IsAdmin != true) return Forbidden();
+        var venue = await repo.FindVenueAsync(venueId, cancellationToken);
+        if (venue is null) return Missing();
+        if (!TryRateWindow(body, out var daysMask, out var startMinute, out var endMinute, out var error)) return Form(error);
+        error = await repo.SaveRateWindowAsync(venueId, rateId, daysMask, startMinute, endMinute, body.HourlyRate, cancellationToken);
+        if (error is not null) return Form(error);
+        await bookings.RepriceOpenHoldsAsync(venueId, venue.TimeZone, venue.HourlyRate, cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static bool TryRateWindow(RateWindowBody body, out int daysMask, out int startMinute, out int endMinute, out string error)
+    {
+        daysMask = 0;
+        startMinute = 0;
+        endMinute = 0;
+        error = "";
+        var days = body.Days ?? [];
+        if (days.Length != 7)
+        {
+            error = "Choose the days this rate applies to.";
+            return false;
+        }
+
+        for (var index = 0; index < days.Length; index++)
+        {
+            if (days[index]) daysMask |= 1 << index;
+        }
+
+        if (daysMask == 0)
+        {
+            error = "Choose at least one day.";
+            return false;
+        }
+
+        if (!TryClockMinute(body.Start, out startMinute) || !TryClockMinute(body.End, out endMinute))
+        {
+            error = "Use a start and end time like 18:00.";
+            return false;
+        }
+
+        if (endMinute <= startMinute)
+        {
+            error = "The end time must be later than the start time, on the same day.";
+            return false;
+        }
+
+        if (body.HourlyRate < 0)
+        {
+            error = "The hourly rate cannot be negative.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryClockMinute(string? value, out int minute)
+    {
+        minute = 0;
+        if (string.IsNullOrWhiteSpace(value) || !TimeOnly.TryParse(value, out var clock))
+        {
+            return false;
+        }
+
+        minute = clock.Hour * 60 + clock.Minute;
+        return true;
+    }
+
+    private static object RateJson(DashRateWindowRow row) => new
+    {
+        id = row.Id,
+        days = Enumerable.Range(0, 7).Select(index => (row.DaysMask & (1 << index)) != 0).ToArray(),
+        start = MinutesToClock(row.StartMinute),
+        end = MinutesToClock(row.EndMinute),
+        hourlyRate = row.HourlyRate,
+    };
+
+    private static string MinutesToClock(int minute) => $"{minute / 60:00}:{minute % 60:00}";
 
     private sealed record ClosureBody(Guid? CourtId, string? Date, string? Start, string? End, string? Reason);
 

@@ -1,5 +1,6 @@
 using Dapper;
 using MySqlConnector;
+using ShuttleSync.Api.Booking;
 
 namespace ShuttleSync.Api.Data;
 
@@ -309,7 +310,8 @@ public sealed class BookingRepository(IConfiguration configuration)
             return (Guid.Empty, 0, "This slot is not available.");
         }
 
-        if (hourlyRate <= 0)
+        var windows = await LoadRateWindowsAsync(connection, venueId, tx, cancellationToken);
+        if (hourlyRate <= 0 && windows.Length == 0)
         {
             hourlyRate = await connection.ExecuteScalarAsync<decimal>(new CommandDefinition(
                 """
@@ -325,13 +327,16 @@ public sealed class BookingRepository(IConfiguration configuration)
                 cancellationToken: cancellationToken));
         }
 
-        if (hourlyRate <= 0)
+        if (hourlyRate <= 0 && windows.Length == 0)
         {
             return (Guid.Empty, 0, "This venue has not set an hourly rate yet.");
         }
 
-        var minutes = (decimal)(endUtc - startUtc).TotalMinutes;
-        var price = decimal.Round(hourlyRate * minutes / 60m, 2, MidpointRounding.AwayFromZero);
+        var price = CourtRates.Quote(await VenueZoneAsync(connection, venueId, tx, cancellationToken), hourlyRate, startUtc, endUtc, windows);
+        if (price <= 0)
+        {
+            return (Guid.Empty, 0, "This venue has not set an hourly rate for that time.");
+        }
         var sessionId = Guid.NewGuid();
         try
         {
@@ -353,6 +358,89 @@ public sealed class BookingRepository(IConfiguration configuration)
 
         await tx.CommitAsync(cancellationToken);
         return (sessionId, price, null);
+    }
+
+    public async Task<CourtRateWindow[]> ListRateWindowsAsync(Guid venueId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        return await LoadRateWindowsAsync(connection, venueId, null, cancellationToken);
+    }
+
+    public async Task RepriceOpenHoldsAsync(Guid venueId, string timeZone, decimal hourlyRate, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var windows = await LoadRateWindowsAsync(connection, venueId, null, cancellationToken);
+        var rows = (await connection.QueryAsync<OpenHoldPriceRow>(new CommandDefinition(
+            """
+            SELECT b.Id, b.CourtSessionId, cs.StartTime, cs.EndTime
+            FROM Bookings b
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId AND cs.IsDeleted = 0
+            WHERE b.VenueId = @VenueId AND b.IsDeleted = 0 AND b.Status = 'pending'
+              AND b.GroupId IS NOT NULL AND b.PayGroupId IS NULL
+              AND b.DiscountAmount = 0 AND b.PointsRedeemed = 0
+              AND cs.StartTime > UTC_TIMESTAMP(6)
+              AND NOT EXISTS (
+                  SELECT 1 FROM Payments p
+                  WHERE p.BookingId = b.Id AND p.Status IN ('pending', 'succeeded', 'partially_refunded', 'refunded')
+              )
+            """,
+            new { VenueId = venueId },
+            cancellationToken: cancellationToken))).ToArray();
+        foreach (var row in rows)
+        {
+            var price = CourtRates.Quote(timeZone, hourlyRate, row.StartTime, row.EndTime, windows);
+            if (price <= 0)
+            {
+                continue;
+            }
+
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Bookings
+                SET SubtotalAmount = @Price, TotalAmount = @Price, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id AND Status = 'pending' AND IsDeleted = 0
+                """,
+                new { Id = row.Id, Price = price },
+                cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE CourtSessions
+                SET Price = @Price, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id AND IsDeleted = 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM Bookings b
+                      WHERE b.CourtSessionId = CourtSessions.Id AND b.IsDeleted = 0 AND b.Status = 'confirmed'
+                  )
+                """,
+                new { Id = row.CourtSessionId, Price = price },
+                cancellationToken: cancellationToken));
+        }
+    }
+
+    private async Task<CourtRateWindow[]> LoadRateWindowsAsync(MySqlConnection connection, Guid venueId, MySqlTransaction? tx, CancellationToken cancellationToken)
+    {
+        var rows = await connection.QueryAsync<CourtRateWindow>(new CommandDefinition(
+            """
+            SELECT CAST(DaysMask AS SIGNED) AS DaysMask,
+                   CAST(StartMinute AS SIGNED) AS StartMinute,
+                   CAST(EndMinute AS SIGNED) AS EndMinute,
+                   HourlyRate, UpdatedAt
+            FROM VenueRateWindows
+            WHERE VenueId = @VenueId AND IsDeleted = 0
+            """,
+            new { VenueId = venueId },
+            tx,
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
+    private static async Task<string> VenueZoneAsync(MySqlConnection connection, Guid venueId, MySqlTransaction? tx, CancellationToken cancellationToken)
+    {
+        return await connection.ExecuteScalarAsync<string>(new CommandDefinition(
+            "SELECT TimeZone FROM Venues WHERE Id = @VenueId",
+            new { VenueId = venueId },
+            tx,
+            cancellationToken: cancellationToken)) ?? "Australia/Melbourne";
     }
 
     private static (Guid GroupId, CourtHoldRow[] Rows, string? Error, string? Notice) HoldError(string error) =>
@@ -423,7 +511,8 @@ public sealed class BookingRepository(IConfiguration configuration)
             return HoldError("Choose an open court.");
         }
 
-        if (hourlyRate <= 0)
+        var windows = await LoadRateWindowsAsync(connection, venueId, tx, cancellationToken);
+        if (hourlyRate <= 0 && windows.Length == 0)
         {
             hourlyRate = await connection.ExecuteScalarAsync<decimal>(new CommandDefinition(
                 """
@@ -439,13 +528,12 @@ public sealed class BookingRepository(IConfiguration configuration)
                 cancellationToken: cancellationToken));
         }
 
-        if (hourlyRate <= 0)
+        if (hourlyRate <= 0 && windows.Length == 0)
         {
             return HoldError("This venue has not set an hourly rate yet.");
         }
 
-        var minutes = (decimal)(endUtc - startUtc).TotalMinutes;
-        var price = decimal.Round(hourlyRate * minutes / 60m, 2, MidpointRounding.AwayFromZero);
+        decimal price = 0;
         var groupId = joinGroupId ?? Guid.NewGuid();
         if (joinGroupId is Guid existingGroup)
         {
@@ -506,6 +594,12 @@ public sealed class BookingRepository(IConfiguration configuration)
                     continue;
                 }
 
+                price = CourtRates.Quote(timeZone, hourlyRate, start, end, windows);
+                if (price <= 0)
+                {
+                    return HoldError("This venue has not set an hourly rate for that time.");
+                }
+
                 var closed = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
                     """
                     SELECT COUNT(*)
@@ -558,6 +652,11 @@ public sealed class BookingRepository(IConfiguration configuration)
                 else if (overlaps.Length == 1 && SameInstant(overlaps[0].StartTime, start) && SameInstant(overlaps[0].EndTime, end))
                 {
                     sessionId = overlaps[0].Id;
+                    await connection.ExecuteAsync(new CommandDefinition(
+                        "UPDATE CourtSessions SET Price = @Price, UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                        new { Id = sessionId, Price = price },
+                        tx,
+                        cancellationToken: cancellationToken));
                     var taken = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
                         """
                         SELECT COUNT(*)
@@ -931,11 +1030,11 @@ public sealed class BookingRepository(IConfiguration configuration)
             return ([], "Choose an open court.");
         }
 
-        if (price <= 0)
+        var repeatWindows = await LoadRateWindowsAsync(connection, group.VenueId, tx, cancellationToken);
+        var quoted = CourtRates.Quote(group.TimeZone, group.HourlyRate, startUtc, endUtc, repeatWindows);
+        if (quoted > 0)
         {
-            price = group.HourlyRate > 0
-                ? decimal.Round(group.HourlyRate * (decimal)(endUtc - startUtc).TotalMinutes / 60m, 2, MidpointRounding.AwayFromZero)
-                : 0;
+            price = quoted;
         }
 
         if (price <= 0)
@@ -1136,15 +1235,13 @@ public sealed class BookingRepository(IConfiguration configuration)
             return ([], "This session starts within 24 hours. Pay for it when you register. It was not saved.");
         }
 
-        var price = sample.Price;
+        var zone = await VenueZoneAsync(connection, venueId, tx, cancellationToken);
+        var addWindows = await LoadRateWindowsAsync(connection, venueId, tx, cancellationToken);
+        var quoted = CourtRates.Quote(zone, hourlyRate, startUtc, endUtc, addWindows);
+        var price = quoted > 0 ? quoted : sample.Price;
         if (price <= 0)
         {
-            if (hourlyRate <= 0)
-            {
-                return ([], "This venue has not set an hourly rate yet.");
-            }
-
-            price = decimal.Round(hourlyRate * (decimal)(endUtc - startUtc).TotalMinutes / 60m, 2, MidpointRounding.AwayFromZero);
+            return ([], "This venue has not set an hourly rate yet.");
         }
 
         var courts = (await connection.QueryAsync<HoldCourtRow>(new CommandDefinition(
@@ -5639,6 +5736,14 @@ public sealed class VenueRow
     public int PointsPerDollar { get; init; } = 100;
     public decimal HourlyRate { get; init; }
     public decimal SocialPrice { get; init; }
+}
+
+public sealed class OpenHoldPriceRow
+{
+    public Guid Id { get; set; }
+    public Guid CourtSessionId { get; set; }
+    public DateTime StartTime { get; set; }
+    public DateTime EndTime { get; set; }
 }
 
 public sealed class HoldCourtRow

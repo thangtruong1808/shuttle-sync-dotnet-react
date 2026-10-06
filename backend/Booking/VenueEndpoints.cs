@@ -11,6 +11,7 @@ public static class VenueEndpoints
         venues.MapGet("/", ListAsync);
         venues.MapGet("/{slug}", GetAsync);
         venues.MapGet("/{slug}/availability", AvailabilityAsync);
+        venues.MapGet("/{slug}/court-price", CourtPriceAsync);
         venues.MapGet("/{slug}/promotions", PromotionsAsync);
         venues.MapGet("/{slug}/slots/{sessionId:guid}", SlotAsync);
         venues.MapPost("/{slug}/sessions", OpenSessionAsync).RequireAuthorization();
@@ -41,6 +42,39 @@ public static class VenueEndpoints
     {
         var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
         return venue is null ? Results.NotFound() : Results.Ok(VenueResponse(venue));
+    }
+
+    private static async Task<IResult> CourtPriceAsync(string slug, string? date, string? start, string? end, int? weeks, BookingRepository repository, CancellationToken cancellationToken)
+    {
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Results.NotFound();
+        }
+
+        var count = weeks is null or < 1 ? 1 : Math.Min(weeks.Value, 12);
+        if (!VenueClock.TryGetDayWindow(venue.TimeZone, date, start, end, out var window, out var error))
+        {
+            return Results.Json(new { errors = new Dictionary<string, string[]> { ["form"] = [error] } }, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var rates = await repository.ListRateWindowsAsync(venue.Id, cancellationToken);
+        decimal amount = 0;
+        var scheduled = false;
+        var startUtc = window.StartUtc;
+        var endUtc = window.EndUtc;
+        for (var week = 0; week < count; week++)
+        {
+            if (week > 0 && !VenueClock.TryShiftDays(venue.TimeZone, window.StartUtc, window.EndUtc, 7 * week, out startUtc, out endUtc))
+            {
+                return Results.Json(new { errors = new Dictionary<string, string[]> { ["form"] = ["That weekly time could not be placed."] } }, statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            amount += CourtRates.Quote(venue.TimeZone, venue.HourlyRate, startUtc, endUtc, rates);
+            scheduled |= CourtRates.UsesWindow(venue.TimeZone, startUtc, endUtc, rates);
+        }
+
+        return Results.Ok(new { courtAmount = decimal.Round(amount, 2, MidpointRounding.AwayFromZero), scheduled });
     }
 
     private static async Task<IResult> AvailabilityAsync(

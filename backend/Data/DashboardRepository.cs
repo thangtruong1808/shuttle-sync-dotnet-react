@@ -72,6 +72,10 @@ public sealed class DashboardRepository(IConfiguration configuration)
         {
             return "That venue slug is already in use.";
         }
+        catch (MySqlException)
+        {
+            return "The venue could not be saved. Check the fields and try again.";
+        }
 
         await AuditAsync(connection, tx, actorId, id, "create", "Venue", id, write, ip, cancellationToken);
         await tx.CommitAsync(cancellationToken);
@@ -113,6 +117,10 @@ public sealed class DashboardRepository(IConfiguration configuration)
         catch (MySqlException exception) when (exception.Number == 1062)
         {
             return "That venue slug is already in use.";
+        }
+        catch (MySqlException)
+        {
+            return "The venue could not be saved. Check the fields and try again.";
         }
 
         await AuditAsync(connection, tx, actorId, write.Id, "update", "Venue", write.Id, write, ip, cancellationToken);
@@ -1757,6 +1765,115 @@ public sealed class DashboardRepository(IConfiguration configuration)
     private static bool Blocked(bool admin, IReadOnlyCollection<Guid> allowed, Guid? venueId) =>
         !admin && (allowed.Count == 0 || (venueId is not null && !allowed.Contains(venueId.Value)));
 
+    public async Task<DashRateWindowRow[]> ListRateWindowsAsync(Guid venueId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<DashRateWindowRow>(new CommandDefinition(
+            """
+            SELECT Id,
+                   CAST(DaysMask AS SIGNED) AS DaysMask,
+                   CAST(StartMinute AS SIGNED) AS StartMinute,
+                   CAST(EndMinute AS SIGNED) AS EndMinute,
+                   HourlyRate, UpdatedAt
+            FROM VenueRateWindows
+            WHERE VenueId = @VenueId AND IsDeleted = 0
+            ORDER BY StartMinute, DaysMask
+            """,
+            new { VenueId = venueId },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
+    public async Task<string?> SaveRateWindowAsync(Guid venueId, Guid? id, int daysMask, int startMinute, int endMinute, decimal hourlyRate, CancellationToken cancellationToken)
+    {
+        if (daysMask is < 1 or > 127)
+        {
+            return "Choose at least one day.";
+        }
+
+        if (startMinute < 0 || endMinute > 24 * 60 || endMinute <= startMinute)
+        {
+            return "The end time must be later than the start time, on the same day.";
+        }
+
+        if (hourlyRate < 0)
+        {
+            return "The hourly rate cannot be negative.";
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        var existing = (await connection.QueryAsync<DashRateWindowRow>(new CommandDefinition(
+            """
+            SELECT Id,
+                   CAST(DaysMask AS SIGNED) AS DaysMask,
+                   CAST(StartMinute AS SIGNED) AS StartMinute,
+                   CAST(EndMinute AS SIGNED) AS EndMinute,
+                   HourlyRate, UpdatedAt
+            FROM VenueRateWindows
+            WHERE VenueId = @VenueId AND IsDeleted = 0
+            """,
+            new { VenueId = venueId },
+            cancellationToken: cancellationToken))).ToArray();
+        if (id is Guid windowId && existing.All(row => row.Id != windowId))
+        {
+            return "That rate was not found.";
+        }
+
+        foreach (var row in existing)
+        {
+            if (id is Guid current && row.Id == current)
+            {
+                continue;
+            }
+
+            var sameDay = (row.DaysMask & daysMask) != 0;
+            var overlaps = row.StartMinute < endMinute && row.EndMinute > startMinute;
+            if (sameDay && overlaps)
+            {
+                return "That day and time already has a rate. Update that rate, or choose another time.";
+            }
+        }
+
+        if (id is Guid updateId)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE VenueRateWindows
+                SET DaysMask = @DaysMask, StartMinute = @StartMinute, EndMinute = @EndMinute,
+                    HourlyRate = @HourlyRate, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0
+                """,
+                new { Id = updateId, VenueId = venueId, DaysMask = daysMask, StartMinute = startMinute, EndMinute = endMinute, HourlyRate = hourlyRate },
+                cancellationToken: cancellationToken));
+            return null;
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO VenueRateWindows
+                (Id, VenueId, DaysMask, StartMinute, EndMinute, HourlyRate, IsDeleted, CreatedAt, UpdatedAt)
+            VALUES
+                (@Id, @VenueId, @DaysMask, @StartMinute, @EndMinute, @HourlyRate, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            """,
+            new { Id = Guid.NewGuid(), VenueId = venueId, DaysMask = daysMask, StartMinute = startMinute, EndMinute = endMinute, HourlyRate = hourlyRate },
+            cancellationToken: cancellationToken));
+        return null;
+    }
+
+    public async Task<bool> DeleteRateWindowAsync(Guid venueId, Guid id, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var changed = await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE VenueRateWindows
+            SET IsDeleted = 1, UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0
+            """,
+            new { Id = id, VenueId = venueId },
+            cancellationToken: cancellationToken));
+        return changed > 0;
+    }
+
     private static (int Page, int Size, int Skip) PageOf(int page, int pageSize = 20)
     {
         var number = page < 1 ? 1 : page;
@@ -1829,6 +1946,16 @@ public sealed class DashVenueRow
     public decimal HourlyRate { get; init; }
     public decimal SocialPrice { get; init; }
     public bool IsActive { get; init; }
+}
+
+public sealed class DashRateWindowRow
+{
+    public Guid Id { get; set; }
+    public int DaysMask { get; set; }
+    public int StartMinute { get; set; }
+    public int EndMinute { get; set; }
+    public decimal HourlyRate { get; set; }
+    public DateTime UpdatedAt { get; set; }
 }
 
 public sealed record DashCourtWrite(Guid Id, Guid VenueId, string CourtName, int CourtNumber, string? Description, string? SurfaceType, string? ImageUrl, bool IsActive);

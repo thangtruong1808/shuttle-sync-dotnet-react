@@ -7,7 +7,7 @@ import { ErrorState, Money, venueToday } from "../../components/format";
 import { useVenues } from "../../components/layout/SiteLayout";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import { AuthRequestError } from "../auth/authApi";
-import { openCourtHold, payNowHold, rememberVenueSlug, venueAvailability, type AvailableCourt } from "../venues/venueApi";
+import { courtPrice, openCourtHold, payNowHold, rememberVenueSlug, venueAvailability, type AvailableCourt } from "../venues/venueApi";
 
 function startsWithin24Hours(date: string, time: string, timeZone: string) {
   if (!date || !time) return false;
@@ -54,6 +54,9 @@ export default function BookCourtPage() {
   const [form, setForm] = useState({ courtIds: [] as string[], start: "", end: "", weeks: 1, repeat: false });
   const [courts, setCourts] = useState<AvailableCourt[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [quoted, setQuoted] = useState<number | null>(null);
+  const [scheduledRate, setScheduledRate] = useState(false);
+  const [quoting, setQuoting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -93,9 +96,35 @@ export default function BookCourtPage() {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
   }
 
+  useEffect(() => {
+    if (!slug || !date || !form.start || !form.end) {
+      setQuoted(null);
+      setScheduledRate(false);
+      return;
+    }
+    const controller = new AbortController();
+    setQuoting(true);
+    courtPrice(slug, date, form.start, form.end, form.weeks)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setQuoted(result.courtAmount);
+        setScheduledRate(result.scheduled);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setQuoted(null);
+        setScheduledRate(false);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setQuoting(false);
+      });
+    return () => controller.abort();
+  }, [slug, date, form.start, form.end, form.weeks]);
+
   const rate = venue?.hourlyRate ?? 0;
   const currency = venue?.currency ?? "AUD";
-  const each = sessionAmount(form.start, form.end, rate);
+  const flat = sessionAmount(form.start, form.end, rate);
+  const each = quoted ?? (flat === null ? null : flat * form.weeks);
   const payAtRegistration = startsWithin24Hours(date, form.start, venue?.timeZone ?? "Australia/Melbourne");
 
   async function onContinue(event: FormEvent) {
@@ -209,13 +238,13 @@ export default function BookCourtPage() {
                 ) : (
                   <>
                     <p className="font-semibold text-white">
-                      Total for every selected court and week: <Money amount={each * form.courtIds.length * form.weeks} currency={currency} />
+                      Total for every selected court and week: <Money amount={each * form.courtIds.length} currency={currency} />
                     </p>
-                    <p className="mt-1">You do not pay every later week now. Each of those weeks is held until 24 hours before it starts. {payAtRegistration ? "The first week starts within 24 hours, so it is not held. Pay for that week now or those courts stay open." : "Pay each week before 24 hours of that session, or those courts are released."}</p>
+                    <p className="mt-1">You do not pay every later week now. Each of those weeks is held until 24 hours before it starts. {scheduledRate ? "This total uses the venue rate for the days and hours you chose. " : ""}{payAtRegistration ? "The first week starts within 24 hours, so it is not held. Pay for that week now or those courts stay open." : "Pay each week before 24 hours of that session, or those courts are released."} {quoting ? <Spinner className="inline h-3.5 w-3.5" /> : null}</p>
                   </>
                 )}
               </div>
-              <Button type="submit" className="w-full sm:w-auto" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={busy} disabled={busy || loading || form.courtIds.length === 0 || !date || !form.start || !form.end}>
+              <Button type="submit" className="w-full sm:w-auto" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={busy} disabled={busy || loading || quoting || form.courtIds.length === 0 || !date || !form.start || !form.end}>
                 {payAtRegistration ? "Pay this week now" : "Continue"}
               </Button>
             </div>

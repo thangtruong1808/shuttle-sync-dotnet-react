@@ -185,7 +185,9 @@ export type DashActivity = {
 
 async function fail(response: Response): Promise<never> {
   const body = (await response.json().catch(() => null)) as { errors?: { form?: string[] } } | null;
-  throw new DashError(body?.errors?.form?.[0] ?? "The request could not be completed.");
+  const message = body?.errors?.form?.[0]
+    ?? (response.status === 401 ? "Sign in again." : "The request could not be completed.");
+  throw new DashError(message);
 }
 
 async function read<T>(path: string): Promise<T> {
@@ -305,6 +307,26 @@ export function saveIncentive(venueId: string, sessionId: string, points: number
 
 export function deleteIncentive(venueId: string, sessionId: string): Promise<void> {
   return send(`/api/dashboard/venues/${venueId}/sessions/${sessionId}/incentive`, "DELETE");
+}
+
+export type DashRateWindow = {
+  id: string;
+  days: boolean[];
+  start: string;
+  end: string;
+  hourlyRate: number;
+};
+
+export function listRateWindows(venueId: string): Promise<DashRateWindow[]> {
+  return read(`/api/dashboard/venues/${venueId}/rates`);
+}
+
+export function saveRateWindow(venueId: string, body: { days: boolean[]; start: string; end: string; hourlyRate: number }, id?: string): Promise<void> {
+  return send(id ? `/api/dashboard/venues/${venueId}/rates/${id}` : `/api/dashboard/venues/${venueId}/rates`, id ? "PUT" : "POST", body);
+}
+
+export function deleteRateWindow(venueId: string, id: string): Promise<void> {
+  return send(`/api/dashboard/venues/${venueId}/rates/${id}`, "DELETE");
 }
 
 export function listClosures(venueId: string): Promise<DashClosure[]> {
