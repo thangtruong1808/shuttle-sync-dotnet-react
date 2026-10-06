@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { Link, Navigate, useLocation, useParams } from "react-router-dom";
-import { ArrowRight, CalendarDays, CircleCheck } from "lucide-react";
+import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import { ArrowRight, CalendarDays, ChevronDown, CircleCheck, Clock } from "lucide-react";
 import type { AppDispatch, RootState } from "../../app/store";
 import { ErrorState, Money, formatVenueDateTime } from "../../components/format";
 import { Button, Skeleton, Spinner } from "../../components/ui";
@@ -56,6 +56,7 @@ async function waitForBooking(id: string): Promise<BookingPayment> {
 export default function CourtGroupPage() {
   const { slug = "", groupId = "" } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const status = useSelector((state: RootState) => state.auth.status);
   const balance = useSelector((state: RootState) => state.auth.user?.rewardPoints ?? 0);
@@ -80,6 +81,7 @@ export default function CourtGroupPage() {
     return note;
   });
   const [picked, setPicked] = useState<string[]>([]);
+  const [openWeeks, setOpenWeeks] = useState<Record<string, boolean>>({});
   const checkoutState = new URLSearchParams(location.search).get("checkout");
 
   useEffect(() => {
@@ -232,28 +234,49 @@ export default function CourtGroupPage() {
           <section className="min-w-0">
             <h2 className="font-display text-2xl text-white">Sessions</h2>
             <ul className={`mt-3 grid grid-cols-1 gap-3 ${paidView ? "sm:grid-cols-2 xl:grid-cols-3" : ""}`}>
-              {weeksOf(sessions).map((week) => (
-                <li key={week[0].startTime} className="rounded-2xl border border-white/10 bg-pine/80 p-3 transition-colors hover:border-line/40 hover:bg-white/5">
-                  <p className="text-sm font-medium text-white">{formatVenueDateTime(week[0].startTime, timeZone)}</p>
-                  <p className="text-xs text-mist/60">until {formatVenueDateTime(week[0].endTime, timeZone)}</p>
-                  <ul className="mt-2 space-y-1">
-                    {week.map((session) => {
-                      const secured = session.status === "confirmed";
-                      return (
-                        <li key={session.bookingId} className="rounded-xl px-2 py-2 transition-colors hover:bg-line/15">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="min-w-0 font-medium text-white">{session.courtName}</p>
-                            <p className="shrink-0 text-sm font-semibold text-white"><Money amount={session.price} currency={currency} /></p>
-                          </div>
-                          <p className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${secured ? "bg-line/20 text-line" : "bg-white/10 text-mist"}`}>{courtStatus(session)}</p>
-                          {!paidView && !secured && picked.includes(session.bookingId) ? <p className="mt-1 text-xs font-semibold text-line">In this payment</p> : null}
-                          {session.incentivePoints > 0 && !secured ? <p className="mt-1 text-sm text-line">+{session.incentivePoints} pts after this session ends</p> : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </li>
-              ))}
+              {weeksOf(sessions).map((week) => {
+                const open = openWeeks[week[0].startTime] === true;
+                const securedInWeek = week.filter((session) => session.status === "confirmed").length;
+                const heldInWeek = week.length - securedInWeek;
+                return (
+                  <li key={week[0].startTime} className="rounded-2xl border border-white/10 bg-pine/80 p-3 transition-colors hover:border-line/40 hover:bg-white/5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-white">{formatVenueDateTime(week[0].startTime, timeZone)}</p>
+                        <p className="text-xs text-mist/60">until {formatVenueDateTime(week[0].endTime, timeZone)}</p>
+                        <p className="mt-1 text-xs text-mist/75">{week.length} {week.length === 1 ? "court" : "courts"} · {securedInWeek} secured · {heldInWeek} held</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-mist hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line"
+                        aria-expanded={open}
+                        onClick={() => setOpenWeeks((current) => ({ ...current, [week[0].startTime]: !open }))}
+                      >
+                        {open ? "Hide courts" : "Show courts"}
+                        <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+                      </button>
+                    </div>
+                    {open ? (
+                      <ul className="mt-2 space-y-1">
+                        {week.map((session) => {
+                          const secured = session.status === "confirmed";
+                          return (
+                            <li key={session.bookingId} className="rounded-xl px-2 py-2 transition-colors hover:bg-line/15">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="min-w-0 font-medium text-white">{session.courtName}</p>
+                                <p className="shrink-0 text-sm font-semibold text-white"><Money amount={session.price} currency={currency} /></p>
+                              </div>
+                              <p className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${secured ? "bg-line/20 text-line" : "bg-white/10 text-mist"}`}>{courtStatus(session)}</p>
+                              {!paidView && !secured && picked.includes(session.bookingId) ? <p className="mt-1 text-xs font-semibold text-line">In this payment</p> : null}
+                              {session.incentivePoints > 0 && !secured ? <p className="mt-1 text-sm text-line">+{session.incentivePoints} pts after this session ends</p> : null}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
             {unpaid.some((session) => session.payNow) ? <p className="mt-3 text-sm text-mist/75">A session starting within 24 hours is only held for 30 minutes. Pay now to keep it.</p> : null}
           </section>
@@ -311,9 +334,15 @@ export default function CourtGroupPage() {
                 {cashTooSmall ? <p className="text-sm text-mist">Use enough points to cover these courts, or leave at least $0.50 to pay.</p> : null}
                 {formError ? <p className="text-sm text-mist" role="alert">{formError}</p> : null}
                 {waiting ? <p className="text-sm text-mist" role="status">Checking the payment…</p> : null}
-                <Button type="submit" className="w-full sm:w-auto" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={paying || waiting} disabled={cashTooSmall || unpaid.length === 0}>
-                  {preview.cash === 0 ? "Secure with points" : "Pay and secure"}
-                </Button>
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <Button type="submit" className="w-full sm:w-auto" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={paying || waiting} disabled={cashTooSmall || unpaid.length === 0}>
+                    {preview.cash === 0 ? "Secure with points" : "Pay and secure"}
+                  </Button>
+                  <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<Clock className="h-4 w-4" aria-hidden="true" />} disabled={paying || waiting} onClick={() => navigate("/profile/bookings")}>
+                    Pay later
+                  </Button>
+                </div>
+                <p className="text-sm text-mist/70">Pay later is optional. These courts stay held, and you can pay them from My bookings before 24 hours of the session.</p>
               </form>
             )}
           </section>

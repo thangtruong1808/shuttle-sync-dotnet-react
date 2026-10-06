@@ -956,10 +956,10 @@ public sealed class DashboardRepository(IConfiguration configuration)
                 var changed = await connection.ExecuteAsync(new CommandDefinition(
                     """
                     UPDATE PromotionCodes
-                    SET Code = @Code, DiscountType = @DiscountType, DiscountValue = @DiscountValue,
+                    SET VenueId = @VenueId, Code = @Code, DiscountType = @DiscountType, DiscountValue = @DiscountValue,
                         MaxUses = @MaxUses, MaxUsesPerUser = @MaxUsesPerUser, ValidFrom = @ValidFrom,
                         ValidTo = @ValidTo, IsActive = @IsActive, UpdatedAt = UTC_TIMESTAMP(6)
-                    WHERE Id = @Id AND ((@VenueId IS NULL AND VenueId IS NULL) OR VenueId = @VenueId)
+                    WHERE Id = @Id
                     """,
                     write, tx, cancellationToken: cancellationToken));
                 if (changed == 0)
@@ -974,6 +974,43 @@ public sealed class DashboardRepository(IConfiguration configuration)
         }
 
         await AuditAsync(connection, tx, actorId, write.VenueId, creating ? "create" : "update", "PromotionCode", write.Id, write, ip, cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return null;
+    }
+
+    public async Task<string?> DeletePromotionAsync(Guid id, Guid actorId, string? ip, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var row = await connection.QuerySingleOrDefaultAsync<DashPromoRow>(new CommandDefinition(
+            """
+            SELECT Id, VenueId, Code, DiscountType, DiscountValue, MaxUses, UsedCount, MaxUsesPerUser,
+                   ValidFrom, ValidTo, IsActive
+            FROM PromotionCodes
+            WHERE Id = @Id
+            """,
+            new { Id = id }, cancellationToken: cancellationToken));
+        if (row is null)
+        {
+            return "That promotion was not found.";
+        }
+
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var changed = await connection.ExecuteAsync(new CommandDefinition(
+                "DELETE FROM PromotionCodes WHERE Id = @Id",
+                new { Id = id }, tx, cancellationToken: cancellationToken));
+            if (changed == 0)
+            {
+                return "That promotion was not found.";
+            }
+        }
+        catch (MySqlException exception) when (exception.Number == 1451)
+        {
+            return "This code has already been used, so it cannot be deleted.";
+        }
+
+        await AuditAsync(connection, tx, actorId, row.VenueId, "delete", "PromotionCode", id, new { id, row.Code }, ip, cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return null;
     }

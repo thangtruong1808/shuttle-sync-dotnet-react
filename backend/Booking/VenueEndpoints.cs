@@ -204,6 +204,8 @@ public static class VenueEndpoints
             discountType = promotion.DiscountType,
             discountValue = promotion.DiscountValue,
             venueId = promotion.VenueId,
+            validFrom = VenueClock.AsUtc(promotion.ValidFrom),
+            validTo = VenueClock.AsUtc(promotion.ValidTo),
         }));
     }
 

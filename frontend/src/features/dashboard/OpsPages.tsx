@@ -11,6 +11,7 @@ import {
   listBookings,
   listPayments,
   listPromotions,
+  deletePromotion,
   listRecommendations,
   listRedemptions,
   listRefunds,
@@ -328,30 +329,118 @@ export function PromotionsPage() {
           </form>
         </div>
       }
-      render={(row: DashPromo, reload) => <PromoRow key={row.id} row={row} onChanged={reload} />}
+      render={(row: DashPromo, reload) => <PromoRow key={row.id} row={row} admin={admin} venues={venues} onChanged={reload} />}
     />
   );
 }
 
-function PromoRow({ row, onChanged }: { row: DashPromo; onChanged: (message: string) => void }) {
+function promoForm(row: DashPromo) {
+  return {
+    code: row.code,
+    discountType: row.discountType,
+    discountValue: String(row.discountValue),
+    validFrom: localInput(row.validFrom),
+    validTo: localInput(row.validTo),
+    isActive: row.isActive,
+    venueId: row.venueId ?? "",
+  };
+}
+
+function PromoRow({ row, admin, venues, onChanged }: { row: DashPromo; admin: boolean; venues: Venue[]; onChanged: (message: string) => void }) {
   const [message, setMessage] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [form, setForm] = useState(() => promoForm(row));
   const { busy, run } = useBusy();
+  const venueName = venues.find((venue) => venue.id === row.venueId)?.name ?? (row.venueId ? "One venue" : "All venues");
+
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 p-3 text-sm text-mist">
-      <span className="text-white">{row.code}</span>
-      <span>{row.discountType} {row.discountValue} · {row.usedCount} used · {row.isActive ? "active" : "inactive"}</span>
-      <span>{localInput(row.validFrom)} → {localInput(row.validTo)}</span>
-      <Button variant="secondary" loading={busy === "toggle"} onClick={() => {
-        void run("toggle", async () => {
-          try {
-            await savePromotion({ ...row, isActive: !row.isActive }, row.id);
-            onChanged(row.isActive ? "Promotion deactivated." : "Promotion activated.");
-          } catch (reason) {
-            setMessage(reason instanceof DashError ? reason.message : "The code could not be updated.");
-          }
-        });
-      }}>{row.isActive ? "Deactivate" : "Activate"}</Button>
-      <Notice message={message} />
+    <li className="rounded-2xl border border-white/10 p-3 text-sm text-mist transition-colors hover:bg-white/5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium text-white">{row.code}</span>
+        <span>{row.discountType} {row.discountValue} · {row.usedCount} used · {row.isActive ? "active" : "inactive"} · {venueName}</span>
+        <span>{localInput(row.validFrom)} → {localInput(row.validTo)}</span>
+        {admin ? (
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+            {confirming ? (
+              <>
+                <Button variant="danger" className="w-full sm:w-auto" loading={busy === "delete"} disabled={busy !== null && busy !== "delete"} onClick={() => {
+                  void run("delete", async () => {
+                    try {
+                      await deletePromotion(row.id);
+                      onChanged("Promotion deleted.");
+                    } catch (reason) {
+                      setMessage(reason instanceof DashError ? reason.message : "The code could not be deleted.");
+                      setConfirming(false);
+                    }
+                  });
+                }}>Delete this code</Button>
+                <Button variant="secondary" className="w-full sm:w-auto" disabled={busy !== null} onClick={() => setConfirming(false)}>Keep it</Button>
+              </>
+            ) : (
+              <>
+                <Button variant="secondary" className="w-full sm:w-auto" disabled={busy !== null} onClick={() => {
+                  setMessage(null);
+                  setForm(promoForm(row));
+                  setEditing((open) => !open);
+                  setConfirming(false);
+                }}>{editing ? "Close" : "Edit"}</Button>
+                <Button variant="danger" className="w-full sm:w-auto" disabled={busy !== null} onClick={() => { setEditing(false); setConfirming(true); setMessage(null); }}>Delete</Button>
+              </>
+            )}
+          </div>
+        ) : null}
+      </div>
+      {editing ? (
+        <form
+          className="mt-3 grid gap-3 border-t border-white/10 pt-3 sm:grid-cols-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setMessage(null);
+            void run("save", async () => {
+              try {
+                await savePromotion({
+                  venueId: form.venueId || null,
+                  code: form.code,
+                  discountType: form.discountType,
+                  discountValue: Number(form.discountValue),
+                  maxUses: row.maxUses,
+                  maxUsesPerUser: row.maxUsesPerUser,
+                  validFrom: new Date(form.validFrom).toISOString(),
+                  validTo: new Date(form.validTo).toISOString(),
+                  isActive: form.isActive,
+                }, row.id);
+                setEditing(false);
+                onChanged("Promotion updated.");
+              } catch (reason) {
+                setMessage(reason instanceof DashError ? reason.message : "The code could not be updated.");
+              }
+            });
+          }}
+        >
+          <Field label="Code"><input className={control} value={form.code} disabled={busy !== null} onChange={(event) => setForm({ ...form, code: event.target.value })} required /></Field>
+          <Field label="Venue">
+            <select className={control} value={form.venueId} disabled={busy !== null} onChange={(event) => setForm({ ...form, venueId: event.target.value })}>
+              <option value="">All venues</option>
+              {venues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Type">
+            <select className={control} value={form.discountType} disabled={busy !== null} onChange={(event) => setForm({ ...form, discountType: event.target.value })}>
+              <option value="percent">percent</option>
+              <option value="fixed">fixed</option>
+            </select>
+          </Field>
+          <Field label="Value"><input className={control} type="number" min={0} step="0.01" value={form.discountValue} disabled={busy !== null} onChange={(event) => setForm({ ...form, discountValue: event.target.value })} required /></Field>
+          <Field label="Valid from"><PickerInput className={control} type="datetime-local" value={form.validFrom} disabled={busy !== null} onChange={(event) => setForm({ ...form, validFrom: event.target.value })} required /></Field>
+          <Field label="Valid to"><PickerInput className={control} type="datetime-local" value={form.validTo} disabled={busy !== null} onChange={(event) => setForm({ ...form, validTo: event.target.value })} required /></Field>
+          <Check label="Active" checked={form.isActive} disabled={busy !== null} onChange={(checked) => setForm({ ...form, isActive: checked })} />
+          <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+            <Notice message={message} />
+            <Button type="submit" className="w-full sm:w-auto" loading={busy === "save"} disabled={busy !== null && busy !== "save"}>Save changes</Button>
+          </div>
+        </form>
+      ) : <Notice message={message} />}
     </li>
   );
 }

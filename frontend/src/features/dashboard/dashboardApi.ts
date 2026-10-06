@@ -355,6 +355,10 @@ export function savePromotion(body: Omit<DashPromo, "id" | "usedCount">, id?: st
   return send(id ? `/api/dashboard/promotions/${id}` : "/api/dashboard/promotions", id ? "PUT" : "POST", body);
 }
 
+export function deletePromotion(id: string): Promise<void> {
+  return send(`/api/dashboard/promotions/${id}`, "DELETE");
+}
+
 export function listUsers(q: string, page: number, pageSize: number): Promise<DashPage<DashUser>> {
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (q) params.set("q", q);

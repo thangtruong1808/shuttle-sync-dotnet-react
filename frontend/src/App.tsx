@@ -27,10 +27,10 @@ import { FriendSpotsSection } from "./features/profile/FriendSpotsSection";
 import ProfileLayout from "./features/profile/ProfileLayout";
 import { DetailsSection, OverviewSection } from "./features/profile/ProfileBasics";
 import { PaymentsSection, RewardsSection, SecuritySection } from "./features/profile/ProfileLists";
-import { readVenueSlug } from "./features/venues/venueApi";
+import { venueForPage } from "./features/venues/venueApi";
 
 function HomeRedirect() {
-  const { venues, error, reload } = useVenues();
+  const { venues, error, reload, defaultSlug } = useVenues();
   const [params] = useSearchParams();
   const authError = params.get("authError");
   if (authError) {
@@ -53,8 +53,7 @@ function HomeRedirect() {
       </PageSection>
     );
   }
-  const remembered = readVenueSlug();
-  const slug = venues.find((venue) => venue.slug === remembered)?.slug ?? venues[0]?.slug;
+  const slug = venueForPage(venues, undefined, defaultSlug)?.slug;
   if (!slug) {
     return (
       <PageSection>

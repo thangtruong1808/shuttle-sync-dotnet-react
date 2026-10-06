@@ -276,12 +276,18 @@ function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: 
               const opened = openWeek === key;
               return (
                 <li key={key} className="rounded-xl border border-white/10">
-                  <button type="button" className="flex w-full flex-col gap-1 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-line/10 sm:flex-row sm:items-center sm:justify-between" aria-expanded={opened} onClick={() => onOpenWeek(opened ? null : key)}>
+                  <button type="button" className="flex w-full flex-col gap-2 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-line/10 sm:flex-row sm:items-center sm:justify-between" aria-expanded={opened} onClick={() => onOpenWeek(opened ? null : key)}>
                     <span className="min-w-0">
                       <span className="block font-medium text-white">Week {yearWeek.week} of {yearWeek.year}</span>
                       <span className="block text-sm text-mist/75">{formatWeekDate(courts[0].startTime, courts[0].timeZone)} · {courts.length} {courts.length === 1 ? "court" : "courts"} · {weekSummary(courts)}</span>
                     </span>
-                    <span className="text-sm font-semibold text-white"><Money amount={amount} currency={courts[0].currency} /></span>
+                    <span className="inline-flex shrink-0 items-center gap-2">
+                      <span className="text-sm font-semibold text-white"><Money amount={amount} currency={courts[0].currency} /></span>
+                      <span className="inline-flex items-center gap-1 text-sm font-semibold text-mist">
+                        {opened ? "Hide courts" : "Show courts"}
+                        <ChevronDown className={`h-4 w-4 transition-transform ${opened ? "rotate-180" : ""}`} aria-hidden="true" />
+                      </span>
+                    </span>
                   </button>
                   {opened ? <div className="px-3 pb-3"><WeekEditor key={courts.map((court) => court.bookingId).join("-")} courts={courts} onChanged={onChanged} /></div> : null}
                 </li>

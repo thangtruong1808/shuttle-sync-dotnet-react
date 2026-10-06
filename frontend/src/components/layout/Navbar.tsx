@@ -5,7 +5,7 @@ import { CalendarDays, ChevronDown, Gift, House, LayoutDashboard, LogIn, Menu, U
 import type { RootState } from "../../app/store";
 import { initials } from "../format";
 import { Skeleton } from "../ui";
-import { rememberVenueSlug } from "../../features/venues/venueApi";
+import { rememberVenueSlug, venueForPage } from "../../features/venues/venueApi";
 import { useVenues } from "./SiteLayout";
 
 const links = [
@@ -15,7 +15,7 @@ const links = [
 ];
 
 export function Navbar() {
-  const { venues } = useVenues();
+  const { venues, defaultSlug } = useVenues();
   const { slug } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -27,7 +27,9 @@ export function Navbar() {
   const listId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
   const current = venues?.find((venue) => venue.slug === slug) ?? null;
-  const activeSlug = current?.slug ?? venues?.[0]?.slug ?? "";
+  const shown = venueForPage(venues, slug, defaultSlug);
+  const activeSlug = shown?.slug ?? "";
+  const venueLabel = shown ? `${shown.name}${shown.suburb ? ` · ${shown.suburb}` : ""}` : "Choose a venue";
 
   useEffect(() => {
     if (current) {
@@ -90,7 +92,7 @@ export function Navbar() {
             open={open}
             query={query}
             venues={filtered}
-            label={current ? `${current.name}${current.suburb ? ` · ${current.suburb}` : ""}` : "Choose a venue"}
+            label={venueLabel}
             searchRef={searchRef}
             onQuery={setQuery}
             onToggle={() => {
@@ -159,7 +161,7 @@ export function Navbar() {
               open={open}
               query={query}
               venues={filtered}
-              label={current ? `${current.name}${current.suburb ? ` · ${current.suburb}` : ""}` : "Choose a venue"}
+              label={venueLabel}
               searchRef={searchRef}
               onQuery={setQuery}
               onToggle={() => setOpen((value) => !value)}

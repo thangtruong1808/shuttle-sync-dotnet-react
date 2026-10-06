@@ -1438,7 +1438,7 @@ public sealed class BookingRepository(IConfiguration configuration)
         var rows = await connection.QueryAsync<PromotionRow>(
             new CommandDefinition(
                 """
-                SELECT Id, Code, DiscountType, DiscountValue, VenueId
+                SELECT Id, Code, DiscountType, DiscountValue, VenueId, ValidFrom, ValidTo
                 FROM PromotionCodes
                 WHERE IsActive = 1
                   AND ValidFrom <= UTC_TIMESTAMP(6)
@@ -6170,6 +6170,8 @@ public sealed class PromotionRow
     public string DiscountType { get; init; } = "";
     public decimal DiscountValue { get; init; }
     public Guid? VenueId { get; init; }
+    public DateTime ValidFrom { get; init; }
+    public DateTime ValidTo { get; init; }
 }
 
 public sealed class FriendPaymentStateRow

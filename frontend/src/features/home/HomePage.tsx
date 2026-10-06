@@ -5,7 +5,7 @@ import type { AppDispatch } from "../../app/store";
 import { CalendarDays, ChevronRight, Mic, Send, SlidersHorizontal, Tag, Users, X } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { Button, PickerInput, Skeleton } from "../../components/ui";
-import { CourtImage, EmptyState, ErrorState, Money, addDays, venueToday } from "../../components/format";
+import { CourtImage, EmptyState, ErrorState, Money, addDays, formatVenueDateTime, venueToday } from "../../components/format";
 import { BookedTime, DayChart, IncentiveNote, SessionClock, SocialTimes, upcomingBookings, useNow } from "../courts/CourtSchedule";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
 import { apiFetch, AuthRequestError } from "../auth/authApi";
@@ -14,7 +14,7 @@ import { rememberVenueSlug, venueAvailability, venuePromotions, type Availabilit
 
 export default function HomePage() {
   const { slug = "" } = useParams();
-  const { venues, error: venueError, reload } = useVenues();
+  const { venues, error: venueError, reload, defaultSlug, setDefaultVenue } = useVenues();
   const dispatch = useDispatch<AppDispatch>();
   const status = useSelector((state: RootState) => state.auth.status);
   const venue = venues?.find((item) => item.slug === slug) ?? null;
@@ -109,6 +109,17 @@ export default function HomePage() {
             Find a court at {venue?.name ?? "your venue"}.
           </h1>
           <p className="mt-3 max-w-4xl text-mist/75">Choose a day to find a free court. A court with no bookings is available. Booked times are shown on that court.</p>
+          {(venues?.length ?? 0) > 1 && venue ? (
+            <label className="mt-4 flex max-w-4xl items-start gap-2 text-sm text-mist">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 shrink-0 accent-line"
+                checked={defaultSlug === venue.slug}
+                onChange={(event) => setDefaultVenue(event.target.checked ? venue.slug : null)}
+              />
+              <span>Use {venue.name} as my default venue. Home, My bookings, and the other pages keep this venue.</span>
+            </label>
+          ) : null}
           <form className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onSubmit={onFilter}>
             <label className="text-sm">
               <span className="mb-1 block text-mist/70">Date</span>
@@ -148,6 +159,11 @@ export default function HomePage() {
                         {promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={venue?.currency ?? "AUD"} />}
                         {promotion.venueId ? "" : " · all venues"}
                       </p>
+                      {promotion.validFrom && promotion.validTo ? (
+                        <p className="mt-1 text-xs leading-5 text-mist/75">
+                          Valid from {formatVenueDateTime(promotion.validFrom, venue?.timeZone ?? "Australia/Melbourne")} to {formatVenueDateTime(promotion.validTo, venue?.timeZone ?? "Australia/Melbourne")}.
+                        </p>
+                      ) : null}
                     </div>
                     <CopyCode code={promotion.code} />
                   </li>

@@ -1,5 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { CircleHelp, ExternalLink, Gift, MapPin, Phone, Scale, Shield, Ticket, type LucideIcon } from "lucide-react";
+import { venueForPage } from "../../features/venues/venueApi";
 import { useVenues } from "./SiteLayout";
 
 const columns: { title: string; links: { label: string; href: (slug: string) => string; icon: LucideIcon }[] }[] = [
@@ -43,8 +44,8 @@ function Mark() {
 
 export function Footer() {
   const { slug } = useParams();
-  const { venues } = useVenues();
-  const venue = venues?.find((item) => item.slug === slug) ?? venues?.[0] ?? null;
+  const { venues, defaultSlug } = useVenues();
+  const venue = venueForPage(venues, slug, defaultSlug);
   const map = venue?.latitude != null && venue.longitude != null
     ? `https://maps.google.com/?q=${venue.latitude},${venue.longitude}`
     : null;

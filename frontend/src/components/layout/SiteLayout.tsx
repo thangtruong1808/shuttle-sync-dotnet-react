@@ -3,7 +3,7 @@ import { useDispatch } from "react-redux";
 import { Outlet } from "react-router-dom";
 import type { AppDispatch } from "../../app/store";
 import { loadCurrentUser } from "../../features/auth/authSlice";
-import { listVenues, type Venue } from "../../features/venues/venueApi";
+import { listVenues, readDefaultVenueSlug, writeDefaultVenueSlug, type Venue } from "../../features/venues/venueApi";
 import { Footer } from "./Footer";
 import { Navbar } from "./Navbar";
 
@@ -11,12 +11,16 @@ type VenueState = {
   venues: Venue[] | null;
   error: string | null;
   reload: () => void;
+  defaultSlug: string | null;
+  setDefaultVenue: (slug: string | null) => void;
 };
 
 const VenueContext = createContext<VenueState>({
   venues: null,
   error: null,
   reload: () => undefined,
+  defaultSlug: null,
+  setDefaultVenue: () => undefined,
 });
 
 export function useVenues() {
@@ -28,6 +32,12 @@ export function SiteLayout() {
   const [venues, setVenues] = useState<Venue[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [defaultSlug, setDefaultSlug] = useState<string | null>(() => readDefaultVenueSlug());
+
+  function setDefaultVenue(slug: string | null) {
+    writeDefaultVenueSlug(slug);
+    setDefaultSlug(slug);
+  }
 
   useEffect(() => {
     void dispatch(loadCurrentUser());
@@ -51,8 +61,20 @@ export function SiteLayout() {
     return () => controller.abort();
   }, [attempt]);
 
+  useEffect(() => {
+    if (!venues) return;
+    if (venues.length === 1) {
+      const only = venues[0].slug;
+      if (defaultSlug !== only) setDefaultVenue(only);
+      return;
+    }
+    if (defaultSlug && !venues.some((venue) => venue.slug === defaultSlug)) {
+      setDefaultVenue(null);
+    }
+  }, [venues, defaultSlug]);
+
   return (
-    <VenueContext.Provider value={{ venues, error, reload: () => setAttempt((value) => value + 1) }}>
+    <VenueContext.Provider value={{ venues, error, reload: () => setAttempt((value) => value + 1), defaultSlug, setDefaultVenue }}>
       <div className="flex min-h-screen flex-col bg-ink text-mist">
         <Navbar />
         <div className="flex-1">

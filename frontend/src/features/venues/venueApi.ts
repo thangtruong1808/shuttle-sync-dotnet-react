@@ -117,6 +117,8 @@ export type Promotion = {
   discountType: string;
   discountValue: number;
   venueId: string | null;
+  validFrom: string;
+  validTo: string;
 };
 
 export type CourtSlotDetail = {
@@ -365,6 +367,7 @@ export function dashboardVenues(): Promise<Venue[]> {
 }
 
 const venueKey = "shuttle-sync-venue";
+const defaultVenueKey = "shuttle-sync-default-venue";
 
 export function readVenueSlug(): string | null {
   try {
@@ -380,4 +383,38 @@ export function rememberVenueSlug(slug: string) {
   } catch {
     // Private browsing can block storage. The URL still carries the venue.
   }
+}
+
+export function readDefaultVenueSlug(): string | null {
+  try {
+    return localStorage.getItem(defaultVenueKey);
+  } catch {
+    return null;
+  }
+}
+
+export function writeDefaultVenueSlug(slug: string | null) {
+  try {
+    if (slug) {
+      localStorage.setItem(defaultVenueKey, slug);
+    } else {
+      localStorage.removeItem(defaultVenueKey);
+    }
+  } catch {
+    // Private browsing can block storage. The current page still shows the venue.
+  }
+}
+
+export function venueForPage<T extends { slug: string }>(
+  venues: T[] | null | undefined,
+  routeSlug: string | undefined,
+  defaultSlug: string | null,
+): T | null {
+  if (!venues?.length) return null;
+  const onThisPage = routeSlug ? venues.find((venue) => venue.slug === routeSlug) : undefined;
+  if (onThisPage) return onThisPage;
+  const chosen = defaultSlug ? venues.find((venue) => venue.slug === defaultSlug) : undefined;
+  if (chosen) return chosen;
+  const remembered = readVenueSlug();
+  return venues.find((venue) => venue.slug === remembered) ?? venues[0];
 }

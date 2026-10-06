@@ -44,6 +44,7 @@ public static class DashboardEndpoints
         dash.MapGet("/promotions", ListPromotionsAsync);
         dash.MapPost("/promotions", CreatePromotionAsync);
         dash.MapPut("/promotions/{promotionId:guid}", UpdatePromotionAsync);
+        dash.MapDelete("/promotions/{promotionId:guid}", DeletePromotionAsync);
         dash.MapGet("/users", ListUsersAsync);
         dash.MapGet("/users/{userId:guid}", GetUserAsync);
         dash.MapPut("/users/{userId:guid}", UpdateUserAsync);
@@ -497,10 +498,18 @@ public static class DashboardEndpoints
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
-        if (body.VenueId is null && !actor.IsAdmin) return Forbidden();
-        if (body.VenueId is not null && !await repo.CanAccessVenueAsync(actor.UserId, actor.Role, body.VenueId.Value, cancellationToken)) return Missing();
+        if (!actor.IsAdmin) return Form("Only an admin can change a promotion code.", StatusCodes.Status403Forbidden);
         if (!TryPromo(body, promotionId, out var write, out var error)) return Form(error);
         error = await repo.SavePromotionAsync(write, false, actor.UserId, actor.Ip, cancellationToken);
+        return error is null ? Results.NoContent() : Form(error);
+    }
+
+    private static async Task<IResult> DeletePromotionAsync(Guid promotionId, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    {
+        var actor = await ActorAsync(http, auth, cancellationToken);
+        if (actor is null) return SignIn();
+        if (!actor.IsAdmin) return Form("Only an admin can delete a promotion code.", StatusCodes.Status403Forbidden);
+        var error = await repo.DeletePromotionAsync(promotionId, actor.UserId, actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
     }
 
@@ -859,7 +868,8 @@ public static class DashboardEndpoints
             return false;
         }
 
-        write = new DashPromoWrite(id, body.VenueId, code, body.DiscountType, body.DiscountValue, null, 1000000, from, to, body.IsActive);
+        var perUser = body.MaxUsesPerUser < 1 ? 1000000 : body.MaxUsesPerUser;
+        write = new DashPromoWrite(id, body.VenueId, code, body.DiscountType, body.DiscountValue, body.MaxUses, perUser, from, to, body.IsActive);
         error = "";
         return true;
     }
