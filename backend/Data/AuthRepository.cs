@@ -187,7 +187,10 @@ public sealed class AuthRepository(IConfiguration configuration)
                 FROM Sessions
                 WHERE Id = @Id
                   AND UserId = @UserId
-                  AND ReplacedBySessionId IS NULL
+                  AND (
+                      ReplacedBySessionId IS NULL
+                      OR LastUsedAt >= UTC_TIMESTAMP(6) - INTERVAL 30 SECOND
+                  )
                   AND RevokedAt IS NULL
                   AND ExpiresAt > UTC_TIMESTAMP(6)
                 """,
