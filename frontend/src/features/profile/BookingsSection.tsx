@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, CreditCard, Eye, Gift, Repeat, TriangleAlert, Unlock, UserPlus, X } from "lucide-react";
+import { CalendarDays, ChevronDown, CircleAlert, CircleCheck, Clock, CreditCard, Eye, Gift, MapPin, Repeat, ShieldCheck, TriangleAlert, Undo2, Unlock, UserPlus, Users, X } from "lucide-react";
 import type { AppDispatch } from "../../app/store";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
@@ -10,6 +10,7 @@ import { useVenues } from "../../components/layout/SiteLayout";
 import { addHoldCourts, venueAvailability, venueForPage } from "../venues/venueApi";
 import { AuthRequestError } from "../auth/authApi";
 import { cancelBooking, deleteSeries, deleteSeriesPreview, deleteUnpaidHold, moveCourtSessions, myBookings, myCourtWeeks, refreshUnpaidHolds, setCourtRepeat, type BookingRow, type CancelResult, type CourtWeekCourt, type Page, type SeriesCancelPreview } from "./profileApi";
+import { ListPager } from "./ProfileLists";
 
 const tabs = [
   { id: "upcoming", label: "Upcoming" },
@@ -580,6 +581,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
   const dispatch = useDispatch<AppDispatch>();
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("upcoming");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
   const [data, setData] = useState<Page<BookingRow> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -587,17 +589,21 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [pageMove, setPageMove] = useState<"prev" | "next" | null>(null);
+  const [pageMove, setPageMove] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [weeks, setWeeks] = useState<CourtWeekCourt[][] | null>(null);
   const [holdFilter, setHoldFilter] = useState<(typeof holdFilters)[number]["id"]>("all");
   const [openSeries, setOpenSeries] = useState<string | null>(null);
   const [openWeek, setOpenWeek] = useState<string | null>(null);
+  const [seriesPage, setSeriesPage] = useState(1);
+  const [seriesPageSize, setSeriesPageSize] = useState(5);
+  const series = weeks ? visibleSeries(weeks, holdFilter) : [];
+  const seriesPageNow = Math.min(seriesPage, Math.max(1, Math.ceil(series.length / seriesPageSize)));
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    myBookings(tab, page, venueSlug)
+    myBookings(tab, page, venueSlug, pageSize)
       .then((next) => {
         if (active) {
           setData(next);
@@ -617,7 +623,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
     return () => {
       active = false;
     };
-  }, [tab, page, attempt, dispatch, venueSlug]);
+  }, [tab, page, pageSize, attempt, dispatch, venueSlug]);
 
   useEffect(() => {
     if (tab !== "upcoming") {
@@ -658,8 +664,6 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
       setPendingId(null);
     }
   }
-
-  const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   return (
     <div>
@@ -704,7 +708,8 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
         <>
       {tab === "upcoming" && weeks && weeks.length > 0 ? (
         <>
-          <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Court hold view">
+          <h2 className="mt-6 font-display text-2xl text-white">Court bookings</h2>
+          <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label="Court hold view">
             {holdFilters.map((item) => (
               <button
                 key={item.id}
@@ -712,17 +717,18 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
                 role="tab"
                 aria-selected={holdFilter === item.id}
                 className={`rounded-full px-3 py-1.5 text-sm transition-colors ${holdFilter === item.id ? "bg-line text-ink" : "border border-white/10 text-mist hover:bg-white/10"}`}
-                onClick={() => setHoldFilter(item.id)}
+                onClick={() => { setHoldFilter(item.id); setSeriesPage(1); }}
               >
                 {item.label}
               </button>
             ))}
           </div>
-          {visibleSeries(weeks, holdFilter).length === 0 ? (
+          {series.length === 0 ? (
             <p className="mt-4 text-sm text-mist">No court holds match this view.</p>
           ) : (
+            <>
             <ul className="mt-4 space-y-3">
-              {visibleSeries(weeks, holdFilter).map((group) => (
+              {series.slice((seriesPageNow - 1) * seriesPageSize, seriesPageNow * seriesPageSize).map((group) => (
                 <SeriesCard
                   key={group[0][0].groupId}
                   weeks={group}
@@ -734,25 +740,28 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
                 />
               ))}
             </ul>
+            <ListPager
+              page={seriesPageNow}
+              pageSize={seriesPageSize}
+              total={series.length}
+              loading={false}
+              pageMove={null}
+              onPage={(next) => setSeriesPage(next)}
+              onPageSize={(size) => { setSeriesPageSize(size); setSeriesPage(1); }}
+            />
+            </>
           )}
         </>
       ) : null}
       {data && data.items.length > 0 ? (
+        <>
+        {tab === "upcoming" && weeks && weeks.length > 0 ? (
+          <h2 className="mt-8 font-display text-2xl text-white">{data.items.every((item) => item.socialId) ? "Public socials" : "Other bookings"}</h2>
+        ) : null}
         <ul className="mt-4 space-y-3">
           {data.items.map((booking) => (
             <li key={booking.id} className="rounded-2xl border border-white/10 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium text-white">{booking.venueName}</p>
-                  <p className="text-sm text-mist/70">{booking.status === "waitlist" ? "Waitlist · waiting for a place" : `${booking.courtName} · Court ${booking.courtNumber}`}</p>
-                  <p className="text-sm text-mist/70">{formatVenueDateTime(booking.startTime, booking.timeZone)}</p>
-                  <p className="text-sm text-mist/70">{formatVenueRange(booking.startTime, booking.endTime, booking.timeZone)}</p>
-                </div>
-                <div className="text-right">
-                  <span className="rounded-full bg-white/10 px-2 py-1 text-xs uppercase tracking-wide text-mist">{booking.status}</span>
-                  <p className="mt-2 font-semibold text-white"><Money amount={booking.totalAmount} currency={booking.currency} /></p>
-                </div>
-              </div>
+              <BookingSummary booking={booking} tab={tab} />
               {booking.socialId && booking.canCancel && booking.status !== "waitlist" ? (
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Link to={`/${booking.venueSlug}/social/${booking.socialId}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
@@ -807,18 +816,168 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
             </li>
           ))}
         </ul>
+        </>
       ) : tab === "upcoming" && weeks && weeks.length > 0 ? null : (
-        <div className="mt-4"><EmptyState title="No bookings here" body={venueName ? `Courts you book at ${venueName} will show up in this list.` : "Courts you book will show up in this list."} /></div>
+        <div className="mt-4"><EmptyState title={emptyCopy[tab].title} body={emptyCopy[tab].body(venueName)} /></div>
       )}
         </>
       )}
-      {data && data.total > data.pageSize ? (
-        <div className="mt-4 flex items-center gap-3 text-sm">
-          <Button variant="secondary" icon={<ChevronLeft className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "prev"} disabled={page <= 1 || loading} onClick={() => { setLoading(true); setPageMove("prev"); setPage((value) => value - 1); }}>Previous</Button>
-          <span>Page {page} of {pages}</span>
-          <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "next"} disabled={page >= pages || loading} onClick={() => { setLoading(true); setPageMove("next"); setPage((value) => value + 1); }}>Next</Button>
-        </div>
+      {data && !error && data.total > 0 ? (
+        <ListPager
+          page={page}
+          pageSize={data.pageSize || pageSize}
+          total={data.total}
+          loading={loading}
+          pageMove={pageMove}
+          onPage={(next, move) => { setLoading(true); setPageMove(move); setPage(next); }}
+          onPageSize={(size) => { setLoading(true); setPageMove(`size-${size}`); setPageSize(size); setPage(1); }}
+        />
       ) : null}
+    </div>
+  );
+}
+
+const emptyCopy: Record<(typeof tabs)[number]["id"], { title: string; body: (venueName: string | null) => string }> = {
+  upcoming: {
+    title: "Nothing coming up",
+    body: (venueName) => venueName ? `Courts and public socials you book at ${venueName} will show up here.` : "Courts and public socials you book will show up here.",
+  },
+  past: {
+    title: "No past bookings yet",
+    body: () => "Sessions move here after they finish, with any reward points you earned.",
+  },
+  cancelled: {
+    title: "No cancelled bookings",
+    body: () => "Bookings you cancel, and holds that expire before payment, are listed here with any refund.",
+  },
+};
+
+function bookingStatus(booking: BookingRow, tab: (typeof tabs)[number]["id"]) {
+  switch (booking.status) {
+    case "pending":
+      return { label: "Awaiting payment", tone: "bg-amber-400/15 text-amber-200" };
+    case "waitlist":
+      return { label: "Waitlist", tone: "bg-sky-400/15 text-sky-200" };
+    case "completed":
+      return { label: "Completed", tone: "bg-line/15 text-line" };
+    case "no_show":
+      return { label: "No-show", tone: "bg-rose-500/15 text-rose-200" };
+    case "expired":
+      return { label: "Hold expired", tone: "bg-white/10 text-mist" };
+    case "cancelled":
+      return { label: "Cancelled", tone: "bg-rose-500/15 text-rose-200" };
+    default:
+      return tab === "past" ? { label: "Played", tone: "bg-line/15 text-line" } : { label: "Confirmed", tone: "bg-line/15 text-line" };
+  }
+}
+
+function startsIn(iso: string) {
+  const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60_000);
+  if (minutes <= 0) return "Starting now";
+  if (minutes < 60) return `Starts in ${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `Starts in ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  const days = Math.round(hours / 24);
+  return `Starts in ${days} ${days === 1 ? "day" : "days"}`;
+}
+
+function duration(start: string, end: string) {
+  const minutes = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60_000));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest} min`;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+}
+
+function BookingSummary({ booking, tab }: { booking: BookingRow; tab: (typeof tabs)[number]["id"] }) {
+  const zone = booking.timeZone || "Australia/Melbourne";
+  const start = new Date(booking.startTime);
+  const social = Boolean(booking.socialId);
+  const status = bookingStatus(booking, tab);
+  const subtotal = booking.subtotalAmount ?? booking.totalAmount;
+  const discount = booking.discountAmount ?? 0;
+  const pointsUsed = booking.pointsRedeemed ?? 0;
+  const fee = booking.cancelFeePercent ?? 0;
+  const lateFee = booking.lateFeePercent ?? 0;
+  const freeUntil = new Date(start.getTime() - 24 * 60 * 60 * 1000);
+  const soon = start.getTime() - Date.now() < 24 * 60 * 60 * 1000;
+  const refund = booking.wasPaid ? Math.round(booking.totalAmount * (100 - fee)) / 100 : 0;
+  const place = booking.status === "waitlist" ? "Waiting for a place on court" : social ? (booking.courtNumber > 0 ? `Court ${booking.courtNumber}` : "Court assigned on the day") : booking.courtName.trim().toLowerCase() === `court ${booking.courtNumber}` ? booking.courtName : `${booking.courtName} · Court ${booking.courtNumber}`;
+
+  return (
+    <div className="flex gap-3 sm:gap-4">
+      <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] py-2 text-center sm:w-16">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-line">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, weekday: "short" }).format(start)}</span>
+        <span className="font-display text-2xl leading-none text-white">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, day: "numeric" }).format(start)}</span>
+        <span className="text-[11px] uppercase text-mist/70">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, month: "short" }).format(start)}</span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-mist">
+                {social ? <Users className="h-3.5 w-3.5" aria-hidden="true" /> : <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />}
+                {social ? "Public social" : "Court booking"}
+              </span>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${status.tone}`}>{status.label}</span>
+              {tab === "upcoming" ? (
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${soon ? "bg-amber-400/15 text-amber-200" : "bg-white/5 text-mist/80"}`}>{startsIn(booking.startTime)}</span>
+              ) : null}
+            </div>
+            <p className="mt-2 font-medium text-white">{booking.venueName}</p>
+            <p className="flex items-center gap-1.5 text-sm text-mist/80"><MapPin className="h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />{place}</p>
+            <p className="flex items-center gap-1.5 text-sm text-mist/80">
+              <Clock className="h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />
+              {formatVenueRange(booking.startTime, booking.endTime, booking.timeZone)}
+              <span className="text-mist/55">· {duration(booking.startTime, booking.endTime)}</span>
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="font-semibold text-white"><Money amount={booking.totalAmount} currency={booking.currency} /></p>
+            {discount > 0 || pointsUsed > 0 ? (
+              <>
+                {subtotal > booking.totalAmount ? <p className="text-xs text-mist/55 line-through"><Money amount={subtotal} currency={booking.currency} /></p> : null}
+                {discount > 0 ? <p className="text-xs text-line">Promo −<Money amount={discount} currency={booking.currency} /></p> : null}
+                {pointsUsed > 0 ? <p className="text-xs text-line">{pointsUsed} pts used</p> : null}
+              </>
+            ) : null}
+          </div>
+        </div>
+        <div className="mt-2 space-y-1 text-xs text-mist/65">
+          {tab === "upcoming" && booking.canCancel && booking.status !== "waitlist" ? (
+            freeUntil.getTime() > Date.now() ? (
+              <p className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 shrink-0 text-line" aria-hidden="true" />Free cancellation until {formatVenueDateTime(freeUntil.toISOString(), booking.timeZone)}</p>
+            ) : booking.wasPaid && lateFee > 0 ? (
+              <p className="flex items-center gap-1.5 text-amber-200/90"><TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Cancelling now keeps {lateFee}% of the card payment{social ? "" : ". Points you used come back in full"}.</p>
+            ) : null
+          ) : null}
+          {tab === "past" && (booking.pointsEarned ?? 0) > 0 ? (
+            <p className="flex items-center gap-1.5 text-line"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />+{booking.pointsEarned} reward points earned</p>
+          ) : null}
+          {tab === "cancelled" ? (
+            <>
+              {booking.status === "expired" ? (
+                <p className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />The hold ended before payment, so nothing was charged.</p>
+              ) : booking.cancelledAt ? (
+                <p className="flex items-center gap-1.5"><X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Cancelled {formatVenueDateTime(booking.cancelledAt, booking.timeZone)}</p>
+              ) : null}
+              {booking.status === "cancelled" ? (
+                booking.wasPaid ? (
+                  <p className="flex items-center gap-1.5 text-sky-200"><Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    Refunded <Money amount={refund} currency={booking.currency} />{fee > 0 ? ` · ${fee}% late-cancel fee kept` : " · full refund"}
+                  </p>
+                ) : booking.wasPaid === false ? (
+                  <p className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Not charged</p>
+                ) : null
+              ) : null}
+              {pointsUsed > 0 && (!social || fee === 0) ? (
+                <p className="flex items-center gap-1.5 text-line"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{pointsUsed} points returned to your balance</p>
+              ) : null}
+            </>
+          ) : null}
+          {booking.bookedAt ? <p>Booked {formatVenueDateTime(booking.bookedAt, booking.timeZone)}</p> : null}
+        </div>
+      </div>
     </div>
   );
 }

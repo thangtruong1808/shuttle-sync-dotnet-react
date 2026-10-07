@@ -26,7 +26,7 @@ export function UsersPage() {
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<DashUser[] | null>(null);
   const [total, setTotal] = useState(0);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(10);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);

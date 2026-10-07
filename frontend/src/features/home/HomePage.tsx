@@ -10,7 +10,7 @@ import { BookedTime, DayChart, IncentiveNote, SessionClock, SocialTimes, upcomin
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
 import { apiFetch, AuthRequestError } from "../auth/authApi";
 import { loadCurrentUser } from "../auth/authSlice";
-import { rememberVenueSlug, venueAvailability, venuePromotions, type Availability, type Promotion } from "../venues/venueApi";
+import { openSocials, rememberVenueSlug, venueAvailability, venuePromotions, type Availability, type Promotion } from "../venues/venueApi";
 
 export default function HomePage() {
   const { slug = "" } = useParams();
@@ -27,8 +27,21 @@ export default function HomePage() {
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [hasSocials, setHasSocials] = useState(false);
   const navigate = useNavigate();
   const now = useNow();
+
+  useEffect(() => {
+    if (!slug) return;
+    let active = true;
+    setHasSocials(false);
+    openSocials(slug)
+      .then((result) => { if (active) setHasSocials(result.socials.length > 0); })
+      .catch(() => { if (active) setHasSocials(false); });
+    return () => {
+      active = false;
+    };
+  }, [slug]);
 
   useEffect(() => {
     if (venue) {
@@ -136,7 +149,7 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center gap-2 sm:col-span-2 lg:col-span-3">
               <Button type="submit" className="w-full sm:w-auto" icon={<SlidersHorizontal className="h-4 w-4" aria-hidden="true" />} loading={busy === "filter"} disabled={!draft.date || (busy !== null && busy !== "filter")}>Filter</Button>
               <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<CalendarDays className="h-4 w-4" aria-hidden="true" />} onClick={() => navigate(`/${slug}/book`)}>Book a court</Button>
-              <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<Users className="h-4 w-4" aria-hidden="true" />} onClick={() => navigate(`/${slug}/social`)}>Register for public social</Button>
+              {hasSocials ? <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<Users className="h-4 w-4" aria-hidden="true" />} onClick={() => navigate(`/${slug}/social`)}>Register for public social</Button> : null}
               {filtered || busy === "clear" ? (
                 <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<X className="h-4 w-4" aria-hidden="true" />} loading={busy === "clear"} disabled={busy !== null && busy !== "clear"} onClick={onClear}>Clear</Button>
               ) : null}

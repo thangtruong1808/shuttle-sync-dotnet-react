@@ -1,30 +1,83 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useVenues } from "../../components/layout/SiteLayout";
+import { venueForPage } from "../venues/venueApi";
 import { CalendarDays, Gift, LogOut, Save, Users, Wallet } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../app/store";
-import { formatVenueRange } from "../../components/format";
+import { formatVenueDay, formatVenueRange } from "../../components/format";
 import { Button, Skeleton, Spinner } from "../../components/ui";
 import { AuthRequestError, updateProfile, uploadAvatar } from "../auth/authApi";
 import { loadCurrentUser, logout, signedIn } from "../auth/authSlice";
-import { myBookings, myRewards, type BookingRow } from "./profileApi";
+import { myBookings, myCourtWeeks, myRewards, type BookingRow, type CourtWeekCourt } from "./profileApi";
+
+type NextBooking = { venueName: string; place: string; startTime: string; endTime: string; timeZone: string };
+
+function soonestBooking(bookings: BookingRow[], holds: CourtWeekCourt[]): NextBooking | null {
+  const now = Date.now();
+  const options: NextBooking[] = bookings.map((booking) => ({
+    venueName: booking.venueName,
+    place: booking.courtName,
+    startTime: booking.startTime,
+    endTime: booking.endTime,
+    timeZone: booking.timeZone,
+  }));
+  const slots = new Map<string, CourtWeekCourt[]>();
+  for (const court of holds) {
+    if (court.status !== "confirmed" && court.status !== "pending") continue;
+    const key = `${court.groupId}|${court.startTime}`;
+    slots.set(key, [...(slots.get(key) ?? []), court]);
+  }
+  for (const courts of slots.values()) {
+    const first = courts[0];
+    options.push({
+      venueName: first.venueName,
+      place: [...courts].sort((a, b) => a.courtNumber - b.courtNumber).map((court) => court.courtName).join(", "),
+      startTime: first.startTime,
+      endTime: first.endTime,
+      timeZone: first.timeZone,
+    });
+  }
+  return options
+    .filter((option) => new Date(option.startTime).getTime() > now)
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0] ?? null;
+}
 
 export function OverviewSection() {
   const dispatch = useDispatch<AppDispatch>();
   const user = useSelector((state: RootState) => state.auth.user);
-  const [nextBooking, setNextBooking] = useState<BookingRow | null>(null);
+  const [nextBooking, setNextBooking] = useState<NextBooking | null>(null);
   const [pendingPoints, setPendingPoints] = useState(0);
   const [loadingNext, setLoadingNext] = useState(true);
+  const { venues, defaultSlug } = useVenues();
+  const [params] = useSearchParams();
+  const venue = venueForPage(venues, params.get("venue") ?? undefined, defaultSlug);
+  const venueSlug = venue?.slug ?? null;
 
   useEffect(() => {
+    if (venues === null) {
+      return;
+    }
+    let active = true;
     setLoadingNext(true);
-    myBookings("upcoming", 1)
-      .then((page) => {
-        setNextBooking(page.items[0] ?? null);
+    Promise.all([myBookings("upcoming", 1, venueSlug, 50), myCourtWeeks().catch(() => ({ weeks: [] }))])
+      .then(([page, holds]) => {
+        if (!active) return;
+        setNextBooking(soonestBooking(page.items, holds.weeks.filter((court) => !venueSlug || court.venueSlug === venueSlug)));
         void dispatch(loadCurrentUser());
       })
-      .catch(() => setNextBooking(null))
-      .finally(() => setLoadingNext(false));
+      .catch(() => {
+        if (active) setNextBooking(null);
+      })
+      .finally(() => {
+        if (active) setLoadingNext(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [dispatch, venues, venueSlug]);
+
+  useEffect(() => {
     myRewards(1)
       .then((page) => {
         setPendingPoints(page.pending);
@@ -54,10 +107,10 @@ export function OverviewSection() {
         </div>
       ) : nextBooking ? (
         <p className="mt-4 rounded-2xl border border-white/10 px-4 py-3 text-sm text-mist">
-          Next booking: {nextBooking.venueName}, {nextBooking.courtName}, {formatVenueRange(nextBooking.startTime, nextBooking.endTime, nextBooking.timeZone)}
+          Next booking: {nextBooking.venueName}, {nextBooking.place}, {formatVenueDay(nextBooking.startTime, nextBooking.timeZone)}, {formatVenueRange(nextBooking.startTime, nextBooking.endTime, nextBooking.timeZone)}
         </p>
       ) : (
-        <p className="mt-4 text-sm text-mist/70">No upcoming booking.</p>
+        <p className="mt-4 text-sm text-mist/70">{venue ? `No upcoming booking at ${venue.name}.` : "No upcoming booking."}</p>
       )}
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Link className="inline-flex items-center gap-2 rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/bookings"><CalendarDays className="h-4 w-4 text-line" aria-hidden="true" />My bookings</Link>

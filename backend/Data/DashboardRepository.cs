@@ -1570,7 +1570,30 @@ public sealed class DashboardRepository(IConfiguration configuration)
     {
         var id = Guid.NewGuid();
         await using var connection = await OpenAsync(cancellationToken);
-        await AuditAsync(connection, null, userId, venueId, "page.view", "Page", id, new { path, title }, ip, cancellationToken);
+        string? venueNames = null;
+        if (venueId is null)
+        {
+            var assigned = (await connection.QueryAsync<(Guid Id, string Name)>(new CommandDefinition(
+                """
+                SELECT v.Id, v.Name
+                FROM UserVenues uv
+                JOIN Venues v ON v.Id = uv.VenueId
+                WHERE uv.UserId = @UserId AND v.IsDeleted = 0
+                ORDER BY v.Name
+                """,
+                new { UserId = userId },
+                cancellationToken: cancellationToken))).ToArray();
+            if (assigned.Length == 1)
+            {
+                venueId = assigned[0].Id;
+            }
+            else if (assigned.Length > 1)
+            {
+                venueNames = string.Join(", ", assigned.Select(venue => venue.Name));
+            }
+        }
+
+        await AuditAsync(connection, null, userId, venueId, "page.view", "Page", id, new { path, title, venueNames }, ip, cancellationToken);
     }
 
     public async Task<DashPage<DashAuditRow>> ListActivityAsync(Guid? onlyUserId, Guid? filterUserId, DateTime? from, DateTime? to, int page, int pageSize, CancellationToken cancellationToken)
@@ -1589,7 +1612,15 @@ public sealed class DashboardRepository(IConfiguration configuration)
             $"SELECT COUNT(*) FROM AuditLogs a {where}", filter, cancellationToken: cancellationToken));
         var rows = await connection.QueryAsync<DashAuditRow>(new CommandDefinition(
             $"""
-            SELECT a.Id, a.UserId, u.Email AS UserEmail, u.DisplayName, a.Action, a.Entity, a.NewValues, a.CreatedAt, v.Name AS VenueName
+            SELECT a.Id, a.UserId, u.Email AS UserEmail, u.DisplayName, a.Action, a.Entity, a.NewValues, a.CreatedAt,
+                   COALESCE(v.Name, NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.NewValues, '$.venueNames')), 'null')) AS VenueName,
+                   u.Role AS UserRole, a.IpAddress,
+                   JSON_UNQUOTE(JSON_EXTRACT(a.NewValues, '$.path')) AS PagePath,
+                   JSON_UNQUOTE(JSON_EXTRACT(a.NewValues, '$.title')) AS PageTitle,
+                   (
+                       SELECT MIN(n.CreatedAt) FROM AuditLogs n
+                       WHERE n.UserId = a.UserId AND n.Action = 'page.view' AND n.CreatedAt > a.CreatedAt
+                   ) AS NextViewAt
             FROM AuditLogs a
             LEFT JOIN Users u ON u.Id = a.UserId
             LEFT JOIN Venues v ON v.Id = a.VenueId
@@ -1911,10 +1942,10 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return changed > 0;
     }
 
-    private static (int Page, int Size, int Skip) PageOf(int page, int pageSize = 20)
+    private static (int Page, int Size, int Skip) PageOf(int page, int pageSize = 10)
     {
         var number = page < 1 ? 1 : page;
-        var size = pageSize is 10 or 20 or 50 ? pageSize : 20;
+        var size = pageSize is 10 or 20 or 50 ? pageSize : 10;
         return (number, size, (number - 1) * size);
     }
 
@@ -2211,4 +2242,9 @@ public sealed class DashAuditRow
     public string? NewValues { get; init; }
     public DateTime CreatedAt { get; init; }
     public string? VenueName { get; init; }
+    public string? UserRole { get; init; }
+    public string? IpAddress { get; init; }
+    public string? PagePath { get; init; }
+    public string? PageTitle { get; init; }
+    public DateTime? NextViewAt { get; init; }
 }

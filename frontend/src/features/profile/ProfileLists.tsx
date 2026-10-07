@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { ChevronLeft, ChevronRight, Clock, History, LogOut } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, Clock, CreditCard, History, LogOut, Undo2 } from "lucide-react";
 import type { AppDispatch, RootState } from "../../app/store";
 import { Button, Skeleton } from "../../components/ui";
-import { EmptyState, ErrorState, formatVenueDateTime, formatVenueRange } from "../../components/format";
+import { EmptyState, ErrorState, formatVenueDateTime, formatVenueDay, formatVenueRange } from "../../components/format";
 import { externalLogins, type ExternalLogin } from "../auth/authApi";
 import { fetchSessions, loadCurrentUser, logoutOthers, revokeSession } from "../auth/authSlice";
 import { myPayments, myRewards, type Page, type PaymentRow, type PendingReward, type RewardRow } from "./profileApi";
@@ -11,9 +11,9 @@ import { myPayments, myRewards, type Page, type PaymentRow, type PendingReward, 
 export function RewardsSection() {
   const dispatch = useDispatch<AppDispatch>();
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(5);
   const [pendingPage, setPendingPage] = useState(1);
-  const [pendingPageSize, setPendingPageSize] = useState(20);
+  const [pendingPageSize, setPendingPageSize] = useState(5);
   const [data, setData] = useState<(Page<RewardRow> & { balance: number; pending: number; pendingItems: PendingReward[] }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +83,7 @@ export function RewardsSection() {
             emptyTitle="No points are waiting"
             emptyBody="A court, public social, or friend spot with an incentive shows up here until that session ends."
           />
-          <RewardPages
+          <ListPager
             page={pendingPage}
             pageSize={pendingPageSize}
             total={(data.pendingItems ?? []).length}
@@ -108,7 +108,7 @@ export function RewardsSection() {
             emptyTitle="No points yet"
             emptyBody="Points appear here after a session with an active incentive ends."
           />
-          <RewardPages
+          <ListPager
             page={page}
             pageSize={data.pageSize || pageSize}
             total={data.total}
@@ -125,16 +125,17 @@ export function RewardsSection() {
 
 export function PaymentsSection() {
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
   const [data, setData] = useState<Page<PaymentRow> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [pageMove, setPageMove] = useState<"prev" | "next" | null>(null);
+  const [pageMove, setPageMove] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    myPayments(page)
+    myPayments(page, pageSize)
       .then((next) => {
         if (active) {
           setData(next);
@@ -153,34 +154,139 @@ export function PaymentsSection() {
     return () => {
       active = false;
     };
-  }, [page, attempt]);
+  }, [page, pageSize, attempt]);
 
   return (
     <div>
       <h1 className="font-display text-3xl text-white">Payments and refunds</h1>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/75">Every card charge and refund for your courts and public socials. Refunds go back to the card you paid with and can take 5–10 business days to appear.</p>
       {error ? (
         <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
       ) : loading && pageMove === null ? (
-        <div className="mt-4" aria-busy="true"><span className="sr-only">Loading payments</span><Skeleton className="h-24" /></div>
+        <div className="mt-4 space-y-3" aria-busy="true"><span className="sr-only">Loading payments</span><Skeleton className="h-16" /><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
       ) : data && data.items.length > 0 ? (
-        <ul className="mt-4 space-y-3">
-          {data.items.map((item) => (
-            <li key={`${item.kind}-${item.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 px-4 py-3">
-              <div>
-                <p className="font-medium text-white">{item.venueName}</p>
-                <p className="text-sm text-mist/65">{new Date(item.occurredAt).toLocaleString()}</p>
-              </div>
-              <div className="text-right">
-                <span className="rounded-full bg-white/10 px-2 py-1 text-xs uppercase text-mist">{item.kind} · {item.status}</span>
-                <p className="mt-1 font-semibold">{new Intl.NumberFormat("en-AU", { style: "currency", currency: item.currency }).format(item.amount)}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <>
+          <PaymentTable rows={data.items} />
+          <ListPager
+            page={page}
+            pageSize={data.pageSize || pageSize}
+            total={data.total}
+            loading={loading}
+            pageMove={pageMove}
+            onPage={(next, move) => { setLoading(true); setPageMove(move); setPage(next); }}
+            onPageSize={(size) => { setLoading(true); setPageMove(`size-${size}`); setPageSize(size); setPage(1); }}
+          />
+        </>
       ) : (
-        <div className="mt-4"><EmptyState title="No payments yet" body="Stripe charges and refunds will be listed here." /></div>
+        <div className="mt-4"><EmptyState title="No payments yet" body="Card charges and refunds for your courts and public socials will be listed here." /></div>
       )}
-      {data && !error ? <Pager page={page} pageSize={data.pageSize} total={data.total} loading={loading} pageMove={pageMove} onPage={(next, move) => { setLoading(true); setPageMove(move); setPage(next); }} /> : null}
+    </div>
+  );
+}
+
+function formatMoney(amount: number, currency: string) {
+  return new Intl.NumberFormat("en-AU", { style: "currency", currency: currency || "AUD" }).format(amount);
+}
+
+function paymentSession(row: PaymentRow) {
+  if (!row.startTime || !row.endTime || Number.isNaN(Date.parse(row.startTime))) {
+    return "—";
+  }
+  return `${formatVenueDay(row.startTime, row.timeZone)}, ${formatVenueRange(row.startTime, row.endTime, row.timeZone)}`;
+}
+
+function paymentStatus(row: PaymentRow) {
+  const status = row.status.toLowerCase();
+  if (status === "succeeded" || status === "paid" || status === "completed") {
+    return { label: row.kind === "refund" ? "Refunded" : "Paid", tone: "bg-line/15 text-line" };
+  }
+  if (status === "pending" || status === "processing" || status === "requires_action") {
+    return { label: "Processing", tone: "bg-amber-400/15 text-amber-200" };
+  }
+  if (status === "failed" || status === "canceled" || status === "cancelled") {
+    return { label: status === "failed" ? "Failed" : "Cancelled", tone: "bg-rose-500/15 text-rose-200" };
+  }
+  if (status.includes("refund")) {
+    return { label: status.startsWith("partial") ? "Partly refunded" : "Refunded", tone: "bg-sky-400/15 text-sky-200" };
+  }
+  const label = status.replace(/_/g, " ");
+  return { label: label.charAt(0).toUpperCase() + label.slice(1), tone: "bg-white/10 text-mist" };
+}
+
+function PaymentTable({ rows }: { rows: PaymentRow[] }) {
+  return (
+    <div className="mt-4">
+      <ul className="grid gap-3 md:hidden">
+        {rows.map((row) => {
+          const refund = row.kind === "refund";
+          const status = paymentStatus(row);
+          return (
+            <li key={`${row.kind}-${row.id}`} className="rounded-2xl border border-white/10 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${refund ? "text-sky-200" : "text-line"}`}>
+                    {refund ? <Undo2 className="h-3.5 w-3.5" aria-hidden="true" /> : <CreditCard className="h-3.5 w-3.5" aria-hidden="true" />}
+                    {refund ? "Refund" : "Payment"}{row.source ? ` · ${row.source}` : ""}
+                  </p>
+                  <p className="mt-1 font-medium text-white">{row.venueName}</p>
+                  <p className="text-sm text-mist/75">{row.courtNames || "Court to be assigned"}</p>
+                </div>
+                <p className={`shrink-0 font-semibold ${refund ? "text-sky-200" : "text-white"}`}>{refund ? "+" : ""}{formatMoney(row.amount, row.currency)}</p>
+              </div>
+              <p className="mt-2 flex items-center gap-1.5 text-sm text-mist/75"><CalendarClock className="h-4 w-4 shrink-0 text-mist/60" aria-hidden="true" />{paymentSession(row)}</p>
+              <p className="text-sm text-mist/60">{refund ? "Refunded" : ["succeeded", "refunded", "partially_refunded"].includes(row.status.toLowerCase()) ? "Charged" : "Started"} {formatVenueDateTime(row.occurredAt, row.timeZone)}</p>
+              <p className="mt-2">
+                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${status.tone}`}>{status.label}</span>
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[44rem] text-left text-sm">
+          <caption className="sr-only">Payments and refunds</caption>
+          <thead className="text-mist/60">
+            <tr>
+              <th className="py-2 pr-3 font-medium">Type</th>
+              <th className="py-2 pr-3 font-medium">Date</th>
+              <th className="py-2 pr-3 font-medium">Venue and court</th>
+              <th className="py-2 pr-3 font-medium">Session</th>
+              <th className="py-2 pr-3 font-medium">Status</th>
+              <th className="py-2 text-right font-medium">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const refund = row.kind === "refund";
+              const status = paymentStatus(row);
+              return (
+                <tr key={`${row.kind}-${row.id}`} className="border-t border-white/10 align-top">
+                  <td className="py-3 pr-3">
+                    <span className={`flex items-center gap-1.5 font-medium ${refund ? "text-sky-200" : "text-white"}`}>
+                      {refund ? <Undo2 className="h-4 w-4" aria-hidden="true" /> : <CreditCard className="h-4 w-4 text-line" aria-hidden="true" />}
+                      {refund ? "Refund" : "Payment"}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-mist/60">{row.source}</span>
+                  </td>
+                  <td className="whitespace-nowrap py-3 pr-3">{formatVenueDateTime(row.occurredAt, row.timeZone)}</td>
+                  <td className="py-3 pr-3">
+                    <span className="block text-white">{row.venueName}</span>
+                    <span className="mt-0.5 block text-xs text-mist/70">
+                      {row.courtNames || "Court to be assigned"}
+                      {row.courtCount > 1 ? ` · ${row.courtCount} courts` : ""}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap py-3 pr-3">{paymentSession(row)}</td>
+                  <td className="py-3 pr-3">
+                    <span className={`whitespace-nowrap rounded-full px-2 py-1 text-xs font-semibold ${status.tone}`}>{status.label}</span>
+                  </td>
+                  <td className={`whitespace-nowrap py-3 text-right font-semibold ${refund ? "text-sky-200" : "text-white"}`}>{refund ? "+" : ""}{formatMoney(row.amount, row.currency)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -282,7 +388,7 @@ export function SecuritySection() {
   );
 }
 
-const rewardPageSizes = [10, 20, 50] as const;
+const rewardPageSizes = [5, 10, 20, 50] as const;
 
 function slicePage<T>(items: T[], page: number, pageSize: number) {
   const start = Math.max(0, (page - 1) * pageSize);
@@ -359,10 +465,11 @@ function RewardTable({
   );
 }
 
-function RewardPages({
+export function ListPager({
   page,
   pageSize,
   total,
+  unit,
   loading,
   pageMove,
   onPage,
@@ -371,6 +478,7 @@ function RewardPages({
   page: number;
   pageSize: number;
   total: number;
+  unit?: string;
   loading: boolean;
   pageMove: string | null;
   onPage: (page: number, move: string) => void;
@@ -387,7 +495,7 @@ function RewardPages({
   return (
     <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm font-medium text-white" aria-live="polite">View {from}–{to} of {total}</p>
+        <p className="text-sm font-medium text-white" aria-live="polite">View {from}–{to} of {total}{unit ? ` ${unit}` : ""}</p>
         <div className="flex flex-wrap items-center gap-1.5">
           {rewardPageSizes.map((option) => (
             <Button
@@ -424,34 +532,6 @@ function RewardPages({
         <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "next"} disabled={safePage >= pages || loading} onClick={() => onPage(safePage + 1, "next")}>Next</Button>
         <span className="text-sm text-mist/70">Page {safePage} of {pages}</span>
       </div>
-    </div>
-  );
-}
-
-function Pager({
-  page,
-  pageSize,
-  total,
-  loading = false,
-  pageMove = null,
-  onPage,
-}: {
-  page: number;
-  pageSize: number;
-  total: number;
-  loading?: boolean;
-  pageMove?: "prev" | "next" | null;
-  onPage: (page: number, move: "prev" | "next") => void;
-}) {
-  if (total <= pageSize) {
-    return null;
-  }
-  const pages = Math.ceil(total / pageSize);
-  return (
-    <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-      <Button variant="secondary" icon={<ChevronLeft className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "prev"} disabled={page <= 1 || loading} onClick={() => onPage(page - 1, "prev")}>Previous</Button>
-      <span>Page {page} of {pages}</span>
-      <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "next"} disabled={page >= pages || loading} onClick={() => onPage(page + 1, "next")}>Next</Button>
     </div>
   );
 }

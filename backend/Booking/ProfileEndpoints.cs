@@ -67,6 +67,15 @@ public static class ProfileEndpoints
                 canCancel = (item.Status is "pending" or "confirmed" or "waitlist") && item.StartTime > now,
                 socialId = item.SocialId,
                 groupId = item.GroupId,
+                subtotalAmount = item.SubtotalAmount,
+                discountAmount = item.DiscountAmount,
+                pointsRedeemed = item.PointsRedeemed,
+                bookedAt = VenueClock.AsUtc(item.BookedAt),
+                cancelledAt = item.CancelledAt is null ? (DateTimeOffset?)null : VenueClock.AsUtc(item.CancelledAt.Value),
+                wasPaid = item.WasPaid,
+                cancelFeePercent = item.CancelFeePercent,
+                lateFeePercent = item.LateFeePercent,
+                pointsEarned = item.PointsEarned,
                 friends = (friendsByRegistration.TryGetValue(item.Id, out var mine) ? mine : Array.Empty<FriendBookingRow>()).Select(friend => new
                 {
                     id = friend.Id,
@@ -351,6 +360,15 @@ public static class ProfileEndpoints
                 youLeft = !stillIn.Contains(item.SocialId),
                 canCancel = (item.Status is "confirmed" or "waitlist") && item.StartTime > now,
                 canRename = (item.Status is "pending" or "confirmed" or "waitlist") && item.StartTime > now,
+                subtotalAmount = item.SubtotalAmount,
+                discountAmount = item.DiscountAmount,
+                pointsRedeemed = item.PointsRedeemed,
+                addedAt = VenueClock.AsUtc(item.AddedAt),
+                cancelledAt = item.CancelledAt is null ? (DateTimeOffset?)null : VenueClock.AsUtc(item.CancelledAt.Value),
+                cancelFeePercent = item.CancelFeePercent,
+                lateFeePercent = item.LateFeePercent,
+                wasPaid = item.WasPaid,
+                pointsEarned = item.PointsEarned,
             }),
             page = pageNumber,
             pageSize = size,
@@ -464,7 +482,7 @@ public static class ProfileEndpoints
         }
 
         var pageNumber = page is null or < 1 ? 1 : page.Value;
-        var size = pageSize is 10 or 20 or 50 ? pageSize.Value : 20;
+        var size = pageSize is 5 or 10 or 20 or 50 ? pageSize.Value : 5;
         var (items, total) = await repository.ListRewardsAsync(userId.Value, (pageNumber - 1) * size, size, cancellationToken);
         var pending = await repository.ListPendingRewardsAsync(userId.Value, cancellationToken);
         return Results.Ok(new
@@ -514,19 +532,26 @@ public static class ProfileEndpoints
             return SignInAgain();
         }
 
-        var (pageNumber, size, offset) = Page(page, pageSize);
-        var (items, total) = await repository.ListPaymentsAsync(userId.Value, offset, size, cancellationToken);
+        var pageNumber = page is null or < 1 ? 1 : page.Value;
+        var size = pageSize is 5 or 10 or 20 or 50 ? pageSize.Value : 5;
+        var (items, total) = await repository.ListPaymentsAsync(userId.Value, (pageNumber - 1) * size, size, cancellationToken);
         return Results.Ok(new
         {
             items = items.Select(item => new
             {
                 id = item.Id,
                 kind = item.Kind,
+                source = item.Source,
                 amount = item.Amount,
                 currency = item.Currency,
                 status = item.Status,
                 occurredAt = VenueClock.AsUtc(item.OccurredAt),
                 venueName = item.VenueName,
+                timeZone = item.TimeZone,
+                courtNames = item.CourtNames,
+                courtCount = item.CourtCount,
+                startTime = VenueClock.AsUtc(item.StartTime),
+                endTime = VenueClock.AsUtc(item.EndTime),
             }),
             page = pageNumber,
             pageSize = size,
@@ -581,7 +606,7 @@ public static class ProfileEndpoints
     private static (int Page, int PageSize, int Offset) Page(int? page, int? pageSize)
     {
         var pageNumber = page is null or < 1 ? 1 : page.Value;
-        var size = pageSize is null or < 1 ? 20 : Math.Min(pageSize.Value, 50);
+        var size = pageSize is 5 or 10 or 20 or 50 ? pageSize.Value : 5;
         return (pageNumber, size, (pageNumber - 1) * size);
     }
 

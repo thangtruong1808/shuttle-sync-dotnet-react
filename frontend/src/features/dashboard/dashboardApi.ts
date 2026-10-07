@@ -181,6 +181,12 @@ export type DashActivity = {
   detail: string | null;
   createdAt: string;
   venueName: string | null;
+  userId?: string | null;
+  role?: string | null;
+  ipAddress?: string | null;
+  path?: string | null;
+  title?: string | null;
+  nextViewAt?: string | null;
 };
 
 async function fail(response: Response): Promise<never> {

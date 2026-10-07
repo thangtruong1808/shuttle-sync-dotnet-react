@@ -518,7 +518,7 @@ public static class DashboardEndpoints
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
         if (!actor.IsAdmin) return Forbidden();
-        var result = await repo.ListUsersAsync(q, page ?? 1, pageSize ?? 20, cancellationToken);
+        var result = await repo.ListUsersAsync(q, page ?? 1, pageSize ?? 10, cancellationToken);
         return Results.Ok(new
         {
             items = result.Items.Select(UserJson),
@@ -601,7 +601,7 @@ public static class DashboardEndpoints
         if (actor is null) return SignIn();
         if (!actor.IsStaff) return Forbidden();
         var allowed = actor.IsAdmin ? [] : await repo.AssignedVenueIdsAsync(actor.UserId, cancellationToken);
-        var result = await repo.ListOperationalBookingsAsync(venueId, allowed, actor.IsAdmin, status, page ?? 1, pageSize ?? 20, cancellationToken);
+        var result = await repo.ListOperationalBookingsAsync(venueId, allowed, actor.IsAdmin, status, page ?? 1, pageSize ?? 10, cancellationToken);
         return Results.Ok(Page(result, row => new
         {
             id = row.Id,
@@ -632,7 +632,7 @@ public static class DashboardEndpoints
     {
         var scoped = await Scope(http, auth, repo, cancellationToken);
         if (scoped.Error is not null) return scoped.Error;
-        var result = await repo.ListPaymentsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 20, cancellationToken);
+        var result = await repo.ListPaymentsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 10, cancellationToken);
         return Results.Ok(Page(result, PaymentJson));
     }
 
@@ -640,7 +640,7 @@ public static class DashboardEndpoints
     {
         var scoped = await Scope(http, auth, repo, cancellationToken);
         if (scoped.Error is not null) return scoped.Error;
-        var result = await repo.ListRefundsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 20, cancellationToken);
+        var result = await repo.ListRefundsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 10, cancellationToken);
         return Results.Ok(Page(result, PaymentJson));
     }
 
@@ -648,7 +648,7 @@ public static class DashboardEndpoints
     {
         var scoped = await Scope(http, auth, repo, cancellationToken);
         if (scoped.Error is not null) return scoped.Error;
-        var result = await repo.ListWebhooksAsync(scoped.Actor!.IsAdmin, scoped.Allowed, page ?? 1, pageSize ?? 20, cancellationToken);
+        var result = await repo.ListWebhooksAsync(scoped.Actor!.IsAdmin, scoped.Allowed, page ?? 1, pageSize ?? 10, cancellationToken);
         return Results.Ok(Page(result, row => new { id = row.Id, eventType = row.EventType, status = row.Status, createdAt = Utc(row.CreatedAt) }));
     }
 
@@ -656,7 +656,7 @@ public static class DashboardEndpoints
     {
         var scoped = await Scope(http, auth, repo, cancellationToken);
         if (scoped.Error is not null) return scoped.Error;
-        var result = await repo.ListRedemptionsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 20, cancellationToken);
+        var result = await repo.ListRedemptionsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 10, cancellationToken);
         return Results.Ok(Page(result, row => new
         {
             id = row.Id,
@@ -672,7 +672,7 @@ public static class DashboardEndpoints
     {
         var scoped = await Scope(http, auth, repo, cancellationToken);
         if (scoped.Error is not null) return scoped.Error;
-        var result = await repo.ListAwardsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 20, cancellationToken);
+        var result = await repo.ListAwardsAsync(venueId, scoped.Allowed, scoped.Actor!.IsAdmin, page ?? 1, pageSize ?? 10, cancellationToken);
         return Results.Ok(Page(result, row => new
         {
             id = row.Id,
@@ -710,7 +710,7 @@ public static class DashboardEndpoints
         if (!TryDate(from, false, out var fromUtc, out var error) || !TryDate(to, true, out var toUtc, out error)) return Form(error);
         var only = actor.IsAdmin ? (Guid?)null : actor.UserId;
         var filter = actor.IsAdmin ? userId : null;
-        var result = await repo.ListActivityAsync(only, filter, fromUtc, toUtc, page ?? 1, pageSize ?? 20, cancellationToken);
+        var result = await repo.ListActivityAsync(only, filter, fromUtc, toUtc, page ?? 1, pageSize ?? 10, cancellationToken);
         return Results.Ok(Page(result, row => new
         {
             id = row.Id,
@@ -721,6 +721,12 @@ public static class DashboardEndpoints
             detail = row.NewValues,
             createdAt = Utc(row.CreatedAt),
             venueName = row.VenueName,
+            userId = row.UserId,
+            role = row.UserRole,
+            ipAddress = row.IpAddress,
+            path = row.PagePath,
+            title = row.PageTitle,
+            nextViewAt = row.NextViewAt is null ? null : Utc(row.NextViewAt.Value),
         }));
     }
 

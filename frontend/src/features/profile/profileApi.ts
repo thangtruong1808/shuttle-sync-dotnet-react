@@ -26,6 +26,15 @@ export type BookingRow = {
   socialId?: string | null;
   groupId?: string | null;
   friends?: BookingFriend[];
+  subtotalAmount?: number;
+  discountAmount?: number;
+  pointsRedeemed?: number;
+  bookedAt?: string;
+  cancelledAt?: string | null;
+  wasPaid?: boolean;
+  cancelFeePercent?: number;
+  lateFeePercent?: number;
+  pointsEarned?: number;
 };
 
 export type RewardRow = {
@@ -59,6 +68,12 @@ export type PaymentRow = {
   status: string;
   occurredAt: string;
   venueName: string;
+  source: string;
+  timeZone: string;
+  courtNames: string | null;
+  courtCount: number;
+  startTime: string;
+  endTime: string;
 };
 
 export type Page<T> = {
@@ -170,8 +185,8 @@ export function moveCourtSessions(
   });
 }
 
-export function myBookings(status: string, page: number, venue?: string | null): Promise<Page<BookingRow>> {
-  const params = new URLSearchParams({ status, page: String(page) });
+export function myBookings(status: string, page: number, venue?: string | null, pageSize = 5): Promise<Page<BookingRow>> {
+  const params = new URLSearchParams({ status, page: String(page), pageSize: String(pageSize) });
   if (venue) params.set("venue", venue);
   return readPage(`/api/me/bookings?${params}`);
 }
@@ -193,10 +208,19 @@ export type FriendSpot = {
   youLeft: boolean;
   canCancel: boolean;
   canRename: boolean;
+  subtotalAmount?: number;
+  discountAmount?: number;
+  pointsRedeemed?: number;
+  addedAt?: string;
+  cancelledAt?: string | null;
+  cancelFeePercent?: number;
+  lateFeePercent?: number;
+  wasPaid?: boolean;
+  pointsEarned?: number;
 };
 
-export function myFriendSpots(status: string, page: number): Promise<Page<FriendSpot>> {
-  const params = new URLSearchParams({ status, page: String(page) });
+export function myFriendSpots(status: string, page: number, pageSize = 5): Promise<Page<FriendSpot>> {
+  const params = new URLSearchParams({ status, page: String(page), pageSize: String(pageSize) });
   return readPage(`/api/me/friend-spots?${params}`);
 }
 
@@ -243,10 +267,10 @@ export function bookingPayment(id: string): Promise<BookingPayment> {
   return readPage(`/api/me/bookings/${id}`);
 }
 
-export function myRewards(page: number, pageSize = 20): Promise<Page<RewardRow> & { balance: number; pending: number; pendingItems: PendingReward[] }> {
+export function myRewards(page: number, pageSize = 5): Promise<Page<RewardRow> & { balance: number; pending: number; pendingItems: PendingReward[] }> {
   return readPage(`/api/me/rewards?page=${page}&pageSize=${pageSize}`);
 }
 
-export function myPayments(page: number): Promise<Page<PaymentRow>> {
-  return readPage(`/api/me/payments?page=${page}`);
+export function myPayments(page: number, pageSize = 5): Promise<Page<PaymentRow>> {
+  return readPage(`/api/me/payments?page=${page}&pageSize=${pageSize}`);
 }

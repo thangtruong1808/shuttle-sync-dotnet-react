@@ -1975,7 +1975,15 @@ public sealed class BookingRepository(IConfiguration configuration)
         };
         const string listed = """
             SELECT b.Id, v.Name AS VenueName, v.Slug AS VenueSlug, v.TimeZone, v.Currency,
-                   c.CourtName, c.CourtNumber, cs.StartTime, cs.EndTime, b.Status, b.TotalAmount, b.GroupId, NULL AS SocialId
+                   c.CourtName, c.CourtNumber, cs.StartTime, cs.EndTime, b.Status, b.TotalAmount, b.GroupId, NULL AS SocialId,
+                   b.SubtotalAmount, b.DiscountAmount, b.PointsRedeemed, b.CreatedAt AS BookedAt, b.CancelledAt,
+                   b.ConfirmedAt IS NOT NULL AND b.TotalAmount > 0 AS WasPaid,
+                   COALESCE(b.CancelFeePercent,
+                       CASE WHEN b.Status = 'cancelled' AND b.ConfirmedAt IS NOT NULL AND b.TotalAmount > 0
+                                 AND b.CancelledAt >= cs.StartTime - INTERVAL 24 HOUR
+                            THEN v.LateCancelFeePercent ELSE 0 END) AS CancelFeePercent,
+                   v.LateCancelFeePercent AS LateFeePercent,
+                   CAST((SELECT COALESCE(SUM(a.Points), 0) FROM RewardPointAwards a WHERE a.BookingId = b.Id) AS SIGNED) AS PointsEarned
             FROM Bookings b
             JOIN CourtSessions cs ON cs.Id = b.CourtSessionId AND cs.VenueId = b.VenueId
             JOIN Courts c ON c.Id = cs.CourtId
@@ -1984,7 +1992,12 @@ public sealed class BookingRepository(IConfiguration configuration)
             UNION ALL
             SELECT r.Id, v.Name, v.Slug, v.TimeZone, v.Currency,
                    CASE WHEN r.Status = 'waitlist' THEN 'Waitlist' ELSE 'Drop-in social' END,
-                   COALESCE(c.CourtNumber, 0), s.StartTime, s.EndTime, r.Status, r.Amount, NULL AS GroupId, r.SocialId
+                   COALESCE(c.CourtNumber, 0), s.StartTime, s.EndTime, r.Status, r.Amount, NULL AS GroupId, r.SocialId,
+                   r.SubtotalAmount, r.DiscountAmount, r.PointsRedeemed, r.CreatedAt, r.CancelledAt,
+                   EXISTS (SELECT 1 FROM PublicSocialPayments p WHERE p.RegistrationId = r.Id AND p.Status IN ('succeeded', 'partially_refunded', 'refunded')),
+                   COALESCE(r.CancelFeePercent, 0),
+                   v.LateCancelFeePercent,
+                   CAST(CASE WHEN r.IncentiveAwardedAt IS NOT NULL THEN COALESCE(r.IncentivePoints, 0) ELSE 0 END AS SIGNED)
             FROM PublicSocialRegistrations r
             JOIN PublicSocials s ON s.Id = r.SocialId
             LEFT JOIN Courts c ON c.Id = r.CourtId
@@ -2001,7 +2014,8 @@ public sealed class BookingRepository(IConfiguration configuration)
         var rows = await connection.QueryAsync<BookingListRow>(
             new CommandDefinition(
                 $"""
-                SELECT Id, VenueName, VenueSlug, TimeZone, Currency, CourtName, CourtNumber, StartTime, EndTime, Status, TotalAmount, GroupId, SocialId
+                SELECT Id, VenueName, VenueSlug, TimeZone, Currency, CourtName, CourtNumber, StartTime, EndTime, Status, TotalAmount, GroupId, SocialId,
+                       SubtotalAmount, DiscountAmount, PointsRedeemed, BookedAt, CancelledAt, WasPaid, CancelFeePercent, LateFeePercent, PointsEarned
                 FROM ({combined}) entries
                 WHERE (@Venue IS NULL OR VenueSlug = @Venue)
                 ORDER BY StartTime DESC
@@ -2150,35 +2164,57 @@ public sealed class BookingRepository(IConfiguration configuration)
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        const string union = """
-            SELECT p.Id, 'payment' AS Kind, p.Amount, p.Currency, p.Status, COALESCE(p.PaidAt, p.CreatedAt) AS OccurredAt,
-                   v.Name AS VenueName
+        const string courtNames = """
+            (
+                SELECT GROUP_CONCAT(DISTINCT c2.CourtName ORDER BY c2.CourtNumber SEPARATOR ', ')
+                FROM Bookings b2
+                JOIN CourtSessions cs2 ON cs2.Id = b2.CourtSessionId
+                JOIN Courts c2 ON c2.Id = cs2.CourtId
+                WHERE b2.Id = b.Id OR (b.PayGroupId IS NOT NULL AND b2.PayGroupId = b.PayGroupId)
+            )
+            """;
+        const string courtCount = """
+            (
+                SELECT COUNT(DISTINCT b2.Id)
+                FROM Bookings b2
+                WHERE b2.Id = b.Id OR (b.PayGroupId IS NOT NULL AND b2.PayGroupId = b.PayGroupId)
+            )
+            """;
+        const string union = $"""
+            SELECT p.Id, 'payment' AS Kind, 'Court booking' AS Source, p.Amount, p.Currency, p.Status, COALESCE(p.PaidAt, p.CreatedAt) AS OccurredAt,
+                   v.Name AS VenueName, v.TimeZone, {courtNames} AS CourtNames, {courtCount} AS CourtCount, cs.StartTime, cs.EndTime
             FROM Payments p
             JOIN Bookings b ON b.Id = p.BookingId
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
             JOIN Venues v ON v.Id = b.VenueId
             WHERE b.UserId = @UserId
             UNION ALL
-            SELECT r.Id, 'refund' AS Kind, r.Amount, p.Currency, r.Status, COALESCE(r.ProcessedAt, r.CreatedAt) AS OccurredAt,
-                   v.Name AS VenueName
+            SELECT r.Id, 'refund' AS Kind, 'Court booking' AS Source, r.Amount, p.Currency, r.Status, COALESCE(r.ProcessedAt, r.CreatedAt) AS OccurredAt,
+                   v.Name AS VenueName, v.TimeZone, {courtNames} AS CourtNames, {courtCount} AS CourtCount, cs.StartTime, cs.EndTime
             FROM Refunds r
             JOIN Payments p ON p.Id = r.PaymentId
             JOIN Bookings b ON b.Id = p.BookingId
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
             JOIN Venues v ON v.Id = b.VenueId
             WHERE b.UserId = @UserId
             UNION ALL
-            SELECT p.Id, 'payment' AS Kind, p.Amount, p.Currency, p.Status, COALESCE(p.PaidAt, p.CreatedAt) AS OccurredAt,
-                   v.Name AS VenueName
+            SELECT p.Id, 'payment' AS Kind, 'Public social' AS Source, p.Amount, p.Currency, p.Status, COALESCE(p.PaidAt, p.CreatedAt) AS OccurredAt,
+                   v.Name AS VenueName, v.TimeZone, c.CourtName AS CourtNames, 1 AS CourtCount, s.StartTime, s.EndTime
             FROM PublicSocialPayments p
             JOIN PublicSocialRegistrations r ON r.Id = p.RegistrationId
+            JOIN PublicSocials s ON s.Id = r.SocialId
             JOIN Venues v ON v.Id = r.VenueId
+            LEFT JOIN Courts c ON c.Id = r.CourtId
             WHERE r.UserId = @UserId
             UNION ALL
-            SELECT sr.Id, 'refund' AS Kind, sr.Amount, p.Currency, sr.Status, COALESCE(sr.ProcessedAt, sr.CreatedAt) AS OccurredAt,
-                   v.Name AS VenueName
+            SELECT sr.Id, 'refund' AS Kind, 'Public social' AS Source, sr.Amount, p.Currency, sr.Status, COALESCE(sr.ProcessedAt, sr.CreatedAt) AS OccurredAt,
+                   v.Name AS VenueName, v.TimeZone, c.CourtName AS CourtNames, 1 AS CourtCount, s.StartTime, s.EndTime
             FROM PublicSocialRefunds sr
             JOIN PublicSocialPayments p ON p.Id = sr.PaymentId
             JOIN PublicSocialRegistrations r ON r.Id = p.RegistrationId
+            JOIN PublicSocials s ON s.Id = r.SocialId
             JOIN Venues v ON v.Id = r.VenueId
+            LEFT JOIN Courts c ON c.Id = r.CourtId
             WHERE r.UserId = @UserId
             """;
         var total = await connection.ExecuteScalarAsync<int>(
@@ -2189,7 +2225,7 @@ public sealed class BookingRepository(IConfiguration configuration)
         var rows = await connection.QueryAsync<PaymentListRow>(
             new CommandDefinition(
                 $"""
-                SELECT Id, Kind, Amount, Currency, Status, OccurredAt, VenueName
+                SELECT Id, Kind, Source, Amount, Currency, Status, OccurredAt, VenueName, TimeZone, CourtNames, CourtCount, StartTime, EndTime
                 FROM ({union}) entries
                 ORDER BY OccurredAt DESC
                 LIMIT @Take OFFSET @Skip
@@ -4992,21 +5028,43 @@ public sealed class BookingRepository(IConfiguration configuration)
             WHERE r.UserId = @UserId AND {filter}
             """;
         await using var connection = await OpenAsync(cancellationToken);
+        // Paged by session so every friend in a social stays together on one page.
         var total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
-            $"SELECT COUNT(*) {from}",
+            $"SELECT COUNT(DISTINCT f.SocialId) {from}",
             new { UserId = userId },
             cancellationToken: cancellationToken));
+        var socialIds = (await connection.QueryAsync<Guid>(new CommandDefinition(
+            $"""
+            SELECT f.SocialId
+            {from}
+            GROUP BY f.SocialId, s.StartTime
+            ORDER BY s.StartTime {direction}, f.SocialId
+            LIMIT @Take OFFSET @Skip
+            """,
+            new { UserId = userId, Take = pageSize, Skip = offset },
+            cancellationToken: cancellationToken))).ToArray();
+        if (socialIds.Length == 0)
+        {
+            return ([], total);
+        }
+
         var rows = await connection.QueryAsync<FriendSpotRow>(new CommandDefinition(
             $"""
             SELECT f.Id, f.DisplayName, f.Status, f.Amount,
                    COALESCE(c.CourtName, 'Waitlist') AS CourtName, COALESCE(c.CourtNumber, 0) AS CourtNumber,
                    v.Name AS VenueName, v.Slug AS VenueSlug, v.TimeZone, v.Currency,
-                   s.Id AS SocialId, s.StartTime, s.EndTime, r.Status AS RegistrationStatus
-            {from}
-            ORDER BY s.StartTime {direction}, f.CreatedAt ASC
-            LIMIT @Take OFFSET @Skip
+                   s.Id AS SocialId, s.StartTime, s.EndTime, r.Status AS RegistrationStatus,
+                   f.SubtotalAmount, f.DiscountAmount, f.PointsRedeemed, f.CreatedAt AS AddedAt, f.CancelledAt,
+                   COALESCE(f.CancelFeePercent, 0) AS CancelFeePercent, v.LateCancelFeePercent AS LateFeePercent,
+                   EXISTS (
+                       SELECT 1 FROM PublicSocialPayments p
+                       WHERE p.FriendGroupId = f.CheckoutGroupId AND p.Status IN ('succeeded', 'partially_refunded', 'refunded')
+                   ) AS WasPaid,
+                   CAST(CASE WHEN f.IncentiveAwardedAt IS NOT NULL THEN COALESCE(f.IncentivePoints, 0) ELSE 0 END AS SIGNED) AS PointsEarned
+            {from} AND f.SocialId IN @SocialIds
+            ORDER BY s.StartTime {direction}, f.SocialId, f.CreatedAt ASC
             """,
-            new { UserId = userId, Take = pageSize, Skip = offset },
+            new { UserId = userId, SocialIds = socialIds },
             cancellationToken: cancellationToken));
         return (rows.ToArray(), total);
     }
@@ -7138,6 +7196,15 @@ public sealed class FriendSpotRow
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
     public string RegistrationStatus { get; init; } = "";
+    public decimal SubtotalAmount { get; init; }
+    public decimal DiscountAmount { get; init; }
+    public int PointsRedeemed { get; init; }
+    public DateTime AddedAt { get; init; }
+    public DateTime? CancelledAt { get; init; }
+    public decimal CancelFeePercent { get; init; }
+    public decimal LateFeePercent { get; init; }
+    public bool WasPaid { get; init; }
+    public long PointsEarned { get; init; }
 }
 
 public sealed class FriendGroupIntentRow
@@ -7169,6 +7236,15 @@ public sealed class BookingListRow
     public decimal TotalAmount { get; init; }
     public Guid? GroupId { get; init; }
     public Guid? SocialId { get; init; }
+    public decimal SubtotalAmount { get; init; }
+    public decimal DiscountAmount { get; init; }
+    public int PointsRedeemed { get; init; }
+    public DateTime BookedAt { get; init; }
+    public DateTime? CancelledAt { get; init; }
+    public bool WasPaid { get; init; }
+    public decimal CancelFeePercent { get; init; }
+    public decimal LateFeePercent { get; init; }
+    public long PointsEarned { get; init; }
 }
 
 public sealed class CancelBookingRow
@@ -7214,4 +7290,10 @@ public sealed class PaymentListRow
     public string Status { get; init; } = "";
     public DateTime OccurredAt { get; init; }
     public string VenueName { get; init; } = "";
+    public string Source { get; init; } = "";
+    public string TimeZone { get; init; } = "";
+    public string? CourtNames { get; init; }
+    public long CourtCount { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
 }
