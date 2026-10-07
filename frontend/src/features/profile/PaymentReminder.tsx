@@ -66,11 +66,27 @@ export function PaymentBell() {
 
 function noticeText(item: UnpaidHold) {
   const when = formatVenueRange(item.startTime, item.endTime, item.timeZone);
-  const courts = `${item.courtCount} ${item.courtCount === 1 ? "court" : "courts"}`;
+  const single = item.courtCount === 1;
+  const courts = `${item.courtCount} ${single ? "court" : "courts"}`;
   if (item.checkoutStarted) {
-    return `Payment for ${item.venueName}, ${when} (${courts}) is not finished. Complete the payment, or delete this week.`;
+    return `Payment for ${item.venueName}, ${when} (${courts}) is not finished. Complete the payment, or delete ${single ? "this court" : "these courts"}.`;
   }
-  return `${item.venueName}, ${when} (${courts}) is not paid yet. Pay before ${formatVenueDateTime(item.payBy, item.timeZone)}, or these courts are released.`;
+  return `${item.venueName}, ${when} (${courts}) is not paid yet. Pay before ${formatVenueDateTime(item.payBy, item.timeZone)}, or ${single ? "this court is" : "these courts are"} released.`;
+}
+
+function noticeHeading(items: UnpaidHold[]) {
+  const courts = items.reduce((sum, item) => sum + item.courtCount, 0);
+  if (items.length === 1) {
+    return courts === 1 ? "1 court needs payment soon" : `${courts} courts need payment soon`;
+  }
+  return `${items.length} bookings need payment soon · ${courts} courts`;
+}
+
+function noticeHint(items: UnpaidHold[]) {
+  const courts = items.reduce((sum, item) => sum + item.courtCount, 0);
+  return courts === 1
+    ? "Pay before 24 hours of the session to keep this court. If it is still unpaid then, the court is released for other players."
+    : "Pay each booking before 24 hours of its session to keep those courts. Any court still unpaid then is released for other players.";
 }
 
 function NoticeRow({ item }: { item: UnpaidHold }) {
@@ -115,7 +131,7 @@ function NoticeRow({ item }: { item: UnpaidHold }) {
           </Button>
         </div>
       </div>
-      {confirm && !busy ? <p className="mt-2 text-sm text-amber-100">This releases the unpaid courts for this week only. Paid weeks stay, and Keep weeks ahead is turned off so this week is not added back.</p> : null}
+      {confirm && !busy ? <p className="mt-2 text-sm text-amber-100">{item.courtCount === 1 ? "This releases the unpaid court for this session only." : `This releases the ${item.courtCount} unpaid courts for this session only.`} Paid weeks stay, and Keep weeks ahead is turned off so this week is not added back.</p> : null}
       {error ? <p className="mt-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-100" role="alert">{error}</p> : null}
     </li>
   );
@@ -126,8 +142,8 @@ export function PaymentNotice() {
   if (items.length === 0) return null;
   return (
     <section className="mb-4 rounded-2xl border border-amber-300/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-50" role="status" aria-label="Payments to finish">
-      <p className="font-semibold text-amber-100">{items.length === 1 ? "1 week needs payment soon" : `${items.length} weeks need payment soon`}</p>
-      <p className="mt-1 text-amber-50/80">Later weeks are still held. You only need to pay each week before 24 hours of that session.</p>
+      <p className="font-semibold text-amber-100">{noticeHeading(items)}</p>
+      <p className="mt-1 text-amber-50/80">{noticeHint(items)}</p>
       <ul className="mt-3 space-y-2">
         {items.map((item) => <NoticeRow key={`${item.groupId}-${item.startTime}`} item={item} />)}
       </ul>

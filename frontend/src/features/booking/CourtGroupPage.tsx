@@ -69,7 +69,8 @@ export default function CourtGroupPage() {
   const [released, setReleased] = useState<{ message: string; retry: ReleasedRetry | null } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [points, setPoints] = useState(0);
+  const [carried] = useState(() => (location.state as { promotionCode?: string; points?: number } | null) ?? null);
+  const [points, setPoints] = useState(carried?.points ?? 0);
   const [paying, setPaying] = useState(false);
   const [outcome, setOutcome] = useState<BookingPayment | null>(null);
   const [waiting, setWaiting] = useState(false);
@@ -131,8 +132,13 @@ export default function CourtGroupPage() {
   }, [slug, groupId, attempt, status, location.search]);
 
   useEffect(() => {
-    venuePromotions(slug).then(setPromotions).catch(() => setPromotions([]));
-  }, [slug]);
+    venuePromotions(slug)
+      .then((list) => {
+        setPromotions(list);
+        if (carried?.promotionCode) setAppliedCode((current) => current ?? list.find((promotion) => promotion.code === carried.promotionCode) ?? null);
+      })
+      .catch(() => setPromotions([]));
+  }, [slug, carried]);
 
   useEffect(() => {
     function onShow(event: PageTransitionEvent) {
@@ -187,6 +193,11 @@ export default function CourtGroupPage() {
   const paidView = (checkoutState === "success" && (waiting || securedCount > 0)) || (checkoutState !== "cancel" && rows.length > 0 && securedCount === rows.length);
   const unpaid = rows.filter((session) => session.status === "pending" && picked.includes(session.bookingId));
   const subtotal = unpaid.reduce((sum, session) => sum + session.price, 0);
+  const pickedCourts = [...unpaid].sort((left, right) => left.courtNumber - right.courtNumber).map((session) => session.courtName);
+  const otherWeeks = new Set(rows.filter((session) => session.status === "pending" && session.startTime !== unpaid[0]?.startTime).map((session) => session.startTime)).size;
+  const payIntro = unpaid.length === 0
+    ? "There is no deposit. Choose one or more courts below to pay for that week. Every week stays held until 24 hours before it starts, and you can pay it from My bookings."
+    : `There is no deposit. This payment covers ${unpaid.length} ${unpaid.length === 1 ? "court" : "courts"} (${pickedCourts.join(", ")}) on ${formatVenueDateTime(unpaid[0].startTime, timeZone)}.${otherWeeks > 0 ? ` The other ${otherWeeks === 1 ? "week stays" : `${otherWeeks} weeks stay`} held, and you pay each of them from My bookings before 24 hours of that session.` : ""}`;
   const discount = promoDiscount(subtotal, appliedCode);
   const payable = Math.max(0, Math.round((subtotal - discount) * 100) / 100);
   const maxPoints = Math.min(balance, payable <= 0 ? 0 : Math.floor(payable * rate));
@@ -237,7 +248,7 @@ export default function CourtGroupPage() {
         {paidView ? waiting ? <Spinner className="h-7 w-7 shrink-0 text-line" /> : <CircleCheck className="h-8 w-8 shrink-0 text-line" aria-hidden="true" /> : null}
         <span>{paidView ? waiting ? "Checking your payment" : "This week is paid" : "Pay one week"}</span>
       </h1>
-      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">{paidView ? "The courts you just paid are secured. Every later week stays held until 24 hours before it starts. Pay those weeks from My bookings. There is no deposit." : "There is no deposit. This payment covers the courts you chose for one week. Later weeks stay held, and you pay each of them from My bookings before 24 hours of that session."}</p>
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">{paidView ? "The courts you just paid are secured. Every later week stays held until 24 hours before it starts. Pay those weeks from My bookings. There is no deposit." : payIntro}</p>
       {released ? (
         <section className="mt-6 max-w-3xl rounded-3xl border border-amber-300/40 bg-amber-400/10 p-4 sm:p-5" role="status">
           <p className="flex items-start gap-2 text-sm leading-relaxed text-amber-50">

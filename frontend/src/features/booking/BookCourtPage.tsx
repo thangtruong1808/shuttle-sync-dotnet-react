@@ -252,7 +252,7 @@ export default function BookCourtPage() {
   const weekPayable = Math.max(0, Math.round((weekSubtotal - weekDiscount) * 100) / 100);
   const maxPoints = Math.min(balance, weekPayable <= 0 ? 0 : Math.floor(weekPayable * pointsRate));
   const payPreview = pointsQuote(Math.min(points, maxPoints), balance, pointsRate, weekPayable);
-  const showPayOptions = payAtRegistration && weekSubtotal > 0;
+  const showPayOptions = weekSubtotal > 0;
   const cashTooSmall = showPayOptions && payPreview.cash > 0 && payPreview.cash < 0.5;
   const fullTotal = each === null ? 0 : Math.round(each * form.courtIds.length * 100) / 100;
   const weekSavings = showPayOptions ? Math.round((weekDiscount + payPreview.value) * 100) / 100 : 0;
@@ -284,7 +284,7 @@ export default function BookCourtPage() {
         return;
       }
       const opened = await openCourtHold(slug, form.courtIds, date, form.start, form.end, form.weeks, form.repeat);
-      navigate(`/${slug}/book/group/${opened.groupId}`);
+      navigate(`/${slug}/book/group/${opened.groupId}`, { state: { promotionCode: appliedCode?.code, points: payPreview.points } });
     } catch (reason) {
       sessionStorage.removeItem("shuttle-sync-held-note");
       setFormError(shownHoldError(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] : undefined));
@@ -416,8 +416,9 @@ export default function BookCourtPage() {
                     <div className="flex justify-between gap-3"><dt>This week, {form.courtIds.length} {form.courtIds.length === 1 ? "court" : "courts"}</dt><dd><Money amount={weekSubtotal} currency={currency} /></dd></div>
                     {weekDiscount > 0 ? <div className="flex justify-between gap-3"><dt>Promotion</dt><dd>-<Money amount={weekDiscount} currency={currency} /></dd></div> : null}
                     <div className="flex justify-between gap-3"><dt>Points value</dt><dd><Money amount={payPreview.value} currency={currency} /></dd></div>
-                    <div className="flex justify-between gap-3 font-semibold text-white"><dt>To pay now</dt><dd><Money amount={payPreview.cash} currency={currency} /></dd></div>
+                    <div className="flex justify-between gap-3 font-semibold text-white"><dt>{payAtRegistration ? "To pay now" : "To pay for this week"}</dt><dd><Money amount={payPreview.cash} currency={currency} /></dd></div>
                   </dl>
+                  {!payAtRegistration ? <p className="mt-2 text-sm text-mist/70">Your code and points carry over to the next step, where you can pay this week now or later from My bookings.</p> : null}
                   {cashTooSmall ? <p className="mt-2 text-sm text-mist">Use enough points to cover this week, or leave at least $0.50 to pay.</p> : null}
                 </div>
               </div>
