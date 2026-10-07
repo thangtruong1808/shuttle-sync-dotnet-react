@@ -332,6 +332,38 @@ public sealed class BookingPayments(
         await ApplyIntentAsync(intent, cancellationToken);
     }
 
+    public async Task<SeriesCancelPreview> PreviewCancelAsync(Guid userId, IReadOnlyList<Guid> bookingIds, CancellationToken cancellationToken)
+    {
+        var preview = new SeriesCancelPreview();
+        foreach (var bookingId in bookingIds)
+        {
+            var context = await payments.LoadCancelAsync(userId, bookingId, cancellationToken);
+            if (context is null || context.Status is not ("pending" or "confirmed") || context.StartTime <= DateTime.UtcNow)
+            {
+                continue;
+            }
+
+            // Mirrors CancelAsync so the amounts shown match the refund Stripe receives.
+            var late = DateTime.SpecifyKind(context.StartTime, DateTimeKind.Utc) <= DateTime.UtcNow.AddHours(24);
+            var fee = context.PaymentStatus == "succeeded" && late ? context.LateCancelFeePercent : 0m;
+            var share = context.ShareAmount > 0 ? context.ShareAmount : context.PaymentAmount;
+            var charged = context.PaymentStatus == "succeeded" && share > 0 && !string.IsNullOrWhiteSpace(context.StripePaymentIntentId) ? share : 0m;
+            var refund = charged > 0 ? Math.Min(charged, decimal.Round(charged * (100m - fee) / 100m, 2, MidpointRounding.AwayFromZero)) : 0m;
+            var restore = Math.Max(0, context.PointsRedeemed - context.PointsRestored);
+
+            preview.Currency = context.Currency;
+            preview.FeePercent = context.LateCancelFeePercent;
+            preview.Courts++;
+            preview.LateCourts += late ? 1 : 0;
+            preview.Charged += charged;
+            preview.Refund += refund;
+            preview.PointsBack += restore;
+            preview.PointsKept += Math.Max(0, context.PointsRedeemed - context.PointsRestored - restore);
+        }
+
+        return preview;
+    }
+
     public async Task<CancelResponse> CancelAsync(Guid userId, Guid bookingId, CancellationToken cancellationToken)
     {
         var context = await payments.LoadCancelAsync(userId, bookingId, cancellationToken);
@@ -397,10 +429,8 @@ public sealed class BookingPayments(
             }
         }
 
-        var target = fee == 0
-            ? context.PointsRedeemed
-            : (int)Math.Floor(context.PointsRedeemed * (100m - fee) / 100m);
-        var restore = Math.Max(0, target - context.PointsRestored);
+        // The late-cancel fee only applies to the card charge; every point used on a court booking comes back.
+        var restore = Math.Max(0, context.PointsRedeemed - context.PointsRestored);
         string? paymentStatus = context.PaymentStatus switch
         {
             "succeeded" when refundAmount <= 0 => null,
@@ -1849,6 +1879,18 @@ public sealed record CancelResponse(
 {
     public static CancelResponse Fail(string error, int statusCode) =>
         new(statusCode, error, 0, 0, 0, "AUD");
+}
+
+public sealed class SeriesCancelPreview
+{
+    public string Currency { get; set; } = "AUD";
+    public decimal FeePercent { get; set; }
+    public int Courts { get; set; }
+    public int LateCourts { get; set; }
+    public decimal Charged { get; set; }
+    public decimal Refund { get; set; }
+    public int PointsBack { get; set; }
+    public int PointsKept { get; set; }
 }
 
 public sealed record SocialCheckoutResponse(

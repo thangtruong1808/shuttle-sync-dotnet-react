@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowRight, CalendarDays, ChevronDown, CircleCheck, Clock } from "lucide-react";
+import { ArrowRight, CalendarDays, ChevronDown, CircleCheck, Clock, ShieldCheck } from "lucide-react";
 import type { AppDispatch, RootState } from "../../app/store";
 import { ErrorState, Money, formatVenueDateTime } from "../../components/format";
 import { Button, Skeleton, Spinner } from "../../components/ui";
@@ -233,7 +233,10 @@ export default function CourtGroupPage() {
   return (
     <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
       <Link to={`/${slug}/book`} className="text-sm text-line hover:underline">Back to booking</Link>
-      <h1 className="mt-3 font-display text-3xl text-white">{paidView ? "This week is paid" : "Pay one week"}</h1>
+      <h1 className="mt-3 flex items-center gap-2 font-display text-3xl text-white">
+        {paidView ? waiting ? <Spinner className="h-7 w-7 shrink-0 text-line" /> : <CircleCheck className="h-8 w-8 shrink-0 text-line" aria-hidden="true" /> : null}
+        <span>{paidView ? waiting ? "Checking your payment" : "This week is paid" : "Pay one week"}</span>
+      </h1>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">{paidView ? "The courts you just paid are secured. Every later week stays held until 24 hours before it starts. Pay those weeks from My bookings. There is no deposit." : "There is no deposit. This payment covers the courts you chose for one week. Later weeks stay held, and you pay each of them from My bookings before 24 hours of that session."}</p>
       {released ? (
         <section className="mt-6 max-w-3xl rounded-3xl border border-amber-300/40 bg-amber-400/10 p-4 sm:p-5" role="status">
@@ -275,10 +278,10 @@ export default function CourtGroupPage() {
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 font-semibold text-line">
-                    {waiting ? <Spinner className="h-5 w-5" /> : <CircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />}
-                    {waiting ? "Checking the payment…" : "This week is paid."}
+                    {waiting ? <Spinner className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5 shrink-0" aria-hidden="true" />}
+                    {waiting ? "Waiting for Stripe to confirm…" : `${securedCount} ${securedCount === 1 ? "court is" : "courts are"} secured`}
                   </p>
-                  <p className="mt-2 text-sm leading-relaxed text-mist/80">{securedCount} {securedCount === 1 ? "court is" : "courts are"} secured. {heldCount} {heldCount === 1 ? "court stays" : "courts stay"} held. Pay each held week from My bookings before 24 hours of that session.</p>
+                  <p className="mt-2 text-sm leading-relaxed text-mist/80">{heldCount} {heldCount === 1 ? "court stays" : "courts stay"} held. Pay each held week from My bookings before 24 hours of that session.</p>
                   {heldNote ? <p className="mt-2 text-sm leading-relaxed text-mist/80">{heldNote}</p> : null}
                   {formError ? <p className="mt-2 text-sm text-mist" role="alert">{formError}</p> : null}
                 </div>
@@ -402,7 +405,7 @@ export default function CourtGroupPage() {
                   <div className="flex justify-between gap-3 font-semibold text-white"><dt>To pay</dt><dd><Money amount={preview.cash} currency={currency} /></dd></div>
                 </dl>
                 {incentive > 0 ? <p className="text-sm font-semibold text-line">+{incentive} pts after these sessions end, once they are paid.</p> : null}
-                <p className="text-sm text-mist/70">More than 24 hours before a session, a paid court is refunded in full. Within 24 hours, the venue keeps {Number(fee.toFixed(2))}%.</p>
+                <p className="text-sm text-mist/70">More than 24 hours before a session, a paid court is refunded in full. Within 24 hours, the venue keeps {Number(fee.toFixed(2))}% of the card payment. Points you used always come back in full.</p>
                 {cashTooSmall ? <p className="text-sm text-mist">Use enough points to cover these courts, or leave at least $0.50 to pay.</p> : null}
                 {formError ? <p className="text-sm text-mist" role="alert">{formError}</p> : null}
                 {waiting ? <p className="text-sm text-mist" role="status">Checking the payment…</p> : null}

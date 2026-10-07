@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, CreditCard, Eye, UserPlus, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, CreditCard, Eye, Gift, Repeat, TriangleAlert, Unlock, UserPlus, X } from "lucide-react";
 import type { AppDispatch } from "../../app/store";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
@@ -9,7 +9,7 @@ import { loadCurrentUser } from "../auth/authSlice";
 import { useVenues } from "../../components/layout/SiteLayout";
 import { addHoldCourts, venueAvailability, venueForPage } from "../venues/venueApi";
 import { AuthRequestError } from "../auth/authApi";
-import { cancelBooking, deleteSeries, deleteUnpaidHold, moveCourtSessions, myBookings, myCourtWeeks, refreshUnpaidHolds, setCourtRepeat, type BookingRow, type CancelResult, type CourtWeekCourt, type Page } from "./profileApi";
+import { cancelBooking, deleteSeries, deleteSeriesPreview, deleteUnpaidHold, moveCourtSessions, myBookings, myCourtWeeks, refreshUnpaidHolds, setCourtRepeat, type BookingRow, type CancelResult, type CourtWeekCourt, type Page, type SeriesCancelPreview } from "./profileApi";
 
 const tabs = [
   { id: "upcoming", label: "Upcoming" },
@@ -370,10 +370,21 @@ function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: 
   const [seriesBusy, setSeriesBusy] = useState(false);
   const [confirmSeries, setConfirmSeries] = useState(false);
   const [seriesError, setSeriesError] = useState<string | null>(null);
+  const [seriesPreview, setSeriesPreview] = useState<SeriesCancelPreview | null>(null);
+  const unpaidCourts = ordered.flat().filter((court) => court.status === "pending" && new Date(court.startTime).getTime() > Date.now()).length;
 
   async function removeSeries() {
     if (!confirmSeries) {
-      setConfirmSeries(true);
+      setSeriesBusy(true);
+      setSeriesError(null);
+      try {
+        setSeriesPreview(await deleteSeriesPreview(sample.groupId));
+        setConfirmSeries(true);
+      } catch (reason) {
+        setSeriesError(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "The refund could not be checked." : "The refund could not be checked.");
+      } finally {
+        setSeriesBusy(false);
+      }
       return;
     }
     setSeriesBusy(true);
@@ -431,7 +442,60 @@ function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: 
           </Button>
         </div>
       </div>
-      {confirmSeries && !seriesBusy ? <p className="mt-3 text-sm text-mist" role="status">Delete every week in this booking? Unpaid courts are released. Paid courts are cancelled under the cancellation policy. Keep weeks ahead is turned off, so no week is added back.</p> : null}
+      {confirmSeries && seriesPreview && !seriesBusy ? (
+        <div className="mt-3 rounded-2xl border border-rose-300/40 bg-rose-500/10 p-3 sm:p-4" role="status">
+          <p className="flex items-center gap-2 font-semibold text-rose-100">
+            <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+            Delete every week in this booking?
+          </p>
+          <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-mist">
+            {unpaidCourts > 0 ? (
+              <li className="flex items-start gap-2">
+                <Unlock className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" aria-hidden="true" />
+                <span>{unpaidCourts} unpaid {unpaidCourts === 1 ? "court is" : "courts are"} released. Nothing is charged.</span>
+              </li>
+            ) : null}
+            {seriesPreview.paidCourts > 0 ? (
+              <li className="flex items-start gap-2">
+                <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-line" aria-hidden="true" />
+                <span>
+                  {seriesPreview.paidCourts} paid {seriesPreview.paidCourts === 1 ? "court is" : "courts are"} cancelled. You paid <Money amount={seriesPreview.charged} currency={seriesPreview.currency} />.{" "}
+                  <span className="font-semibold text-white"><Money amount={seriesPreview.refund} currency={seriesPreview.currency} /> is refunded to your card.</span>
+                </span>
+              </li>
+            ) : null}
+            {seriesPreview.fee > 0 ? (
+              <li className="flex items-start gap-2">
+                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-rose-200" aria-hidden="true" />
+                <span>
+                  {seriesPreview.lateCourts} paid {seriesPreview.lateCourts === 1 ? "court starts" : "courts start"} within 24 hours, so the venue keeps{" "}
+                  <span className="font-semibold text-rose-100"><Money amount={seriesPreview.fee} currency={seriesPreview.currency} /></span> ({Number(seriesPreview.feePercent.toFixed(2))}% late-cancel fee).
+                </span>
+              </li>
+            ) : seriesPreview.paidCourts > 0 ? (
+              <li className="flex items-start gap-2">
+                <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-line" aria-hidden="true" />
+                <span>Every paid court is more than 24 hours away, so the refund is in full.</span>
+              </li>
+            ) : null}
+            {seriesPreview.pointsBack > 0 || seriesPreview.pointsKept > 0 ? (
+              <li className="flex items-start gap-2">
+                <Gift className="mt-0.5 h-4 w-4 shrink-0 text-line" aria-hidden="true" />
+                <span>
+                  {seriesPreview.pointsBack > 0 ? `${seriesPreview.pointsBack} points come back to your balance.` : ""}
+                  {seriesPreview.pointsBack > 0 && seriesPreview.pointsKept > 0 ? " " : ""}
+                  {seriesPreview.pointsKept > 0 ? `${seriesPreview.pointsKept} points are kept by the venue.` : ""}
+                </span>
+              </li>
+            ) : null}
+            <li className="flex items-start gap-2">
+              <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-mist/70" aria-hidden="true" />
+              <span>Keep weeks ahead is turned off, so no week is added back.</span>
+            </li>
+          </ul>
+          <Button type="button" variant="secondary" className="mt-3 w-full sm:w-auto" onClick={() => { setConfirmSeries(false); setSeriesPreview(null); }}>Keep all weeks</Button>
+        </div>
+      ) : null}
       {seriesError ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-100" role="alert">{seriesError}</p> : null}
       {open ? (
         <div className="mt-4">

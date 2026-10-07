@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { ArrowRight, CircleAlert } from "lucide-react";
+import { ArrowRight, CircleAlert, Tag } from "lucide-react";
 import { useSelector } from "react-redux";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { RootState } from "../../app/store";
@@ -254,6 +254,9 @@ export default function BookCourtPage() {
   const payPreview = pointsQuote(Math.min(points, maxPoints), balance, pointsRate, weekPayable);
   const showPayOptions = payAtRegistration && weekSubtotal > 0;
   const cashTooSmall = showPayOptions && payPreview.cash > 0 && payPreview.cash < 0.5;
+  const fullTotal = each === null ? 0 : Math.round(each * form.courtIds.length * 100) / 100;
+  const weekSavings = showPayOptions ? Math.round((weekDiscount + payPreview.value) * 100) / 100 : 0;
+  const totalAfterSavings = Math.max(0, Math.round((fullTotal - weekSavings) * 100) / 100);
 
   async function onContinue(event: FormEvent) {
     event.preventDefault();
@@ -426,8 +429,15 @@ export default function BookCourtPage() {
                 ) : (
                   <>
                     <p className="font-semibold text-white">
-                      Total for every selected court and week: <Money amount={each * form.courtIds.length} currency={currency} />
+                      Total for every selected court and week: <Money amount={totalAfterSavings} currency={currency} />
+                      {weekSavings > 0 ? <span className="ml-2 font-normal text-mist/60 line-through"><Money amount={fullTotal} currency={currency} /></span> : null}
                     </p>
+                    {weekSavings > 0 ? (
+                      <p className="mt-1 inline-flex items-center gap-1.5 text-line">
+                        <Tag className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        <span>You save <Money amount={weekSavings} currency={currency} /> on this week with {weekDiscount > 0 && payPreview.value > 0 ? "your promotion code and points" : weekDiscount > 0 ? "your promotion code" : "your points"}.</span>
+                      </p>
+                    ) : null}
                     <p className="mt-1">You do not pay every later week now. Each of those weeks is held until 24 hours before it starts. {scheduledRate ? "This total uses the venue rate for the days and hours you chose. " : ""}{payAtRegistration ? "The first week starts within 24 hours, so it is not held. Pay for that week now or those courts stay open." : "Pay each week before 24 hours of that session, or those courts are released."} {quoting ? <Spinner className="inline h-3.5 w-3.5" /> : null}</p>
                   </>
                 )}

@@ -135,6 +135,22 @@ export function deleteSeries(groupId: string): Promise<{ deleted: boolean }> {
   return readPage(`/api/me/holds/${groupId}/delete-series`, { method: "POST" });
 }
 
+export type SeriesCancelPreview = {
+  currency: string;
+  feePercent: number;
+  paidCourts: number;
+  lateCourts: number;
+  charged: number;
+  refund: number;
+  fee: number;
+  pointsBack: number;
+  pointsKept: number;
+};
+
+export function deleteSeriesPreview(groupId: string): Promise<SeriesCancelPreview> {
+  return readPage(`/api/me/holds/${groupId}/delete-series/preview`);
+}
+
 export function deleteUnpaidHold(groupId: string, bookingIds?: string[]): Promise<{ deleted: boolean }> {
   return readPage(`/api/me/holds/${groupId}/delete-unpaid`, {
     method: "POST",

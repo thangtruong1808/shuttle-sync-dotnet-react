@@ -221,7 +221,7 @@ export function RewardsPage() {
         <p>You can use a code and points on a court, a public social, a waitlist place, and friends.</p>
       </GuideCard>
       <GuideCard title="If you cancel or the payment stops">
-        <p>Cancel before the session starts from My bookings or Friend spots. The <Link to="/cancellation" className="font-semibold text-line hover:underline">cancellation policy</Link> says when the card refund is full and when the venue keeps a late-cancel share. Points you already spent follow that same share.</p>
+        <p>Cancel before the session starts from My bookings or Friend spots. The <Link to="/cancellation" className="font-semibold text-line hover:underline">cancellation policy</Link> says when the card refund is full and when the venue keeps a late-cancel share. Points you spent on a court booking always come back in full. Points spent on a public social or friend follow that same share.</p>
         <p>Leaving Stripe, letting the 30-minute hold expire, or a failed card payment releases the place. Points held for that checkout come back. No incentive is added.</p>
         <p>Each venue's late-cancel percent is on the <Link to="/promotions" className="font-semibold text-line hover:underline">Promotions</Link> page.</p>
       </GuideCard>
@@ -258,7 +258,7 @@ export function FaqPage() {
             Points you can spend are available now. Points from a court, public social, or friend are pending until that session ends, then they move to your balance. Open Reward points in your profile to see both. A cancelled place does not earn them.
           </FaqItem>
           <FaqItem question="How do refunds work?">
-            Cancel before the session starts. More than 24 hours before the start, the card payment and the points you used come back in full. Within 24 hours, the venue keeps its late-cancel percent of the charge and the same percent of the points used. See the <Link to="/cancellation" className="font-semibold text-line hover:underline">cancellation policy</Link>.
+            Cancel before the session starts. More than 24 hours before the start, the card payment and the points you used come back in full. Within 24 hours, the venue keeps its late-cancel percent of the charge. Points used on a court booking still come back in full. For a public social or friend, the venue keeps the same percent of the points used. See the <Link to="/cancellation" className="font-semibold text-line hover:underline">cancellation policy</Link>.
           </FaqItem>
         </div>
       </PageSection>
@@ -282,8 +282,9 @@ export function CancellationPage() {
         <p>The incentive for that place is not added, because you will not be playing.</p>
       </GuideCard>
       <GuideCard title="Within 24 hours of the start">
-        <p>After the card payment has succeeded, the venue keeps its late-cancel percent of that charge and refunds the rest. The same percent of the points you used is kept, and the rest comes back.</p>
-        <p>Example: you used 100 points and the venue fee is 20%. 80 points return. If the card payment never succeeded, every held point returns.</p>
+        <p>After the card payment has succeeded, the venue keeps its late-cancel percent of that charge and refunds the rest.</p>
+        <p>Court bookings: every point you used comes back in full. Public socials and friends: the same percent of the points you used is kept, and the rest comes back.</p>
+        <p>Example: you used 100 points on a public social and the venue fee is 20%. 80 points return. On a court booking, all 100 return. If the card payment never succeeded, every held point returns.</p>
         <p>Each venue's percent is listed on the <Link to="/promotions" className="font-semibold text-line hover:underline">Promotions</Link> page.</p>
       </GuideCard>
       <GuideCard title="Courts, socials, and friends">

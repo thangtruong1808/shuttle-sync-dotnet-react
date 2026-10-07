@@ -14,6 +14,7 @@ public static class ProfileEndpoints
         me.MapPut("/holds/{groupId:guid}/repeat", SetRepeatAsync);
         me.MapPost("/holds/{groupId:guid}/delete-unpaid", DeleteUnpaidAsync);
         me.MapPost("/holds/{groupId:guid}/delete-series", DeleteSeriesAsync);
+        me.MapGet("/holds/{groupId:guid}/delete-series/preview", DeleteSeriesPreviewAsync);
         me.MapPost("/holds/{groupId:guid}/move", MoveHoldAsync);
         me.MapGet("/friend-spots", FriendSpotsAsync);
         me.MapGet("/bookings/{id:guid}", BookingAsync);
@@ -175,6 +176,36 @@ public static class ProfileEndpoints
         }
 
         return Results.Ok(new { deleted = true });
+    }
+
+    private static async Task<IResult> DeleteSeriesPreviewAsync(
+        Guid groupId,
+        HttpContext http,
+        AuthRepository authRepository,
+        BookingRepository repository,
+        BookingPayments payments,
+        CancellationToken cancellationToken)
+    {
+        var userId = await RequireUserAsync(http, authRepository, cancellationToken);
+        if (userId is null)
+        {
+            return SignInAgain();
+        }
+
+        var confirmed = await repository.ListFutureConfirmedAsync(userId.Value, groupId, cancellationToken);
+        var preview = await payments.PreviewCancelAsync(userId.Value, confirmed, cancellationToken);
+        return Results.Ok(new
+        {
+            currency = preview.Currency,
+            feePercent = preview.FeePercent,
+            paidCourts = preview.Courts,
+            lateCourts = preview.LateCourts,
+            charged = preview.Charged,
+            refund = preview.Refund,
+            fee = preview.Charged - preview.Refund,
+            pointsBack = preview.PointsBack,
+            pointsKept = preview.PointsKept,
+        });
     }
 
     private static async Task<IResult> DeleteSeriesAsync(
