@@ -548,6 +548,23 @@ function MoneyList({ title, load, locked = false, onSettled }: { title: string; 
   );
 }
 
+function AwardPoints({ row }: { row: DashAward }) {
+  const courts = row.courtCount ?? 1;
+  const cancelled = row.cancelledCourts ?? 0;
+  return (
+    <span className="block min-w-[8rem] max-w-[14rem]">
+      <span className="whitespace-nowrap font-semibold text-white">+{row.points} pts</span>
+      {courts > 1 ? <span className="mt-0.5 block whitespace-nowrap text-xs text-mist/60">Total for {courts} courts</span> : null}
+      {cancelled > 0 ? (
+        <span className="mt-0.5 block text-xs leading-5 text-amber-300">
+          {cancelled} {cancelled === 1 ? "court" : "courts"} cancelled, no points
+          {row.cancelledCourtNames ? `: ${row.cancelledCourtNames}` : ""}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function CourtNames({ names }: { names: string }) {
   const courts = (names || "").split(",").map((name) => name.trim()).filter(Boolean);
   if (courts.length === 0) return <>—</>;
@@ -610,8 +627,16 @@ export function RewardsPage() {
           columns={[
             { label: "Player", cell: (row) => <span className="text-white">{row.userEmail}</span> },
             { label: "Venue", cell: (row) => row.venueName },
-            { label: "Source", cell: (row) => row.source || "Court booking" },
-            { label: "Points", className: "whitespace-nowrap", cell: (row) => `+${row.points} pts` },
+            {
+              label: "Source",
+              cell: (row) => (
+                <span className="block min-w-[8rem] max-w-[14rem]">
+                  {row.source || "Court booking"}
+                  {row.courtNames ? <span className="mt-0.5 block text-xs leading-5 text-mist/60">{row.courtNames}</span> : null}
+                </span>
+              ),
+            },
+            { label: "Points", cell: (row) => <AwardPoints row={row} /> },
             { label: "Session", cell: (row) => <span className="whitespace-nowrap">{formatVenueDay(row.startTime, row.timeZone)}<span className="mt-0.5 block text-mist/70">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span></span> },
             { label: "Awarded", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.awardedAt, row.timeZone) },
           ]}

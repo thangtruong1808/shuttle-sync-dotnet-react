@@ -153,6 +153,10 @@ export type DashAward = {
   startTime: string;
   endTime: string;
   source: string;
+  courtCount?: number;
+  courtNames?: string | null;
+  cancelledCourts?: number;
+  cancelledCourtNames?: string | null;
 };
 
 export type DashRedemption = {

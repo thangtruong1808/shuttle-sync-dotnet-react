@@ -1487,24 +1487,45 @@ public sealed class DashboardRepository(IConfiguration configuration)
             ? "(@VenueId IS NULL OR r.VenueId = @VenueId)"
             : "r.VenueId IN @Allowed AND (@VenueId IS NULL OR r.VenueId = @VenueId)";
         var awards = $"""
-            SELECT a.Id, u.Email AS UserEmail, v.Name AS VenueName, v.TimeZone, a.Points, a.AwardedAt,
-                   cs.StartTime, cs.EndTime, 'Court booking' AS Source
-            FROM RewardPointAwards a
-            JOIN Users u ON u.Id = a.UserId
-            JOIN Venues v ON v.Id = a.VenueId
-            JOIN CourtSessions cs ON cs.Id = a.CourtSessionId
-            WHERE {courtVenue}
+            SELECT CONCAT('court-', MIN(x.Id)) AS Id, x.UserEmail, x.VenueName, x.TimeZone, CAST(SUM(x.Points) AS SIGNED) AS Points,
+                   MAX(x.AwardedAt) AS AwardedAt, x.StartTime, x.EndTime, 'Court booking' AS Source,
+                   COUNT(*) AS CourtCount,
+                   GROUP_CONCAT(x.CourtName ORDER BY x.CourtNumber SEPARATOR ', ') AS CourtNames,
+                   COALESCE(MAX(k.Cancelled), 0) AS CancelledCourts,
+                   MAX(k.CancelledNames) AS CancelledCourtNames
+            FROM (
+                SELECT a.Id, a.Points, a.AwardedAt, u.Email AS UserEmail, v.Name AS VenueName, v.TimeZone,
+                       cs.StartTime, cs.EndTime, c.CourtName, c.CourtNumber, b.PayGroupId,
+                       COALESCE(b.PayGroupId, b.Id) AS GroupKey
+                FROM RewardPointAwards a
+                JOIN Bookings b ON b.Id = a.BookingId
+                JOIN Users u ON u.Id = a.UserId
+                JOIN Venues v ON v.Id = a.VenueId
+                JOIN CourtSessions cs ON cs.Id = a.CourtSessionId
+                JOIN Courts c ON c.Id = cs.CourtId
+                WHERE {courtVenue}
+            ) x
+            LEFT JOIN (
+                SELECT cb.PayGroupId, ccs.StartTime, COUNT(*) AS Cancelled,
+                       GROUP_CONCAT(cc.CourtName ORDER BY cc.CourtNumber SEPARATOR ', ') AS CancelledNames
+                FROM Bookings cb
+                JOIN CourtSessions ccs ON ccs.Id = cb.CourtSessionId
+                JOIN Courts cc ON cc.Id = ccs.CourtId
+                WHERE cb.Status = 'cancelled' AND cb.IsDeleted = 0 AND cb.PayGroupId IS NOT NULL
+                GROUP BY cb.PayGroupId, ccs.StartTime
+            ) k ON k.PayGroupId = x.PayGroupId AND k.StartTime = x.StartTime
+            GROUP BY x.GroupKey, x.UserEmail, x.VenueName, x.TimeZone, x.StartTime, x.EndTime
             UNION ALL
-            SELECT r.Id, u.Email, v.Name, v.TimeZone, r.IncentivePoints, r.IncentiveAwardedAt,
-                   s.StartTime, s.EndTime, 'Drop-in social'
+            SELECT CONCAT('social-', r.Id), u.Email, v.Name, v.TimeZone, r.IncentivePoints, r.IncentiveAwardedAt,
+                   s.StartTime, s.EndTime, 'Drop-in social', 1, NULL, 0, NULL
             FROM PublicSocialRegistrations r
             JOIN Users u ON u.Id = r.UserId
             JOIN Venues v ON v.Id = r.VenueId
             JOIN PublicSocials s ON s.Id = r.SocialId
             WHERE r.IncentiveAwardedAt IS NOT NULL AND r.IncentivePoints > 0 AND {socialVenue}
             UNION ALL
-            SELECT f.Id, u.Email, v.Name, v.TimeZone, f.IncentivePoints, f.IncentiveAwardedAt,
-                   s.StartTime, s.EndTime, CONCAT('Friend · ', f.DisplayName)
+            SELECT CONCAT('friend-', f.Id), u.Email, v.Name, v.TimeZone, f.IncentivePoints, f.IncentiveAwardedAt,
+                   s.StartTime, s.EndTime, CONCAT('Friend · ', f.DisplayName), 1, NULL, 0, NULL
             FROM PublicSocialFriends f
             JOIN PublicSocialRegistrations r ON r.Id = f.RegistrationId
             JOIN Users u ON u.Id = r.UserId
@@ -1518,7 +1539,8 @@ public sealed class DashboardRepository(IConfiguration configuration)
             new { VenueId = venueId, Allowed = allowed }, cancellationToken: cancellationToken));
         var rows = await connection.QueryAsync<DashAwardRow>(new CommandDefinition(
             $"""
-            SELECT Id, UserEmail, VenueName, TimeZone, Points, AwardedAt, StartTime, EndTime, Source
+            SELECT Id, UserEmail, VenueName, TimeZone, Points, AwardedAt, StartTime, EndTime, Source,
+                   CourtCount, CourtNames, CancelledCourts, CancelledCourtNames
             FROM ({awards}) awards
             ORDER BY AwardedAt DESC
             LIMIT @Take OFFSET @Skip
@@ -2208,7 +2230,7 @@ public sealed class DashWebhookRow
 
 public sealed class DashAwardRow
 {
-    public Guid Id { get; init; }
+    public string Id { get; init; } = "";
     public string UserEmail { get; init; } = "";
     public string VenueName { get; init; } = "";
     public string TimeZone { get; init; } = "";
@@ -2217,6 +2239,10 @@ public sealed class DashAwardRow
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
     public string Source { get; init; } = "";
+    public int CourtCount { get; init; } = 1;
+    public string? CourtNames { get; init; }
+    public int CancelledCourts { get; init; }
+    public string? CancelledCourtNames { get; init; }
 }
 
 public sealed class DashRedemptionRow

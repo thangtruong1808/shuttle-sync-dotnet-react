@@ -684,6 +684,10 @@ public static class DashboardEndpoints
             startTime = Utc(row.StartTime),
             endTime = Utc(row.EndTime),
             source = row.Source,
+            courtCount = row.CourtCount,
+            courtNames = row.CourtNames,
+            cancelledCourts = row.CancelledCourts,
+            cancelledCourtNames = row.CancelledCourtNames,
         }));
     }
 
