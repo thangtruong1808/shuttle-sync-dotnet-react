@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
-import { Link, useSearchParams } from "react-router-dom";
-import { CalendarDays, ChevronDown, CircleAlert, CircleCheck, Clock, CreditCard, Eye, Gift, MapPin, Repeat, ShieldCheck, TriangleAlert, Undo2, Unlock, UserPlus, Users, X } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowRight, CalendarClock, CalendarDays, ChevronDown, CircleAlert, CircleCheck, Clock, CreditCard, Eye, Gift, MapPin, Repeat, ShieldCheck, TriangleAlert, Undo2, Unlock, UserPlus, Users, X } from "lucide-react";
 import type { AppDispatch } from "../../app/store";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
 import { loadCurrentUser } from "../auth/authSlice";
 import { useVenues } from "../../components/layout/SiteLayout";
-import { addHoldCourts, venueAvailability, venueForPage } from "../venues/venueApi";
+import { addHoldCourts, bookAgainPath, venueAvailability, venueForPage } from "../venues/venueApi";
 import { AuthRequestError } from "../auth/authApi";
 import { cancelBooking, deleteSeries, deleteSeriesPreview, deleteUnpaidHold, moveCourtSessions, myBookings, myCourtWeeks, refreshUnpaidHolds, setCourtRepeat, type BookingRow, type CancelResult, type CourtWeekCourt, type Page, type SeriesCancelPreview } from "./profileApi";
 import { ListPager } from "./ProfileLists";
@@ -111,6 +111,97 @@ function weekSpan(weeks: CourtWeekCourt[][]) {
   return `Weeks ${first.week} of ${first.year} to ${last.week} of ${last.year}`;
 }
 
+type TimeFields = { date: string; start: string; end: string };
+
+function clockLabel(value: string) {
+  const [hour, minute] = value.split(":").map(Number);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return value;
+  return `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${hour < 12 ? "am" : "pm"}`;
+}
+
+function fieldsLabel(fields: TimeFields) {
+  const [year, month, day] = fields.date.split("-").map(Number);
+  const date = year && month && day
+    ? new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, day)))
+    : fields.date;
+  return `${date}, ${clockLabel(fields.start)} – ${clockLabel(fields.end)}`;
+}
+
+function ReschedulePanel({
+  title,
+  scope,
+  court,
+  value,
+  original,
+  paid,
+  moving,
+  locked,
+  onChange,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  scope: string;
+  court: CourtWeekCourt;
+  value: TimeFields;
+  original: TimeFields;
+  paid: boolean;
+  moving: boolean;
+  locked: boolean;
+  onChange: (next: TimeFields) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const changed = value.date !== original.date || value.start !== original.start || value.end !== original.end;
+  const complete = Boolean(value.date && value.start && value.end);
+  const input = "w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]";
+  return (
+    <div className="mt-3 rounded-xl border border-line/30 bg-line/5 p-3">
+      <p className="flex items-center gap-2 text-sm font-semibold text-white">
+        <CalendarClock className="h-4 w-4 shrink-0 text-line" aria-hidden="true" />
+        {title}
+      </p>
+      <p className="mt-1 text-xs text-mist/70">
+        Currently {formatWeekDate(court.startTime, court.timeZone)} · {formatVenueRange(court.startTime, court.endTime, court.timeZone)}
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <label className="text-sm text-mist">
+          <span className="mb-1 block text-mist/70">New date</span>
+          <PickerInput type="date" required value={value.date} disabled={locked} onChange={(event) => onChange({ ...value, date: event.target.value })} className={input} />
+        </label>
+        <label className="text-sm text-mist">
+          <span className="mb-1 block text-mist/70">Start</span>
+          <PickerInput type="time" required value={value.start} disabled={locked} onChange={(event) => onChange({ ...value, start: event.target.value })} className={input} />
+        </label>
+        <label className="text-sm text-mist">
+          <span className="mb-1 block text-mist/70">End</span>
+          <PickerInput type="time" required value={value.end} disabled={locked} onChange={(event) => onChange({ ...value, end: event.target.value })} className={input} />
+        </label>
+      </div>
+      {changed && complete ? (
+        <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-black/25 px-3 py-2 text-sm" aria-live="polite">
+          <span className="text-mist/60 line-through">{fieldsLabel(original)}</span>
+          <ArrowRight className="h-4 w-4 shrink-0 text-line" aria-hidden="true" />
+          <span className="font-semibold text-white">{fieldsLabel(value)}</span>
+        </p>
+      ) : null}
+      <ul className="mt-3 grid gap-1 text-xs leading-5 text-mist/70">
+        <li>{scope}</li>
+        <li>If a court is booked or closed at the new time, nothing moves and we tell you which court.</li>
+        {paid ? <li>Paid courts keep the price you paid.</li> : null}
+      </ul>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <Button type="button" className="w-full sm:w-auto" loading={moving} disabled={(locked && !moving) || !changed || !complete} icon={<CircleCheck className="h-4 w-4 shrink-0" aria-hidden="true" />} onClick={onConfirm}>
+          Confirm new time
+        </Button>
+        <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked} icon={<Undo2 className="h-4 w-4 shrink-0" aria-hidden="true" />} onClick={onClose}>
+          Keep current time
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged: () => void }) {
   const first = courts[0];
   const [checked, setChecked] = useState(() => new Set(courts.map((court) => court.courtId)));
@@ -121,13 +212,20 @@ function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged
   const [confirmPaid, setConfirmPaid] = useState(false);
   const openedAt = venueFields(first.startTime, first.timeZone);
   const closedAt = venueFields(first.endTime, first.timeZone);
-  const [when, setWhen] = useState({ date: openedAt.date, start: openedAt.time, end: closedAt.time });
+  const weekOriginal = { date: openedAt.date, start: openedAt.time, end: closedAt.time };
+  const [when, setWhen] = useState(weekOriginal);
+  const [rescheduling, setRescheduling] = useState(false);
   const [moving, setMoving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionWhen, setSessionWhen] = useState(when);
   const locked = saving || loadingCourts || moving || deleting;
+  const sessionCourt = sessionId ? courts.find((court) => court.bookingId === sessionId) ?? null : null;
+  const sessionOriginal = sessionCourt
+    ? { date: venueFields(sessionCourt.startTime, sessionCourt.timeZone).date, start: venueFields(sessionCourt.startTime, sessionCourt.timeZone).time, end: venueFields(sessionCourt.endTime, sessionCourt.timeZone).time }
+    : weekOriginal;
+  const courtsLocked = locked || rescheduling || sessionCourt !== null;
   const held = new Set(courts.map((court) => court.courtId));
   const removed = courts.filter((court) => !checked.has(court.courtId));
   const added = [...checked].filter((id) => !held.has(id));
@@ -136,6 +234,17 @@ function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged
   const dirty = removed.length > 0 || added.length > 0;
   const pending = selected.filter((court) => court.status === "pending");
   const options = choices ?? courts.map((court) => ({ id: court.courtId, name: court.courtName }));
+  const currentTotal = courts.reduce((sum, court) => sum + court.price, 0);
+  const removedPaid = removed.filter((court) => court.status === "confirmed");
+  const addedNames = added.map((id) => options.find((court) => court.id === id)?.name ?? "Court");
+  const navigate = useNavigate();
+  const payNow = added.length > 0 && new Date(first.startTime).getTime() - Date.now() <= 24 * 60 * 60 * 1000;
+
+  function undoChanges() {
+    setChecked(new Set(courts.map((court) => court.courtId)));
+    setConfirmPaid(false);
+    setError(null);
+  }
 
   async function loadCourts() {
     setLoadingCourts(true);
@@ -164,6 +273,11 @@ function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged
       for (const court of removed) {
         await cancelBooking(court.bookingId);
       }
+      if (payNow) {
+        refreshUnpaidHolds();
+        navigate(bookAgainPath(first.venueSlug, { ...weekOriginal, courtIds: added, weeks: 1, repeat: false }));
+        return;
+      }
       if (added.length > 0) {
         await addHoldCourts(first.venueSlug, first.groupId, first.startTime, first.endTime, added);
       }
@@ -190,6 +304,8 @@ function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged
         start: fields.start,
         end: fields.end,
       });
+      setRescheduling(false);
+      setSessionId(null);
       refreshUnpaidHolds();
       onChanged();
     } catch (reason) {
@@ -239,7 +355,7 @@ function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged
                   type="checkbox"
                   className="h-4 w-4 accent-line"
                   checked={checked.has(court.id)}
-                  disabled={locked}
+                  disabled={courtsLocked}
                   onChange={() => {
                     setConfirmPaid(false);
                     setChecked((current) => {
@@ -250,70 +366,149 @@ function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged
                     });
                   }}
                 />
-                <span className="min-w-0">{court.name}</span>
+                <span className={`min-w-0 ${row && !checked.has(court.id) ? "text-mist/50 line-through" : ""}`}>{court.name}</span>
                 <span className="ml-auto text-xs text-mist/60">{row ? (row.status === "confirmed" ? "Paid" : "Held") : "Add"}</span>
               </label>
               {row ? (
                 <button
                   type="button"
-                  className="mt-1 text-xs font-semibold text-line hover:underline disabled:opacity-60"
-                  disabled={locked}
+                  className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-line hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={locked || dirty}
                   onClick={() => {
                     const clock = venueFields(row.startTime, row.timeZone);
                     const finish = venueFields(row.endTime, row.timeZone);
+                    setRescheduling(false);
+                    setWhen(weekOriginal);
                     setSessionId(row.bookingId);
                     setSessionWhen({ date: clock.date, start: clock.time, end: finish.time });
                     setError(null);
                   }}
                 >
-                  Edit time
+                  <CalendarClock className="h-3 w-3" aria-hidden="true" />
+                  Reschedule
                 </button>
               ) : null}
             </li>
           );
         })}
       </ul>
-      <p className="mt-3 text-sm text-mist/75">Untick a court to drop it. The total follows the courts you leave ticked.</p>
-      {confirmPaid ? <p className="mt-2 text-sm text-mist" role="status">Paid courts you untick are cancelled under the cancellation policy.</p> : null}
+      {dirty ? (
+        <div className={`mt-3 rounded-xl border p-3 ${confirmPaid ? "border-amber-300/50 bg-amber-400/10" : "border-line/30 bg-line/5"}`} role="status" aria-live="polite">
+          <p className="flex items-center gap-2 text-sm font-semibold text-white">
+            {confirmPaid ? <TriangleAlert className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" /> : <CircleAlert className="h-4 w-4 shrink-0 text-line" aria-hidden="true" />}
+            {confirmPaid ? "Please confirm before we cancel paid courts" : "You have unsaved changes for this week"}
+          </p>
+          <div className="mt-2 grid gap-2 text-sm">
+            {removed.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-mist/70">Dropping:</span>
+                {removed.map((court) => (
+                  <span key={court.bookingId} className="inline-flex items-center gap-1 rounded-full border border-rose-300/40 bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-100">
+                    <X className="h-3 w-3" aria-hidden="true" />
+                    {court.courtName}
+                    <span className="text-rose-100/70">· {court.status === "confirmed" ? "Paid" : "Held"}</span>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {addedNames.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-mist/70">Adding:</span>
+                {addedNames.map((name, index) => (
+                  <span key={`${name}-${index}`} className="inline-flex items-center gap-1 rounded-full border border-line/40 bg-line/10 px-2 py-0.5 text-xs font-medium text-line">
+                    <CircleCheck className="h-3 w-3" aria-hidden="true" />
+                    {name}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <p className="text-mist/80">
+              Weekly total:{" "}
+              <span className="text-mist/60 line-through"><Money amount={currentTotal} currency={first.currency} /></span>{" "}
+              <span className="font-semibold text-white"><Money amount={total} currency={first.currency} /></span>
+              <span className="text-mist/60"> · {selected.length + added.length} {selected.length + added.length === 1 ? "court" : "courts"} kept</span>
+            </p>
+          </div>
+          {payNow ? (
+            <p className="mt-2 flex items-start gap-2 rounded-lg bg-black/20 px-2.5 py-2 text-xs leading-5 text-mist/80">
+              <CreditCard className="mt-0.5 h-3.5 w-3.5 shrink-0 text-line" aria-hidden="true" />
+              <span>
+                This session starts within 24 hours, so new courts are paid when you add them.
+                {" "}Continue to payment opens checkout with {addedNames.join(", ")} at this time. We check they are still free before you pay.
+              </span>
+            </p>
+          ) : null}
+          {removedPaid.length > 0 ? (
+            <p className={`mt-2 flex items-start gap-2 rounded-lg px-2.5 py-2 text-xs leading-5 ${confirmPaid ? "bg-amber-400/15 text-amber-100" : "bg-black/20 text-mist/80"}`}>
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>
+                {removedPaid.length} paid {removedPaid.length === 1 ? "court is" : "courts are"} cancelled under the cancellation policy.
+                {confirmPaid ? " Press Confirm update to continue, or Cancel changes to keep your booking as it was." : ""}
+              </span>
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-mist/75">Untick a court to drop it. The total follows the courts you leave ticked.</p>
+      )}
       {confirmDelete ? <p className="mt-2 text-sm text-mist" role="status">Delete this week? Unpaid courts are released. A paid court is cancelled under the cancellation policy. Keep weeks ahead is turned off so this week is not added back.</p> : null}
       {error ? <p className="mt-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-100" role="alert">{error}</p> : null}
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        <label className="text-sm text-mist">
-          <span className="mb-1 block text-mist/70">Date</span>
-          <PickerInput type="date" required value={when.date} disabled={locked} onChange={(event) => { setError(null); setWhen({ ...when, date: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
-        </label>
-        <label className="text-sm text-mist">
-          <span className="mb-1 block text-mist/70">Start</span>
-          <PickerInput type="time" required value={when.start} disabled={locked} onChange={(event) => { setError(null); setWhen({ ...when, start: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
-        </label>
-        <label className="text-sm text-mist">
-          <span className="mb-1 block text-mist/70">End</span>
-          <PickerInput type="time" required value={when.end} disabled={locked} onChange={(event) => { setError(null); setWhen({ ...when, end: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
-        </label>
-      </div>
-      <p className="mt-2 text-sm text-mist/75">Save this time for every court in the week. A court that is already booked or closed stays where it is, and the reason is shown here.</p>
-      {sessionId ? (
-        <div className="mt-3 rounded-xl border border-white/10 p-3">
-          <p className="text-sm font-medium text-white">Edit {courts.find((court) => court.bookingId === sessionId)?.courtName}</p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-3">
-            <PickerInput type="date" required aria-label="Session date" value={sessionWhen.date} disabled={locked} onChange={(event) => { setError(null); setSessionWhen({ ...sessionWhen, date: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
-            <PickerInput type="time" required aria-label="Session start" value={sessionWhen.start} disabled={locked} onChange={(event) => { setError(null); setSessionWhen({ ...sessionWhen, start: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
-            <PickerInput type="time" required aria-label="Session end" value={sessionWhen.end} disabled={locked} onChange={(event) => { setError(null); setSessionWhen({ ...sessionWhen, end: event.target.value }); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
-          </div>
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-            <Button type="button" className="w-full sm:w-auto" loading={moving} disabled={locked && !moving} onClick={() => void saveTime(sessionId, sessionWhen)}>Save this court</Button>
-            <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked} onClick={() => setSessionId(null)}>Close</Button>
-          </div>
+      {sessionCourt ? (
+        <ReschedulePanel
+          title={`Reschedule ${sessionCourt.courtName}`}
+          scope={`Only ${sessionCourt.courtName} moves. The other courts stay at their current time.`}
+          court={sessionCourt}
+          value={sessionWhen}
+          original={sessionOriginal}
+          paid={sessionCourt.status === "confirmed"}
+          moving={moving}
+          locked={locked}
+          onChange={(next) => { setError(null); setSessionWhen(next); }}
+          onConfirm={() => void saveTime(sessionCourt.bookingId, sessionWhen)}
+          onClose={() => { setSessionId(null); setError(null); }}
+        />
+      ) : rescheduling ? (
+        <ReschedulePanel
+          title="Reschedule this week"
+          scope={`All ${courts.length} ${courts.length === 1 ? "court moves" : "courts move"} together.`}
+          court={first}
+          value={when}
+          original={weekOriginal}
+          paid={courts.some((court) => court.status === "confirmed")}
+          moving={moving}
+          locked={locked}
+          onChange={(next) => { setError(null); setWhen(next); }}
+          onConfirm={() => void saveTime()}
+          onClose={() => { setRescheduling(false); setWhen(weekOriginal); setError(null); }}
+        />
+      ) : (
+        <div className="mt-3 flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="flex items-start gap-2 text-sm text-mist/80">
+            <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-line" aria-hidden="true" />
+            <span>
+              <span className="font-medium text-white">Need a different day or time?</span>
+              <span className="block text-xs text-mist/60">{dirty ? "Update or cancel your court changes first." : "Move every court in this week in one step."}</span>
+            </span>
+          </p>
+          <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked || dirty} icon={<CalendarClock className="h-4 w-4 shrink-0" aria-hidden="true" />} onClick={() => { setRescheduling(true); setError(null); }}>
+            Reschedule this week
+          </Button>
         </div>
-      ) : null}
+      )}
       <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <Button type="button" className="w-full sm:w-auto" loading={moving} disabled={locked && !moving} onClick={() => void saveTime()}>Save this time</Button>
         <Button type="button" variant="danger" className="w-full sm:w-auto" loading={deleting} disabled={locked && !deleting} onClick={() => void removeWeek()}>{confirmDelete ? "Confirm delete" : "Delete this week"}</Button>
         {choices === null ? (
-          <Button type="button" variant="secondary" className="w-full sm:w-auto" loading={loadingCourts} disabled={locked && !loadingCourts} onClick={() => void loadCourts()}>Add another court</Button>
+          <Button type="button" variant="secondary" className="w-full sm:w-auto" loading={loadingCourts} disabled={courtsLocked && !loadingCourts} onClick={() => void loadCourts()}>Add another court</Button>
         ) : null}
         {dirty ? (
-          <Button type="button" className="w-full sm:w-auto" loading={saving} disabled={locked && !saving} onClick={() => void save()}>{confirmPaid ? "Confirm update" : "Update this week"}</Button>
+          <>
+            <Button type="button" className="w-full sm:w-auto" loading={saving} disabled={locked && !saving} icon={payNow ? <CreditCard className="h-4 w-4 shrink-0" aria-hidden="true" /> : undefined} onClick={() => void save()}>
+              {confirmPaid ? "Confirm update" : payNow ? "Continue to payment" : "Update this week"}
+            </Button>
+            <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked} icon={<Undo2 className="h-4 w-4 shrink-0" aria-hidden="true" />} onClick={undoChanges}>
+              Cancel changes
+            </Button>
+          </>
         ) : pending.length > 0 ? (
           <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pending.map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
             <CreditCard className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -591,6 +786,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
   const [notice, setNotice] = useState<string | null>(null);
   const [pageMove, setPageMove] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const [weeks, setWeeks] = useState<CourtWeekCourt[][] | null>(null);
   const [holdFilter, setHoldFilter] = useState<(typeof holdFilters)[number]["id"]>("all");
   const [openSeries, setOpenSeries] = useState<string | null>(null);
@@ -759,7 +955,26 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
           <h2 className="mt-8 font-display text-2xl text-white">{data.items.every((item) => item.socialId) ? "Public socials" : "Other bookings"}</h2>
         ) : null}
         <ul className="mt-4 space-y-3">
-          {data.items.map((booking) => (
+          {(tab === "upcoming" ? data.items.map((item) => [item]) : sessionGroups(data.items)).map((group) => {
+            if (group.length > 1) {
+              const key = sessionKey(group[0]);
+              return (
+                <SessionGroupCard
+                  key={key}
+                  bookings={group}
+                  tab={tab}
+                  open={openGroups.has(key)}
+                  onToggle={() => setOpenGroups((current) => {
+                    const next = new Set(current);
+                    if (next.has(key)) next.delete(key);
+                    else next.add(key);
+                    return next;
+                  })}
+                />
+              );
+            }
+            const booking = group[0];
+            return (
             <li key={booking.id} className="rounded-2xl border border-white/10 p-4">
               <BookingSummary booking={booking} tab={tab} />
               {booking.socialId && booking.canCancel && booking.status !== "waitlist" ? (
@@ -814,7 +1029,8 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
                 </div>
               ) : null}
             </li>
-          ))}
+            );
+          })}
         </ul>
         </>
       ) : tab === "upcoming" && weeks && weeks.length > 0 ? null : (
@@ -827,6 +1043,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
           page={page}
           pageSize={data.pageSize || pageSize}
           total={data.total}
+          unit={tab === "upcoming" ? undefined : "sessions"}
           loading={loading}
           pageMove={pageMove}
           onPage={(next, move) => { setLoading(true); setPageMove(move); setPage(next); }}
@@ -887,6 +1104,132 @@ function duration(start: string, end: string) {
   const rest = minutes % 60;
   if (hours === 0) return `${rest} min`;
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+}
+
+function sessionKey(booking: BookingRow) {
+  return `${booking.venueSlug}|${booking.startTime}|${booking.endTime}|${booking.socialId ? "social" : "court"}`;
+}
+
+function sessionGroups(items: BookingRow[]) {
+  const groups = new Map<string, BookingRow[]>();
+  for (const item of items) {
+    const key = sessionKey(item);
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  return [...groups.values()];
+}
+
+function refundOf(booking: BookingRow) {
+  if (booking.status !== "cancelled" || !booking.wasPaid) return 0;
+  return Math.round(booking.totalAmount * (100 - (booking.cancelFeePercent ?? 0))) / 100;
+}
+
+function SessionGroupCard({
+  bookings,
+  tab,
+  open,
+  onToggle,
+}: {
+  bookings: BookingRow[];
+  tab: (typeof tabs)[number]["id"];
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const first = bookings[0];
+  const zone = first.timeZone || "Australia/Melbourne";
+  const start = new Date(first.startTime);
+  const social = Boolean(first.socialId);
+  const total = bookings.reduce((sum, item) => sum + item.totalAmount, 0);
+  const points = bookings.reduce((sum, item) => sum + (item.pointsEarned ?? 0), 0);
+  const refunded = bookings.reduce((sum, item) => sum + refundOf(item), 0);
+  const pointsBack = bookings.reduce((sum, item) => sum + (item.pointsRedeemed ?? 0), 0);
+  const charged = bookings.some((item) => item.wasPaid);
+  const statuses = new Map<string, { count: number; tone: string }>();
+  for (const item of bookings) {
+    const status = bookingStatus(item, tab);
+    const current = statuses.get(status.label);
+    statuses.set(status.label, { count: (current?.count ?? 0) + 1, tone: status.tone });
+  }
+  const courtCounts = new Map<string, number>();
+  for (const item of bookings) courtCounts.set(item.courtName, (courtCounts.get(item.courtName) ?? 0) + 1);
+  const names = [...courtCounts.entries()].map(([name, count]) => (count > 1 ? `${name} ×${count}` : name)).join(", ");
+  const unit = social ? "places" : courtCounts.size === bookings.length ? "courts" : "bookings";
+  const panelId = `session-${first.id}`;
+
+  return (
+    <li className="rounded-2xl border border-white/10">
+      <div className="flex gap-3 p-4 sm:gap-4">
+        <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] py-2 text-center sm:w-16">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-line">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, weekday: "short" }).format(start)}</span>
+          <span className="font-display text-2xl leading-none text-white">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, day: "numeric" }).format(start)}</span>
+          <span className="text-[11px] uppercase text-mist/70">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, month: "short" }).format(start)}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-mist">
+                  {social ? <Users className="h-3.5 w-3.5" aria-hidden="true" /> : <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />}
+                  {social ? "Public social" : "Court booking"} · {bookings.length} {unit}
+                </span>
+                {[...statuses.entries()].map(([label, value]) => (
+                  <span key={label} className={`rounded-full px-2 py-0.5 text-xs font-semibold ${value.tone}`}>{value.count} {label}</span>
+                ))}
+              </div>
+              <p className="mt-2 font-medium text-white">{first.venueName}</p>
+              <p className="flex items-center gap-1.5 text-sm text-mist/80">
+                <Clock className="h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />
+                {formatVenueRange(first.startTime, first.endTime, first.timeZone)}
+                <span className="text-mist/55">· {duration(first.startTime, first.endTime)}</span>
+              </p>
+              <p className="mt-0.5 flex items-start gap-1.5 text-xs leading-5 text-mist/65">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />
+                {names}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="font-semibold text-white"><Money amount={total} currency={first.currency} /></p>
+              <p className="text-xs text-mist/55">Total for {bookings.length} {unit}</p>
+            </div>
+          </div>
+          <div className="mt-2 space-y-1 text-xs text-mist/65">
+            {tab === "past" && points > 0 ? (
+              <p className="flex items-center gap-1.5 text-line"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />+{points} reward points earned</p>
+            ) : null}
+            {tab === "cancelled" ? (
+              refunded > 0 ? (
+                <p className="flex items-center gap-1.5 text-sky-200"><Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Refunded <Money amount={refunded} currency={first.currency} /> in total</p>
+              ) : !charged ? (
+                <p className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Not charged</p>
+              ) : null
+            ) : null}
+            {tab === "cancelled" && pointsBack > 0 && !social ? (
+              <p className="flex items-center gap-1.5 text-line"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{pointsBack} points returned to your balance</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/10"
+            aria-expanded={open}
+            aria-controls={panelId}
+            onClick={onToggle}
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+            {open ? `Hide ${unit}` : `Show ${bookings.length} ${unit}`}
+          </button>
+        </div>
+      </div>
+      {open ? (
+        <ul id={panelId} className="space-y-2 border-t border-white/10 bg-black/20 p-3 sm:p-4">
+          {bookings.map((booking) => (
+            <li key={booking.id} className="rounded-xl border border-white/10 bg-pine/40 p-3">
+              <BookingSummary booking={booking} tab={tab} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
 }
 
 function BookingSummary({ booking, tab }: { booking: BookingRow; tab: (typeof tabs)[number]["id"] }) {

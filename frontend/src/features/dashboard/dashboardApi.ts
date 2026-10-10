@@ -139,6 +139,7 @@ export type DashPayment = {
   startTime: string;
   endTime: string;
   sessionCount: number;
+  refundedAmount?: number;
 };
 
 export type DashWebhook = { id: string; eventType: string; status: string; createdAt: string };

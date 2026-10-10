@@ -79,6 +79,9 @@ export function RewardsSection() {
               courtName: item.courtName,
               session: formatVenueRange(item.startTime, item.endTime, item.timeZone),
               points: item.points,
+              courtCount: item.courtCount,
+              cancelledCourts: item.cancelledCourts,
+              cancelledCourtNames: item.cancelledCourtNames,
               status: "Pending",
             }))}
             emptyTitle="No points are waiting"
@@ -104,6 +107,9 @@ export function RewardsSection() {
               courtName: row.courtName,
               session: formatVenueRange(row.startTime, row.endTime, row.timeZone),
               points: row.points,
+              courtCount: row.courtCount,
+              cancelledCourts: row.cancelledCourts,
+              cancelledCourtNames: row.cancelledCourtNames,
               status: "Added",
             }))}
             emptyTitle="No points yet"
@@ -214,13 +220,30 @@ function paymentStatus(row: PaymentRow) {
   return { label: label.charAt(0).toUpperCase() + label.slice(1), tone: "bg-white/10 text-mist" };
 }
 
+function PaymentStatusCell({ row }: { row: PaymentRow }) {
+  const status = paymentStatus(row);
+  const refunded = row.refundedAmount ?? 0;
+  if (row.kind === "refund" || refunded <= 0 || !row.status.toLowerCase().includes("refund")) {
+    return <span className={`whitespace-nowrap rounded-full px-2 py-1 text-xs font-semibold ${status.tone}`}>{status.label}</span>;
+  }
+  const kept = Math.max(0, row.amount - refunded);
+  return (
+    <span className="block whitespace-nowrap">
+      <span className="font-semibold text-sky-200">{formatMoney(refunded, row.currency)} refunded</span>
+      <span className="mt-0.5 block text-xs text-mist/60">
+        {status.label}
+        {kept > 0 ? ` · ${formatMoney(kept, row.currency)} kept` : ""}
+      </span>
+    </span>
+  );
+}
+
 function PaymentTable({ rows }: { rows: PaymentRow[] }) {
   return (
     <div className="mt-4">
       <ul className="grid gap-3 md:hidden">
         {rows.map((row) => {
           const refund = row.kind === "refund";
-          const status = paymentStatus(row);
           return (
             <li key={`${row.kind}-${row.id}`} className="rounded-2xl border border-white/10 p-4">
               <div className="flex items-start justify-between gap-3">
@@ -236,9 +259,9 @@ function PaymentTable({ rows }: { rows: PaymentRow[] }) {
               </div>
               <p className="mt-2 flex items-center gap-1.5 text-sm text-mist/75"><CalendarClock className="h-4 w-4 shrink-0 text-mist/60" aria-hidden="true" />{paymentSession(row)}</p>
               <p className="text-sm text-mist/60">{refund ? "Refunded" : ["succeeded", "refunded", "partially_refunded"].includes(row.status.toLowerCase()) ? "Charged" : "Started"} {formatVenueDateTime(row.occurredAt, row.timeZone)}</p>
-              <p className="mt-2">
-                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${status.tone}`}>{status.label}</span>
-              </p>
+              <div className="mt-2">
+                <PaymentStatusCell row={row} />
+              </div>
             </li>
           );
         })}
@@ -259,7 +282,6 @@ function PaymentTable({ rows }: { rows: PaymentRow[] }) {
           <tbody>
             {rows.map((row) => {
               const refund = row.kind === "refund";
-              const status = paymentStatus(row);
               return (
                 <tr key={`${row.kind}-${row.id}`} className="border-t border-white/10 align-top">
                   <td className="py-3 pr-3">
@@ -279,7 +301,7 @@ function PaymentTable({ rows }: { rows: PaymentRow[] }) {
                   </td>
                   <td className="whitespace-nowrap py-3 pr-3">{paymentSession(row)}</td>
                   <td className="py-3 pr-3">
-                    <span className={`whitespace-nowrap rounded-full px-2 py-1 text-xs font-semibold ${status.tone}`}>{status.label}</span>
+                    <PaymentStatusCell row={row} />
                   </td>
                   <td className={`whitespace-nowrap py-3 text-right font-semibold ${refund ? "text-sky-200" : "text-white"}`}>{refund ? "+" : ""}{formatMoney(row.amount, row.currency)}</td>
                 </tr>
@@ -396,6 +418,48 @@ function slicePage<T>(items: T[], page: number, pageSize: number) {
   return items.slice(start, start + pageSize);
 }
 
+type RewardTableRow = {
+  id: string;
+  kind: string;
+  when: string;
+  whenNote?: string;
+  venueName: string;
+  courtName: string;
+  session: string;
+  points: number;
+  status: string;
+  courtCount?: number;
+  cancelledCourts?: number;
+  cancelledCourtNames?: string | null;
+};
+
+function RewardCourts({ row }: { row: RewardTableRow }) {
+  const courts = row.courtCount ?? 1;
+  if (courts <= 1) return <p className="text-sm text-mist/75">{row.courtName}</p>;
+  return (
+    <div className="max-w-[16rem]">
+      <p className="text-sm font-medium text-white">{courts} courts</p>
+      <p className="text-xs leading-5 text-mist/60">{row.courtName}</p>
+    </div>
+  );
+}
+
+function RewardPoints({ row, align = "left" }: { row: RewardTableRow; align?: "left" | "right" }) {
+  const courts = row.courtCount ?? 1;
+  const cancelled = row.cancelledCourts ?? 0;
+  return (
+    <div className={`max-w-[14rem] ${align === "right" ? "shrink-0 text-right" : ""}`}>
+      <p className="whitespace-nowrap font-semibold text-line">+{row.points}</p>
+      {courts > 1 ? <p className="whitespace-nowrap text-xs text-mist/60">Total for {courts} courts</p> : null}
+      {cancelled > 0 ? (
+        <p className="text-xs leading-5 text-amber-300">
+          {cancelled} {cancelled === 1 ? "court" : "courts"} cancelled, no points{row.cancelledCourtNames ? `: ${row.cancelledCourtNames}` : ""}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function RewardTable({
   caption,
   rows,
@@ -403,7 +467,7 @@ function RewardTable({
   emptyBody,
 }: {
   caption: string;
-  rows: { id: string; kind: string; when: string; whenNote?: string; venueName: string; courtName: string; session: string; points: number; status: string }[];
+  rows: RewardTableRow[];
   emptyTitle: string;
   emptyBody: string;
 }) {
@@ -419,9 +483,9 @@ function RewardTable({
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wide text-line">{row.kind}</p>
                 <p className="mt-1 font-medium text-white">{row.venueName}</p>
-                <p className="text-sm text-mist/75">{row.courtName}</p>
+                <RewardCourts row={row} />
               </div>
-              <p className="shrink-0 font-semibold text-line">+{row.points}</p>
+              <RewardPoints row={row} align="right" />
             </div>
             <p className="mt-2 text-sm text-mist/70">{row.session}</p>
             <p className="text-sm text-mist/60">{row.when}{row.whenNote ? <span className="block text-xs text-mist/50">{row.whenNote}</span> : null}</p>
@@ -458,12 +522,12 @@ function RewardTable({
                 ) : row.when}
               </td>
               <td className="pr-3">{row.venueName}</td>
-              <td className="pr-3">{row.courtName}</td>
+              <td className="py-3 pr-3"><RewardCourts row={row} /></td>
               <td className="whitespace-nowrap pr-3">{row.session}</td>
               <td className="pr-3">
                 <span className={`rounded-full px-2 py-1 text-xs font-semibold ${row.status === "Added" ? "bg-line/15 text-line" : "bg-white/10 text-mist"}`}>{row.status}</span>
               </td>
-              <td className="font-semibold text-line">+{row.points}</td>
+              <td className="py-3"><RewardPoints row={row} /></td>
             </tr>
           ))}
         </tbody>

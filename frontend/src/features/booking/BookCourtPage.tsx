@@ -89,6 +89,16 @@ function unavailableReason(courts: AvailableCourt[], closures: ScheduleClosure[]
   return null;
 }
 
+function courtBusyLabel(court: AvailableCourt, closures: ScheduleClosure[], date: string, start: string, end: string, timeZone: string) {
+  const startMs = venueInstant(date, start, timeZone);
+  const endMs = venueInstant(date, end, timeZone);
+  if (startMs === null || endMs === null || endMs <= startMs) return null;
+  const booking = court.bookings.find((item) => overlaps(startMs, endMs, item.startTime, item.endTime));
+  if (booking) return booking.status === "pending" ? "Held" : "Booked";
+  const closed = closures.some((closure) => (closure.courtId === null || closure.courtId === court.id) && overlaps(startMs, endMs, closure.startTime, closure.endTime));
+  return closed ? "Closed" : null;
+}
+
 function shownHoldError(message: string | undefined) {
   if (!message || message === "The request could not be completed.") {
     return "That date and time is not available for the courts you chose. It may already be booked or closed. Choose another time.";
@@ -136,6 +146,7 @@ export default function BookCourtPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [droppedNote, setDroppedNote] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [releasing, setReleasing] = useState(false);
   const [promotions, setPromotions] = useState<Promotion[] | null>(null);
@@ -211,6 +222,20 @@ export default function BookCourtPage() {
       });
     return () => controller.abort();
   }, [slug, date, attempt]);
+
+  useEffect(() => {
+    if (!courts) return;
+    const timeZone = venue?.timeZone ?? "Australia/Melbourne";
+    const busyIds = new Set(courts.filter((court) => courtBusyLabel(court, closures, date, form.start, form.end, timeZone)).map((court) => court.id));
+    if (busyIds.size === 0) return;
+    setForm((current) => {
+      const dropped = current.courtIds.filter((id) => busyIds.has(id));
+      if (dropped.length === 0) return current;
+      const names = courts.filter((court) => dropped.includes(court.id)).map((court) => court.courtName);
+      setDroppedNote(`${names.join(", ")} ${names.length === 1 ? "is" : "are"} already taken at this time, so we unticked ${names.length === 1 ? "it" : "them"}.`);
+      return { ...current, courtIds: current.courtIds.filter((id) => !busyIds.has(id)) };
+    });
+  }, [courts, closures, date, form.start, form.end, venue?.timeZone]);
 
   if (status === "anonymous") {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
@@ -312,27 +337,40 @@ export default function BookCourtPage() {
               <legend className="mb-2 text-sm text-mist/70">Courts</legend>
               <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-3">
                 {(courts ?? []).map((court) => {
-                  const checked = form.courtIds.includes(court.id);
+                  const taken = courtBusyLabel(court, closures, date, form.start, form.end, venue?.timeZone ?? "Australia/Melbourne");
+                  const checked = !taken && form.courtIds.includes(court.id);
                   return (
-                    <label key={court.id} className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${checked ? "border-line/50 bg-line/10 text-white" : "border-white/10 bg-black/30 text-mist"}`}>
+                    <label
+                      key={court.id}
+                      title={taken ? `${court.courtName} is ${taken.toLowerCase()} at this time` : undefined}
+                      className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${taken ? "cursor-not-allowed border-white/5 bg-black/20 text-mist/40" : checked ? "border-line/50 bg-line/10 text-white" : "border-white/10 bg-black/30 text-mist"}`}
+                    >
                       <input
                         type="checkbox"
                         className="accent-line"
                         checked={checked}
-                        disabled={busy || loading}
+                        disabled={busy || loading || Boolean(taken)}
                         onChange={() => {
                           setFormError(null);
+                          setDroppedNote(null);
                           setForm({
                             ...form,
                             courtIds: checked ? form.courtIds.filter((id) => id !== court.id) : [...form.courtIds, court.id],
                           });
                         }}
                       />
-                      <span className="truncate">{court.courtName}</span>
+                      <span className={`truncate ${taken ? "line-through" : ""}`}>{court.courtName}</span>
+                      {taken ? <span className="ml-auto shrink-0 rounded-full border border-white/10 px-2 py-0.5 text-[11px] font-medium text-mist/60">{taken}</span> : null}
                     </label>
                   );
                 })}
               </div>
+              {droppedNote ? (
+                <p className="mt-2 flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100" role="status">
+                  <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  {droppedNote}
+                </p>
+              ) : null}
             </fieldset>
             <label className="text-sm">
               <span className="mb-1 flex items-center gap-2 text-mist/70">Date {loading ? <Spinner className="h-3.5 w-3.5" /> : null}</span>

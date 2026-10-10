@@ -540,11 +540,27 @@ function MoneyList({ title, load, locked = false, onSettled }: { title: string; 
             </span>
           ) : "—",
         },
-        { label: "Status", cell: (row) => <Tag value={row.status} /> },
+        { label: "Status", cell: (row) => <PaymentStatus row={row} /> },
         { label: "Amount", className: "whitespace-nowrap", cell: (row) => <Money amount={row.amount} currency={row.currency} /> },
         { label: "Recorded", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.occurredAt, row.timeZone || "UTC") },
       ]}
     />
+  );
+}
+
+function PaymentStatus({ row }: { row: DashPayment }) {
+  const refunded = row.refundedAmount ?? 0;
+  if (refunded <= 0 || !["partially_refunded", "refunded"].includes(row.status)) return <Tag value={row.status} />;
+  const kept = Math.max(0, row.amount - refunded);
+  const label = row.status === "refunded" ? "Fully refunded" : "Partially refunded";
+  return (
+    <span className="block whitespace-nowrap">
+      <span className="font-semibold text-amber-200"><Money amount={refunded} currency={row.currency} /> refunded</span>
+      <span className="mt-0.5 block text-xs text-mist/60">
+        {label}
+        {kept > 0 ? <> · <Money amount={kept} currency={row.currency} /> kept</> : null}
+      </span>
+    </span>
   );
 }
 

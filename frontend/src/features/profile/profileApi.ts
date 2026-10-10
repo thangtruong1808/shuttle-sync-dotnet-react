@@ -47,6 +47,9 @@ export type RewardRow = {
   courtName: string;
   startTime: string;
   endTime: string;
+  courtCount?: number;
+  cancelledCourts?: number;
+  cancelledCourtNames?: string | null;
 };
 
 export type PendingReward = {
@@ -58,6 +61,9 @@ export type PendingReward = {
   courtName: string;
   startTime: string;
   endTime: string;
+  courtCount?: number;
+  cancelledCourts?: number;
+  cancelledCourtNames?: string | null;
 };
 
 export type PaymentRow = {
@@ -74,6 +80,7 @@ export type PaymentRow = {
   courtCount: number;
   startTime: string;
   endTime: string;
+  refundedAmount?: number;
 };
 
 export type Page<T> = {

@@ -966,6 +966,7 @@ public static class DashboardEndpoints
         startTime = Utc(row.StartTime),
         endTime = Utc(row.EndTime),
         sessionCount = row.SessionCount,
+        refundedAmount = row.RefundedAmount,
     };
 
     private static object Page<TIn, TOut>(DashPage<TIn> page, Func<TIn, TOut> map) => new

@@ -499,6 +499,9 @@ public static class ProfileEndpoints
                 courtName = item.CourtName,
                 startTime = VenueClock.AsUtc(item.StartTime),
                 endTime = VenueClock.AsUtc(item.EndTime),
+                courtCount = item.CourtCount,
+                cancelledCourts = item.CancelledCourts,
+                cancelledCourtNames = item.CancelledCourtNames,
             }),
             items = items.Select(item => new
             {
@@ -511,6 +514,9 @@ public static class ProfileEndpoints
                 courtName = item.CourtName,
                 startTime = VenueClock.AsUtc(item.StartTime),
                 endTime = VenueClock.AsUtc(item.EndTime),
+                courtCount = item.CourtCount,
+                cancelledCourts = item.CancelledCourts,
+                cancelledCourtNames = item.CancelledCourtNames,
             }),
             page = pageNumber,
             pageSize = size,
@@ -552,6 +558,7 @@ public static class ProfileEndpoints
                 courtCount = item.CourtCount,
                 startTime = VenueClock.AsUtc(item.StartTime),
                 endTime = VenueClock.AsUtc(item.EndTime),
+                refundedAmount = item.RefundedAmount,
             }),
             page = pageNumber,
             pageSize = size,

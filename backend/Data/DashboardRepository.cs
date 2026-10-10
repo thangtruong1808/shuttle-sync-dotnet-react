@@ -1357,7 +1357,8 @@ public sealed class DashboardRepository(IConfiguration configuration)
             $"""
             SELECT * FROM (
                 SELECT p.Id, 'Court' AS Kind, v.Name AS VenueName, p.Amount, p.Currency, p.Status, p.CreatedAt AS OccurredAt,
-                       u.Email AS UserEmail, v.TimeZone, {GroupCourtNames} AS CourtName, cs.StartTime, cs.EndTime, {GroupBookingCount} AS SessionCount
+                       u.Email AS UserEmail, v.TimeZone, {GroupCourtNames} AS CourtName, cs.StartTime, cs.EndTime, {GroupBookingCount} AS SessionCount,
+                       (SELECT COALESCE(SUM(rf.Amount), 0) FROM Refunds rf WHERE rf.PaymentId = p.Id AND rf.Status IN ('pending', 'succeeded')) AS RefundedAmount
                 FROM Payments p
                 JOIN Bookings b ON b.Id = p.BookingId
                 JOIN Venues v ON v.Id = b.VenueId
@@ -1369,7 +1370,8 @@ public sealed class DashboardRepository(IConfiguration configuration)
                        u.Email, v.TimeZone, {SocialGroupCourtNames("r")}, s.StartTime, s.EndTime,
                        CASE WHEN r.CheckoutGroupId IS NULL THEN 1
                             ELSE (SELECT COUNT(*) FROM PublicSocialRegistrations g WHERE g.CheckoutGroupId = r.CheckoutGroupId)
-                       END
+                       END,
+                       (SELECT COALESCE(SUM(rf.Amount), 0) FROM PublicSocialRefunds rf WHERE rf.PaymentId = p.Id AND rf.Status IN ('pending', 'succeeded'))
                 FROM PublicSocialPayments p
                 JOIN PublicSocialRegistrations r ON r.Id = p.RegistrationId
                 JOIN PublicSocials s ON s.Id = r.SocialId
@@ -2218,6 +2220,7 @@ public sealed class DashPaymentRow
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
     public int SessionCount { get; init; } = 1;
+    public decimal RefundedAmount { get; init; }
 }
 
 public sealed class DashWebhookRow
