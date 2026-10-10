@@ -529,7 +529,7 @@ function MoneyList({ title, load, locked = false, onSettled }: { title: string; 
         { label: "Player", cell: (row) => <span className="text-white">{row.userEmail || "—"}</span> },
         { label: "Venue", cell: (row) => row.venueName },
         { label: "Type", cell: (row) => <Tag value={row.kind || "Court"} /> },
-        { label: "Court", className: "whitespace-nowrap", cell: (row) => row.courtName || "—" },
+        { label: "Court", cell: (row) => <CourtNames names={row.courtName} /> },
         {
           label: "Session",
           cell: (row) => row.startTime ? (
@@ -545,6 +545,18 @@ function MoneyList({ title, load, locked = false, onSettled }: { title: string; 
         { label: "Recorded", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.occurredAt, row.timeZone || "UTC") },
       ]}
     />
+  );
+}
+
+function CourtNames({ names }: { names: string }) {
+  const courts = (names || "").split(",").map((name) => name.trim()).filter(Boolean);
+  if (courts.length === 0) return <>—</>;
+  if (courts.length === 1) return <span className="whitespace-nowrap">{courts[0]}</span>;
+  return (
+    <span className="block min-w-[8rem] max-w-[14rem]">
+      <span className="whitespace-nowrap text-white">{courts.length} courts</span>
+      <span className="mt-0.5 block text-xs leading-5 text-mist/60">{courts.join(", ")}</span>
+    </span>
   );
 }
 

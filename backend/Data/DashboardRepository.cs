@@ -1299,6 +1299,34 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return null;
     }
 
+    private const string GroupCourtNames = """
+        (
+            SELECT GROUP_CONCAT(DISTINCT c2.CourtName ORDER BY c2.CourtNumber SEPARATOR ', ')
+            FROM Bookings b2
+            JOIN CourtSessions cs2 ON cs2.Id = b2.CourtSessionId
+            JOIN Courts c2 ON c2.Id = cs2.CourtId
+            WHERE b2.Id = b.Id OR (b.PayGroupId IS NOT NULL AND b2.PayGroupId = b.PayGroupId)
+        )
+        """;
+
+    private const string GroupBookingCount = """
+        (
+            SELECT COUNT(DISTINCT b2.Id)
+            FROM Bookings b2
+            WHERE b2.Id = b.Id OR (b.PayGroupId IS NOT NULL AND b2.PayGroupId = b.PayGroupId)
+        )
+        """;
+
+    private static string SocialGroupCourtNames(string registration) => $"""
+        (
+            SELECT GROUP_CONCAT(DISTINCT c2.CourtName ORDER BY c2.CourtNumber SEPARATOR ', ')
+            FROM PublicSocialRegistrations g2
+            JOIN Courts c2 ON c2.Id = g2.CourtId
+            WHERE g2.Id = {registration}.Id
+               OR ({registration}.CheckoutGroupId IS NOT NULL AND g2.CheckoutGroupId = {registration}.CheckoutGroupId)
+        )
+        """;
+
     public async Task<DashPage<DashPaymentRow>> ListPaymentsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowed, bool admin, int page, int pageSize, CancellationToken cancellationToken)
     {
         var (pageNumber, size, skip) = PageOf(page, pageSize);
@@ -1329,17 +1357,16 @@ public sealed class DashboardRepository(IConfiguration configuration)
             $"""
             SELECT * FROM (
                 SELECT p.Id, 'Court' AS Kind, v.Name AS VenueName, p.Amount, p.Currency, p.Status, p.CreatedAt AS OccurredAt,
-                       u.Email AS UserEmail, v.TimeZone, c.CourtName, cs.StartTime, cs.EndTime, 1 AS SessionCount
+                       u.Email AS UserEmail, v.TimeZone, {GroupCourtNames} AS CourtName, cs.StartTime, cs.EndTime, {GroupBookingCount} AS SessionCount
                 FROM Payments p
                 JOIN Bookings b ON b.Id = p.BookingId
                 JOIN Venues v ON v.Id = b.VenueId
                 JOIN Users u ON u.Id = b.UserId
                 JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
-                JOIN Courts c ON c.Id = cs.CourtId
                 WHERE {bookingVenue}
                 UNION ALL
                 SELECT p.Id, 'Drop-in social', v.Name, p.Amount, p.Currency, p.Status, p.CreatedAt,
-                       u.Email, v.TimeZone, c.CourtName, s.StartTime, s.EndTime,
+                       u.Email, v.TimeZone, {SocialGroupCourtNames("r")}, s.StartTime, s.EndTime,
                        CASE WHEN r.CheckoutGroupId IS NULL THEN 1
                             ELSE (SELECT COUNT(*) FROM PublicSocialRegistrations g WHERE g.CheckoutGroupId = r.CheckoutGroupId)
                        END
@@ -1372,20 +1399,19 @@ public sealed class DashboardRepository(IConfiguration configuration)
         var socialVenueClause = admin
             ? "(@VenueId IS NULL OR reg.VenueId = @VenueId)"
             : "reg.VenueId IN @Allowed AND (@VenueId IS NULL OR reg.VenueId = @VenueId)";
-        const string listed = """
+        var combined = $"""
             SELECT r.Id, 'Court' AS Kind, v.Name AS VenueName, r.Amount, p.Currency, r.Status, r.CreatedAt AS OccurredAt,
-                   u.Email AS UserEmail, v.TimeZone, c.CourtName, cs.StartTime, cs.EndTime, 1 AS SessionCount
+                   u.Email AS UserEmail, v.TimeZone, {GroupCourtNames} AS CourtName, cs.StartTime, cs.EndTime, {GroupBookingCount} AS SessionCount
             FROM Refunds r
             JOIN Payments p ON p.Id = r.PaymentId
             JOIN Bookings b ON b.Id = p.BookingId
             JOIN Venues v ON v.Id = b.VenueId
             JOIN Users u ON u.Id = b.UserId
             JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
-            JOIN Courts c ON c.Id = cs.CourtId
-            WHERE {0}
+            WHERE {venueClause}
             UNION ALL
             SELECT sr.Id, 'Drop-in social', v.Name, sr.Amount, p.Currency, sr.Status, sr.CreatedAt,
-                   u.Email, v.TimeZone, c.CourtName, s.StartTime, s.EndTime,
+                   u.Email, v.TimeZone, {SocialGroupCourtNames("reg")}, s.StartTime, s.EndTime,
                    CASE WHEN reg.CheckoutGroupId IS NULL THEN 1
                         ELSE (SELECT COUNT(*) FROM PublicSocialRegistrations g WHERE g.CheckoutGroupId = reg.CheckoutGroupId)
                    END
@@ -1396,9 +1422,8 @@ public sealed class DashboardRepository(IConfiguration configuration)
             JOIN Venues v ON v.Id = reg.VenueId
             JOIN Users u ON u.Id = reg.UserId
             JOIN Courts c ON c.Id = reg.CourtId
-            WHERE {1}
+            WHERE {socialVenueClause}
             """;
-        var combined = string.Format(listed, venueClause, socialVenueClause);
         await using var connection = await OpenAsync(cancellationToken);
         var total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
             $"SELECT COUNT(*) FROM ({combined}) entries",

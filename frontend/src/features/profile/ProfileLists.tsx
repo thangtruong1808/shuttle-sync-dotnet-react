@@ -73,7 +73,8 @@ export function RewardsSection() {
             rows={slicePage(data.pendingItems ?? [], pendingPage, pendingPageSize).map((item) => ({
               id: `${item.kind}-${item.id}`,
               kind: item.kind,
-              when: "After the session ends",
+              when: formatVenueDay(item.startTime, item.timeZone),
+              whenNote: "After the session ends",
               venueName: item.venueName,
               courtName: item.courtName,
               session: formatVenueRange(item.startTime, item.endTime, item.timeZone),
@@ -402,7 +403,7 @@ function RewardTable({
   emptyBody,
 }: {
   caption: string;
-  rows: { id: string; kind: string; when: string; venueName: string; courtName: string; session: string; points: number; status: string }[];
+  rows: { id: string; kind: string; when: string; whenNote?: string; venueName: string; courtName: string; session: string; points: number; status: string }[];
   emptyTitle: string;
   emptyBody: string;
 }) {
@@ -423,7 +424,7 @@ function RewardTable({
               <p className="shrink-0 font-semibold text-line">+{row.points}</p>
             </div>
             <p className="mt-2 text-sm text-mist/70">{row.session}</p>
-            <p className="text-sm text-mist/60">{row.when}</p>
+            <p className="text-sm text-mist/60">{row.when}{row.whenNote ? <span className="block text-xs text-mist/50">{row.whenNote}</span> : null}</p>
             <p className="mt-2">
               <span className={`rounded-full px-2 py-1 text-xs font-semibold ${row.status === "Added" ? "bg-line/15 text-line" : "bg-white/10 text-mist"}`}>{row.status}</span>
             </p>
@@ -448,7 +449,14 @@ function RewardTable({
           {rows.map((row) => (
             <tr key={row.id} className="border-t border-white/10">
               <td className="py-3 pr-3 text-white">{row.kind}</td>
-              <td className="pr-3">{row.when}</td>
+              <td className="pr-3">
+                {row.whenNote ? (
+                  <>
+                    <span className="block whitespace-nowrap text-white">{row.when}</span>
+                    <span className="block text-xs text-mist/55">{row.whenNote}</span>
+                  </>
+                ) : row.when}
+              </td>
               <td className="pr-3">{row.venueName}</td>
               <td className="pr-3">{row.courtName}</td>
               <td className="whitespace-nowrap pr-3">{row.session}</td>
