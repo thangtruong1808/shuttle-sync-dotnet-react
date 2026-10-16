@@ -188,8 +188,10 @@ export default function CourtGroupPage() {
   }
 
   const rows = sessions ?? [];
+  const weekGroups = weeksOf(rows);
   const securedCount = rows.filter((session) => session.status === "confirmed").length;
-  const heldCount = rows.filter((session) => session.status === "pending").length;
+  const paidWeekCount = weekGroups.filter((week) => week.some((session) => session.status === "confirmed")).length;
+  const heldWeekCount = weekGroups.filter((week) => week.every((session) => session.status === "pending")).length;
   const paidView = (checkoutState === "success" && (waiting || securedCount > 0)) || (checkoutState !== "cancel" && rows.length > 0 && securedCount === rows.length);
   const unpaid = rows.filter((session) => session.status === "pending" && picked.includes(session.bookingId));
   const subtotal = unpaid.reduce((sum, session) => sum + session.price, 0);
@@ -285,14 +287,18 @@ export default function CourtGroupPage() {
       ) : sessions && preview ? (
         <div className={paidView ? "mt-6 space-y-4" : "mt-6 grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]"}>
           {paidView ? (
-            <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5" role="status">
+            <section className="overflow-hidden rounded-3xl border border-line/30 bg-gradient-to-br from-line/15 via-pine/90 to-pine/80 p-4 sm:p-5" role="status">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 font-semibold text-line">
                     {waiting ? <Spinner className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5 shrink-0" aria-hidden="true" />}
                     {waiting ? "Waiting for Stripe to confirm…" : `${securedCount} ${securedCount === 1 ? "court is" : "courts are"} secured`}
                   </p>
-                  <p className="mt-2 text-sm leading-relaxed text-mist/80">{heldCount} {heldCount === 1 ? "court stays" : "courts stay"} held. Pay each held week from My bookings before 24 hours of that session.</p>
+                  <p className="mt-2 text-sm leading-relaxed text-mist/80">
+                    {heldWeekCount === 0
+                      ? "Every week in this series is paid."
+                      : `${paidWeekCount} ${paidWeekCount === 1 ? "week is" : "weeks are"} paid · ${heldWeekCount} ${heldWeekCount === 1 ? "week is" : "weeks are"} held for you. Pay each held week from My bookings before 24 hours of that session.`}
+                  </p>
                   {heldNote ? <p className="mt-2 text-sm leading-relaxed text-mist/80">{heldNote}</p> : null}
                   {formError ? <p className="mt-2 text-sm text-mist" role="alert">{formError}</p> : null}
                 </div>
@@ -306,7 +312,7 @@ export default function CourtGroupPage() {
           <section className="min-w-0">
             <h2 className="font-display text-2xl text-white">Sessions</h2>
             <ul className={`mt-3 grid grid-cols-1 gap-3 ${paidView ? "sm:grid-cols-2 xl:grid-cols-3" : ""}`}>
-              {weeksOf(sessions).map((week) => {
+              {weekGroups.map((week) => {
                 const open = openWeeks[week[0].startTime] === true;
                 const securedInWeek = week.filter((session) => session.status === "confirmed").length;
                 const heldInWeek = week.length - securedInWeek;
@@ -367,11 +373,16 @@ export default function CourtGroupPage() {
             {unpaid.some((session) => session.payNow) ? <p className="mt-3 text-sm text-mist/75">A session starting within 24 hours is only held for 30 minutes. Pay now to keep it.</p> : null}
           </section>
           {paidView ? null : (
-          <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5 lg:sticky lg:top-4">
+          <section className="rounded-3xl border border-white/10 bg-gradient-to-b from-white/5 to-pine/90 p-4 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.8)] sm:p-5 lg:sticky lg:top-4">
             {checkoutState === "cancel" ? (
               <p className="text-sm leading-relaxed text-mist" role="status">{formError ?? "Payment was cancelled. Courts due within 24 hours were released. Later weeks stay in My bookings."}</p>
             ) : (
               <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void onPay(); }}>
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-mist/60">Checkout</p>
+                  <p className="mt-1 text-lg font-semibold text-white">{unpaid.length === 0 ? "Choose courts to pay" : `Pay ${unpaid.length} ${unpaid.length === 1 ? "court" : "courts"}`}</p>
+                  <p className="mt-1 text-sm text-mist/75">{otherWeeks > 0 ? `${otherWeeks} more ${otherWeeks === 1 ? "week stays" : "weeks stay"} held after this payment.` : "Secure this week with Stripe, points, or both."}</p>
+                </div>
                 {outcome?.status === "confirmed" ? <p className="text-sm font-semibold text-line" role="status">That week is secured. Choose another week when you are ready.</p> : null}
                 <div>
                   <p className="text-sm text-mist/80">Promotion code</p>

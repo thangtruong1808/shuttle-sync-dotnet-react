@@ -679,6 +679,7 @@ public sealed class BookingPayments(
             key += "-" + Guid.NewGuid().ToString("N");
         }
 
+        var productName = string.IsNullOrWhiteSpace(prepared.ProductName) ? "Court booking" : prepared.ProductName;
         return await new SessionService().CreateAsync(
             new SessionCreateOptions
             {
@@ -686,9 +687,23 @@ public sealed class BookingPayments(
                 Customer = customerId,
                 SuccessUrl = successUrl,
                 CancelUrl = cancelUrl,
+                Locale = "en-GB",
+                SubmitType = "book",
+                BillingAddressCollection = "auto",
                 PaymentMethodTypes = types,
                 ClientReferenceId = prepared.BookingId.ToString(),
                 Metadata = new Dictionary<string, string> { ["bookingId"] = prepared.BookingId.ToString() },
+                CustomText = new SessionCustomTextOptions
+                {
+                    Submit = new SessionCustomTextSubmitOptions
+                    {
+                        Message = "Your courts stay held while you pay. A receipt is emailed when Stripe confirms the payment.",
+                    },
+                    AfterSubmit = new SessionCustomTextAfterSubmitOptions
+                    {
+                        Message = "Return to Shuttle Sync to see paid weeks and any later weeks still held for you.",
+                    },
+                },
                 PaymentIntentData = new SessionPaymentIntentDataOptions
                 {
                     ReceiptEmail = string.IsNullOrWhiteSpace(prepared.Email) ? null : prepared.Email,
@@ -703,7 +718,11 @@ public sealed class BookingPayments(
                         {
                             Currency = prepared.Currency.ToLowerInvariant(),
                             UnitAmount = Cents(prepared.Cash),
-                            ProductData = new SessionLineItemPriceDataProductDataOptions { Name = string.IsNullOrWhiteSpace(prepared.ProductName) ? "Court booking" : prepared.ProductName },
+                            ProductData = new SessionLineItemPriceDataProductDataOptions
+                            {
+                                Name = productName,
+                                Description = "Shuttle Sync court booking. Later weeks in a series stay held until you pay each one from My bookings.",
+                            },
                         },
                     },
                 ],
@@ -1652,6 +1671,7 @@ public sealed class BookingPayments(
             ["kind"] = hold.Waitlist ? "social-waitlist" : "social",
             ["registrationId"] = hold.RegistrationId.ToString(),
         };
+        var socialName = hold.Waitlist ? "Drop-in social waitlist" : "Drop-in social";
         return await new SessionService().CreateAsync(
             new SessionCreateOptions
             {
@@ -1659,9 +1679,25 @@ public sealed class BookingPayments(
                 Customer = customerId,
                 SuccessUrl = successUrl,
                 CancelUrl = cancelUrl,
+                Locale = "en-GB",
+                SubmitType = "book",
+                BillingAddressCollection = "auto",
                 PaymentMethodTypes = types,
                 ClientReferenceId = hold.RegistrationId.ToString(),
                 Metadata = metadata,
+                CustomText = new SessionCustomTextOptions
+                {
+                    Submit = new SessionCustomTextSubmitOptions
+                    {
+                        Message = hold.Waitlist
+                            ? "Your waitlist place is held while you pay. If a court opens before the start, you move in automatically."
+                            : "Your drop-in place is held while you pay. A receipt is emailed when Stripe confirms the payment.",
+                    },
+                    AfterSubmit = new SessionCustomTextAfterSubmitOptions
+                    {
+                        Message = "Return to Shuttle Sync to see your registration and add friends if you need to.",
+                    },
+                },
                 PaymentIntentData = new SessionPaymentIntentDataOptions
                 {
                     ReceiptEmail = string.IsNullOrWhiteSpace(hold.Email) ? null : hold.Email,
@@ -1676,7 +1712,13 @@ public sealed class BookingPayments(
                         {
                             Currency = hold.Currency.ToLowerInvariant(),
                             UnitAmount = Cents(hold.Amount),
-                            ProductData = new SessionLineItemPriceDataProductDataOptions { Name = hold.Waitlist ? "Drop-in social waitlist" : "Drop-in social" },
+                            ProductData = new SessionLineItemPriceDataProductDataOptions
+                            {
+                                Name = socialName,
+                                Description = hold.Waitlist
+                                    ? "Shuttle Sync drop-in social waitlist. Refunded in full if a place does not open before the session starts."
+                                    : "Shuttle Sync drop-in social. A court is assigned when your payment is confirmed.",
+                            },
                         },
                     },
                 ],
@@ -1803,6 +1845,7 @@ public sealed class BookingPayments(
             ["registrationId"] = hold.RegistrationId.ToString(),
             ["friendGroupId"] = groupId.ToString(),
         };
+        var friendName = hold.Waitlist ? $"Drop-in social waitlist · {people}" : $"Drop-in social · {people}";
         return await new SessionService().CreateAsync(
             new SessionCreateOptions
             {
@@ -1810,9 +1853,23 @@ public sealed class BookingPayments(
                 Customer = customerId,
                 SuccessUrl = successUrl,
                 CancelUrl = cancelUrl,
+                Locale = "en-GB",
+                SubmitType = "book",
+                BillingAddressCollection = "auto",
                 PaymentMethodTypes = types,
                 ClientReferenceId = groupId.ToString(),
                 Metadata = metadata,
+                CustomText = new SessionCustomTextOptions
+                {
+                    Submit = new SessionCustomTextSubmitOptions
+                    {
+                        Message = "Friend places are held while you pay. A receipt is emailed when Stripe confirms the payment.",
+                    },
+                    AfterSubmit = new SessionCustomTextAfterSubmitOptions
+                    {
+                        Message = "Return to Shuttle Sync to review friend spots on this social.",
+                    },
+                },
                 PaymentIntentData = new SessionPaymentIntentDataOptions
                 {
                     ReceiptEmail = string.IsNullOrWhiteSpace(hold.Email) ? null : hold.Email,
@@ -1827,7 +1884,11 @@ public sealed class BookingPayments(
                         {
                             Currency = hold.Currency.ToLowerInvariant(),
                             UnitAmount = Cents(hold.Amount),
-                            ProductData = new SessionLineItemPriceDataProductDataOptions { Name = hold.Waitlist ? $"Drop-in social waitlist · {people}" : $"Drop-in social · {people}" },
+                            ProductData = new SessionLineItemPriceDataProductDataOptions
+                            {
+                                Name = friendName,
+                                Description = "Shuttle Sync friend spots for a drop-in social. Each friend gets a place on the same session.",
+                            },
                         },
                     },
                 ],

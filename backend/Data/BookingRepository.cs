@@ -562,6 +562,7 @@ public sealed class BookingRepository(IConfiguration configuration)
         }
         var created = new List<CourtHoldRow>();
         var skipped = new HashSet<string>();
+        var alreadyOwned = 0;
         var horizon = Math.Max(weeks, seriesWeeks is >= 1 and <= 12 ? seriesWeeks : weeks);
         for (var week = 0; week < horizon; week++)
         {
@@ -603,6 +604,25 @@ public sealed class BookingRepository(IConfiguration configuration)
                     return HoldError($"{court.CourtName} on {HoldWhen(timeZone, start)} has already started. Choose a later time.");
                 }
 
+                var owned = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                    """
+                    SELECT COUNT(*)
+                    FROM Bookings b
+                    JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+                    WHERE b.GroupId = @GroupId AND b.UserId = @UserId AND b.IsDeleted = 0
+                      AND b.Status IN ('pending', 'confirmed')
+                      AND cs.CourtId = @CourtId
+                      AND cs.StartTime = @StartTime AND cs.EndTime = @EndTime
+                    """,
+                    new { GroupId = groupId, UserId = userId, CourtId = court.Id, StartTime = start, EndTime = end },
+                    tx,
+                    cancellationToken: cancellationToken));
+                if (owned > 0)
+                {
+                    alreadyOwned++;
+                    continue;
+                }
+
                 if (start <= DateTime.UtcNow.AddHours(24))
                 {
                     if (!payWithin24Hours)
@@ -610,10 +630,6 @@ public sealed class BookingRepository(IConfiguration configuration)
                         skipped.Add(HoldWhen(timeZone, start));
                         continue;
                     }
-                }
-                else if (payWithin24Hours)
-                {
-                    continue;
                 }
 
                 price = CourtRates.Quote(timeZone, hourlyRate, start, end, windows);
@@ -766,6 +782,12 @@ public sealed class BookingRepository(IConfiguration configuration)
 
         if (created.Count == 0)
         {
+            if (alreadyOwned > 0 && skipped.Count == 0)
+            {
+                await tx.CommitAsync(cancellationToken);
+                return (groupId, Array.Empty<CourtHoldRow>(), null, null);
+            }
+
             var when = skipped.FirstOrDefault() ?? HoldWhen(timeZone, startUtc);
             return HoldError(payWithin24Hours
                 ? "Choose a session that starts within 24 hours."

@@ -485,6 +485,7 @@ public static class VenueEndpoints
         (Guid GroupId, CourtHoldRow[] Rows, string? Error, string? Notice) opened;
         try
         {
+            var series = body.Weeks <= 0 ? 1 : Math.Min(body.Weeks, 12);
             opened = await repository.OpenCourtHoldGroupAsync(
                 venue.Id,
                 current.UserId,
@@ -493,11 +494,11 @@ public static class VenueEndpoints
                 venue.TimeZone,
                 window.StartUtc,
                 window.EndUtc,
-                1,
+                series,
                 cancellationToken,
                 payWithin24Hours: true,
                 joinGroupId: body.GroupId,
-                seriesWeeks: body.Weeks <= 0 ? 1 : Math.Min(body.Weeks, 12),
+                seriesWeeks: series,
                 repeatHold: body.Repeat);
         }
         catch (MySqlException)
@@ -508,6 +509,13 @@ public static class VenueEndpoints
         if (opened.Error is not null)
         {
             return Form(opened.Error, StatusCodes.Status400BadRequest);
+        }
+
+        var dueNow = DateTime.UtcNow.AddHours(24);
+        var payRows = opened.Rows.Where(row => row.StartTime <= dueNow).ToArray();
+        if (payRows.Length == 0)
+        {
+            return Form("Choose a session that starts within 24 hours.", StatusCodes.Status400BadRequest);
         }
 
         foreach (var row in opened.Rows)
@@ -527,7 +535,7 @@ public static class VenueEndpoints
             venue.Id,
             opened.GroupId,
             current.UserId,
-            opened.Rows.Select(row => row.BookingId).ToArray(),
+            payRows.Select(row => row.BookingId).ToArray(),
             Math.Max(0, body.Points),
             string.IsNullOrWhiteSpace(body.PromotionCode) ? null : body.PromotionCode.Trim(),
             $"{origin}/{slug}/book/group/{opened.GroupId}?checkout=success",

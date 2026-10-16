@@ -2,11 +2,10 @@ import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch } from "../../app/store";
 import { Link, Navigate, useLocation, useParams } from "react-router-dom";
-import { CalendarDays, CircleCheck } from "lucide-react";
+import { ArrowRight, CalendarDays, CircleCheck, Clock, ShieldCheck } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { ErrorState, Money, formatVenueDateTime } from "../../components/format";
-import { PageSection } from "../../components/layout/SiteLayout";
-import { Button, Skeleton } from "../../components/ui";
+import { Button, Skeleton, Spinner } from "../../components/ui";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { bookingPayment, type BookingPayment } from "../profile/profileApi";
@@ -158,42 +157,71 @@ export default function BookingStubPage() {
     }
   }
 
+  const paidView = Boolean(outcome?.status === "confirmed" || waiting);
+
   return (
-    <main>
-      <PageSection>
-        <Link to={`/${slug}/courts`} className="text-sm text-line hover:underline">Back to courts</Link>
-        <h1 className="mt-3 font-display text-3xl text-white">Book this court</h1>
-        {status === "unknown" || (!slot && !error) ? (
-          <div className="mt-6 space-y-2" aria-busy="true">
-            <span className="sr-only">Loading slot</span>
-            <Skeleton className="h-8 w-64" />
-            <Skeleton className="h-6 w-40" />
-          </div>
-        ) : error ? (
-          <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
-        ) : slot && preview ? (
-          <article className="mt-6 max-w-xl rounded-3xl border border-white/10 bg-pine/80 p-6">
-            <h2 className="font-display text-2xl text-white">{slot.courtName}</h2>
-            <p className="mt-2 text-mist/75">Court {slot.courtNumber}</p>
-            <p className="mt-1 text-mist/75">{formatVenueDateTime(slot.startTime, slot.venue.timeZone)} – {formatVenueDateTime(slot.endTime, slot.venue.timeZone)}</p>
-            <p className="mt-4 text-lg font-semibold text-white">
+    <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
+      <Link to={`/${slug}/courts`} className="text-sm text-line hover:underline">Back to courts</Link>
+      <h1 className="mt-3 flex items-center gap-2 font-display text-3xl text-white">
+        {paidView ? waiting ? <Spinner className="h-7 w-7 shrink-0 text-line" /> : <CircleCheck className="h-8 w-8 shrink-0 text-line" aria-hidden="true" /> : null}
+        <span>{paidView ? waiting ? "Checking your payment" : "Court secured" : "Checkout"}</span>
+      </h1>
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">
+        {paidView
+          ? "Stripe confirms the payment before the court is saved. You can review it in My bookings."
+          : "Review the session, apply rewards or a promotion, then pay securely with Stripe."}
+      </p>
+      {status === "unknown" || (!slot && !error) ? (
+        <div className="mt-6 space-y-2" aria-busy="true">
+          <span className="sr-only">Loading slot</span>
+          <Skeleton className="h-28" />
+          <Skeleton className="h-28" />
+        </div>
+      ) : error ? (
+        <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
+      ) : slot && preview ? (
+        <div className="mt-6 grid items-start gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
+          <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-mist/60">Session</p>
+            <h2 className="mt-1 font-display text-2xl text-white">{slot.courtName}</h2>
+            <p className="mt-2 text-sm text-mist/75">Court {slot.courtNumber}</p>
+            <p className="mt-1 text-sm text-white">{formatVenueDateTime(slot.startTime, slot.venue.timeZone)} – {formatVenueDateTime(slot.endTime, slot.venue.timeZone)}</p>
+            <p className="mt-4 text-2xl font-semibold text-white">
               {discount > 0 ? <span className="mr-2 text-base font-normal text-mist/50 line-through"><Money amount={slot.price} currency={slot.venue.currency} /></span> : null}
               <Money amount={discount > 0 ? payable : slot.price} currency={slot.venue.currency} />
             </p>
             {slot.incentivePoints ? <p className="mt-2 text-sm font-semibold text-line">+{slot.incentivePoints} pts after the session ends</p> : null}
-            <p className="mt-4 text-sm text-mist/75">
-              More than 24 hours before the start, you get a full refund. Within 24 hours, the venue keeps {percentLabel(fee)}% and refunds the rest.
+            <p className="mt-4 flex items-start gap-2 text-sm leading-relaxed text-mist/75">
+              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-mist/60" aria-hidden="true" />
+              <span>More than 24 hours before the start, you get a full refund. Within 24 hours, the venue keeps {percentLabel(fee)}% and refunds the rest.</span>
             </p>
-            {outcome ? (
-              <Outcome row={outcome} />
+            {outcome ? <Outcome row={outcome} /> : null}
+          </section>
+          <section className="rounded-3xl border border-white/10 bg-gradient-to-b from-white/5 to-pine/90 p-4 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.8)] sm:p-5 lg:sticky lg:top-4">
+            {outcome?.status === "confirmed" ? (
+              <div className="space-y-3" role="status">
+                <p className="flex items-center gap-2 font-semibold text-line">
+                  <ShieldCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
+                  Payment confirmed
+                </p>
+                <Link to="/profile/bookings" className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300">
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  View my bookings
+                </Link>
+              </div>
             ) : (
               <form
-                className="mt-6 space-y-4"
+                className="space-y-4"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void onPay();
                 }}
               >
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-mist/60">Checkout</p>
+                  <p className="mt-1 text-lg font-semibold text-white">Pay and secure</p>
+                  <p className="mt-1 text-sm text-mist/75">Card, PayTo, or bank debit through Stripe.</p>
+                </div>
                 <div>
                   <p className="text-sm text-mist/80">Promotion code</p>
                   {promotions === null ? (
@@ -206,7 +234,7 @@ export default function BookingStubPage() {
                       {promotions.map((promotion) => {
                         const selected = appliedCode?.id === promotion.id;
                         return (
-                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between ${selected ? "border-line/60 bg-line/10" : "border-white/10 bg-black/20"}`}>
+                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 transition-colors sm:flex-row sm:items-center sm:justify-between ${selected ? "border-line/60 bg-line/10 hover:bg-line/20" : "border-white/10 bg-black/20 hover:bg-white/10"}`}>
                             <div className="min-w-0">
                               <p className="break-all font-semibold tracking-wide text-white">{promotion.code}</p>
                               <p className="text-sm text-line">
@@ -248,7 +276,7 @@ export default function BookingStubPage() {
                         key={percent}
                         type="button"
                         disabled={paying || waiting || maxPoints === 0}
-                        className={`rounded-full px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-line text-ink" : "border border-white/15 text-mist"}`}
+                        className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-line text-ink hover:bg-lime-300" : "border border-white/15 text-mist hover:bg-white/10"}`}
                         onClick={() => choosePercent(percent)}
                       >
                         {percent}%
@@ -275,15 +303,15 @@ export default function BookingStubPage() {
                 </dl>
                 {cashTooSmall ? <p className="text-sm text-mist">Use enough points to cover the booking, or leave at least $0.50 to pay.</p> : null}
                 {formError ? <p className="text-sm text-mist" role="alert">{formError}</p> : null}
-                {waiting ? <p className="text-sm text-mist" role="status">Checking the payment…</p> : null}
-                <Button type="submit" loading={paying || waiting} disabled={cashTooSmall}>
+                {waiting ? <p className="flex items-center gap-2 text-sm text-mist" role="status"><Spinner className="h-4 w-4" /> Checking the payment…</p> : null}
+                <Button type="submit" className="w-full" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={paying || waiting} disabled={cashTooSmall}>
                   {preview.cash === 0 ? "Book with points" : "Continue to Stripe"}
                 </Button>
               </form>
             )}
-          </article>
-        ) : null}
-      </PageSection>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
