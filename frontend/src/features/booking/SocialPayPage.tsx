@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch } from "../../app/store";
-import { Link, Navigate, useLocation, useParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { CalendarDays, CircleCheck } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { ErrorState, Money, formatVenueDateTime } from "../../components/format";
@@ -50,6 +50,7 @@ async function waitForSocial(slug: string, id: string) {
 export default function SocialPayPage() {
   const { slug = "", socialId = "" } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const status = useSelector((state: RootState) => state.auth.status);
   const balance = useSelector((state: RootState) => state.auth.user?.rewardPoints ?? 0);
@@ -177,6 +178,15 @@ export default function SocialPayPage() {
     }
   }
 
+  function retryPayment() {
+    sessionStorage.removeItem(checkoutKey);
+    setOutcome(null);
+    setFormError(null);
+    setWaiting(false);
+    setPaying(false);
+    navigate(`/${slug}/social/${socialId}`, { replace: true });
+  }
+
   const outcomeKind = outcome ? paymentOutcomeKind(outcome) : null;
   const paymentFailed = outcomeKind === "failed" || outcomeKind === "cancelled";
   const paymentProcessing = outcomeKind === "processing";
@@ -208,7 +218,7 @@ export default function SocialPayPage() {
           </div>
         </div>
         {waiting ? <PaymentResultBanner kind="waiting" subject="seat" className="mt-4 max-w-3xl" /> : null}
-        {!waiting && paymentFailed ? <PaymentResultBanner kind={outcomeKind === "cancelled" ? "cancelled" : "failed"} subject="seat" retryTo={`/${slug}/social/${socialId}`} className="mt-4 max-w-3xl" /> : null}
+        {!waiting && paymentFailed ? <PaymentResultBanner kind={outcomeKind === "cancelled" ? "cancelled" : "failed"} subject="seat" onRetry={retryPayment} className="mt-4 max-w-3xl" /> : null}
         {!waiting && paymentProcessing ? <PaymentResultBanner kind="processing" subject="seat" className="mt-4 max-w-3xl" /> : null}
         {status === "unknown" || (!offer && !error) ? (
           <div className="mt-6 space-y-2" aria-busy="true">

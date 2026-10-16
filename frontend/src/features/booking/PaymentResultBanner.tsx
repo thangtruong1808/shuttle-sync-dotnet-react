@@ -9,6 +9,8 @@ type Props = {
   /** What was being paid for — used in copy only. */
   subject?: "court" | "courts" | "seat" | "seats" | "places";
   retryTo?: string;
+  /** Prefer this when retry stays on the same route and must clear local state. */
+  onRetry?: () => void;
   retryLabel?: string;
   className?: string;
 };
@@ -28,8 +30,9 @@ function subjectLabel(subject: NonNullable<Props["subject"]>) {
   }
 }
 
-export function PaymentResultBanner({ kind, subject = "courts", retryTo, retryLabel = "Try again", className = "" }: Props) {
+export function PaymentResultBanner({ kind, subject = "courts", retryTo, onRetry, retryLabel = "Try again", className = "" }: Props) {
   const labels = subjectLabel(subject);
+  const retryClass = "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto";
 
   if (kind === "waiting") {
     return (
@@ -80,11 +83,13 @@ export function PaymentResultBanner({ kind, subject = "courts", retryTo, retryLa
         <span>Courts and places are only booked after Stripe confirms success.</span>
       </p>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        {retryTo ? (
-          <Link
-            to={retryTo}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto"
-          >
+        {onRetry ? (
+          <button type="button" className={retryClass} onClick={onRetry}>
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            {retryLabel}
+          </button>
+        ) : retryTo ? (
+          <Link to={retryTo} className={retryClass}>
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
             {retryLabel}
           </Link>
