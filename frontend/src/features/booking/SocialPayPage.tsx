@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch } from "../../app/store";
-import { Link, Navigate, useLocation, useParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { CalendarDays, CircleCheck } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { ErrorState, Money, formatVenueDateTime } from "../../components/format";
-import { Button, Skeleton } from "../../components/ui";
+import { Button, Skeleton, Spinner } from "../../components/ui";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { SocialRoster } from "../courts/CourtSchedule";
 import { cancelBooking, renameFriend } from "../profile/profileApi";
 import { socialFriends, socialOffer, socialRegistration, startFriendCheckout, startSocialCheckout, startWaitlistCheckout, venuePromotions, type Promotion, type SocialFriend, type SocialOffer, type SocialRegistration } from "../venues/venueApi";
+import { PaymentResultBanner, paymentOutcomeKind, paymentSettled } from "./PaymentResultBanner";
 
 const checkoutKey = "shuttle-sync-social-checkout";
 const friendKey = "shuttle-sync-friend-group";
@@ -38,10 +39,7 @@ function percentLabel(value: number) {
 async function waitForSocial(slug: string, id: string) {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const row = await socialRegistration(slug, id);
-    if (row.status === "confirmed" || row.status === "expired" || row.paymentStatus === "failed") {
-      return row;
-    }
-    if (row.status === "waitlist" && (row.paymentStatus === "succeeded" || row.cashAmount === 0)) {
+    if (paymentSettled(row) || (row.status === "waitlist" && (row.paymentStatus === "succeeded" || row.cashAmount === 0))) {
       return row;
     }
     await new Promise((resolve) => window.setTimeout(resolve, 1500));
@@ -52,6 +50,7 @@ async function waitForSocial(slug: string, id: string) {
 export default function SocialPayPage() {
   const { slug = "", socialId = "" } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const status = useSelector((state: RootState) => state.auth.status);
   const balance = useSelector((state: RootState) => state.auth.user?.rewardPoints ?? 0);
@@ -179,15 +178,48 @@ export default function SocialPayPage() {
     }
   }
 
+  function retryPayment() {
+    sessionStorage.removeItem(checkoutKey);
+    setOutcome(null);
+    setFormError(null);
+    setWaiting(false);
+    setPaying(false);
+    navigate(`/${slug}/social/${socialId}`, { replace: true });
+  }
+
+  const outcomeKind = outcome ? paymentOutcomeKind(outcome) : null;
+  const paymentFailed = outcomeKind === "failed" || outcomeKind === "cancelled";
+  const paymentProcessing = outcomeKind === "processing";
+  const title = waiting
+    ? "Checking your payment"
+    : paymentFailed
+      ? "Payment not confirmed"
+      : paymentProcessing
+        ? "Waiting for bank confirmation"
+        : joining
+          ? "Join the waitlist"
+          : outcome?.status === "confirmed" || outcome?.status === "waitlist"
+            ? "Your public social"
+            : "Pay and register";
+
   return (
     <main>
       <div className="w-full px-4 py-4 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <Link to={`/${slug}/social`} className="text-sm text-line hover:underline">Back to drop-in times</Link>
-            <h1 className="mt-1 font-display text-2xl text-white sm:text-3xl">{joining ? "Join the waitlist" : outcome ? "Your public social" : "Pay and register"}</h1>
+            <h1 className="mt-1 flex items-center gap-2 font-display text-2xl text-white sm:text-3xl">
+              {waiting || paymentProcessing ? <Spinner className="h-6 w-6 shrink-0 text-line" /> : null}
+              <span>{title}</span>
+            </h1>
+            {waiting ? <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">We are checking with Stripe. Your place is only saved after Stripe confirms the payment — please wait.</p> : null}
+            {paymentFailed ? <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">That payment did not go through. This place was not saved.</p> : null}
+            {paymentProcessing ? <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">Stripe has the payment, but the bank has not confirmed it yet. Your place stays held until confirmation.</p> : null}
           </div>
         </div>
+        {waiting ? <PaymentResultBanner kind="waiting" subject="seat" className="mt-4 max-w-3xl" /> : null}
+        {!waiting && paymentFailed ? <PaymentResultBanner kind={outcomeKind === "cancelled" ? "cancelled" : "failed"} subject="seat" onRetry={retryPayment} className="mt-4 max-w-3xl" /> : null}
+        {!waiting && paymentProcessing ? <PaymentResultBanner kind="processing" subject="seat" className="mt-4 max-w-3xl" /> : null}
         {status === "unknown" || (!offer && !error) ? (
           <div className="mt-6 space-y-2" aria-busy="true">
             <span className="sr-only">Loading drop-in social</span>
@@ -220,10 +252,22 @@ export default function SocialPayPage() {
             <p className="mt-4 text-sm text-mist/75">
               More than 24 hours before the start, you get a full refund. Within 24 hours, the venue keeps {percentLabel(fee)}% and refunds the rest. Points you used follow the same rule.
             </p>
-            {outcome ? <Outcome row={outcome} /> : null}
+            {outcome && (outcome.status === "confirmed" || outcome.status === "waitlist") ? <Outcome row={outcome} /> : null}
           </section>
           <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5">
-            {outcome ? null : (
+            {waiting || paymentFailed || paymentProcessing ? (
+              <div className="space-y-3" role="status">
+                <p className="text-sm leading-relaxed text-mist/80">
+                  {waiting
+                    ? "Checkout is paused until Stripe answers."
+                    : paymentFailed
+                      ? "You can start a new payment when you are ready."
+                      : "Keep this page, or check My bookings while the bank confirms."}
+                </p>
+                {formError ? <p className="text-sm text-mist" role="alert">{formError}</p> : null}
+                {waiting ? <p className="flex items-center gap-2 text-sm text-mist" role="status"><Spinner className="h-4 w-4" /> Checking the payment…</p> : null}
+              </div>
+            ) : outcome ? null : (
               <form
                 className="space-y-4"
                 onSubmit={(event) => {
@@ -382,15 +426,7 @@ function Outcome({ row }: { row: SocialRegistration }) {
       </div>
     );
   }
-  if (row.status === "expired" || row.paymentStatus === "failed") {
-    return <p className="mt-6 text-sm text-mist" role="alert">The payment did not go through. The seat was released and your points are back.</p>;
-  }
-  return (
-    <div className="mt-6 space-y-3" role="status">
-      <p className="text-sm text-mist/80">Your seat is held until the bank confirms this payment. Direct debit can take a few business days. PayTo can take a few minutes.</p>
-      <Link to="/profile/bookings" className="inline-flex text-sm text-line hover:underline">View my bookings</Link>
-    </div>
-  );
+  return null;
 }
 
 function FriendPanel({

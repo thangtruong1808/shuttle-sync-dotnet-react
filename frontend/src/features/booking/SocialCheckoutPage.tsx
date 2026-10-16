@@ -9,6 +9,7 @@ import { Button, Skeleton, Spinner } from "../../components/ui";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { socialOffer, socialRegistration, startSocialBatchCheckout, venuePromotions, type Promotion, type SocialOffer, type SocialRegistration } from "../venues/venueApi";
+import { PaymentResultBanner, paymentOutcomeKind, paymentSettled } from "./PaymentResultBanner";
 
 const checkoutKey = "shuttle-sync-social-batch";
 const pointPercents = [25, 50, 75, 100] as const;
@@ -35,7 +36,7 @@ function percentLabel(value: number) {
 async function waitForSocial(slug: string, id: string) {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const row = await socialRegistration(slug, id);
-    if (row.status === "confirmed" || row.status === "expired" || row.paymentStatus === "failed") {
+    if (paymentSettled(row)) {
       return row;
     }
     await new Promise((resolve) => window.setTimeout(resolve, 1500));
@@ -166,20 +167,32 @@ export default function SocialCheckoutPage() {
     }
   }
 
-  const paidView = Boolean(outcome?.status === "confirmed" || waiting);
+  const outcomeKind = outcome ? paymentOutcomeKind(outcome) : null;
+  const paymentFailed = outcomeKind === "failed" || outcomeKind === "cancelled";
+  const paymentProcessing = outcomeKind === "processing";
+  const paidView = Boolean(outcome?.status === "confirmed" || waiting || paymentProcessing);
 
   return (
     <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
       <Link to={`/${slug}/social`} className="text-sm text-line hover:underline">Back to drop-in times</Link>
       <h1 className="mt-3 flex items-center gap-2 font-display text-3xl text-white">
-        {paidView ? waiting ? <Spinner className="h-7 w-7 shrink-0 text-line" /> : <CircleCheck className="h-8 w-8 shrink-0 text-line" aria-hidden="true" /> : null}
-        <span>{paidView ? waiting ? "Checking your payment" : "You're registered" : "Checkout"}</span>
+        {waiting || paymentProcessing ? <Spinner className="h-7 w-7 shrink-0 text-line" /> : outcome?.status === "confirmed" ? <CircleCheck className="h-8 w-8 shrink-0 text-line" aria-hidden="true" /> : null}
+        <span>{waiting ? "Checking your payment" : paymentFailed ? "Payment not confirmed" : paymentProcessing ? "Waiting for bank confirmation" : outcome?.status === "confirmed" ? "You're registered" : "Checkout"}</span>
       </h1>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">
-        {paidView
-          ? "Stripe confirms the payment before places are saved. Review them in My bookings."
-          : "Review your drop-in times, apply rewards or a promotion, then pay securely with Stripe."}
+        {waiting
+          ? "We are checking with Stripe. Places are only saved after Stripe confirms the payment — please wait."
+          : paymentFailed
+            ? "That payment did not go through. These drop-in places were not saved."
+            : paymentProcessing
+              ? "Stripe has the payment, but the bank has not confirmed it yet. Places stay held until confirmation."
+              : paidView
+                ? "Your places are secured. Review them in My bookings."
+                : "Review your drop-in times, apply rewards or a promotion, then pay securely with Stripe."}
       </p>
+      {waiting ? <PaymentResultBanner kind="waiting" subject="places" className="mt-6 max-w-3xl" /> : null}
+      {!waiting && paymentFailed ? <PaymentResultBanner kind={outcomeKind === "cancelled" ? "cancelled" : "failed"} subject="places" retryTo={`/${slug}/social`} className="mt-6 max-w-3xl" /> : null}
+      {!waiting && paymentProcessing ? <PaymentResultBanner kind="processing" subject="places" className="mt-6 max-w-3xl" /> : null}
       {status === "unknown" || (!offers && !error) ? (
         <div className="mt-6 space-y-2" aria-busy="true">
           <span className="sr-only">Loading drop-in times</span>
@@ -212,7 +225,7 @@ export default function SocialCheckoutPage() {
               <Clock className="mt-0.5 h-4 w-4 shrink-0 text-mist/60" aria-hidden="true" />
               <span>More than 24 hours before each start, you get a full refund. Within 24 hours, the venue keeps {percentLabel(fee)}% and refunds the rest.</span>
             </p>
-            {outcome ? <Outcome row={outcome} count={offers.length} /> : null}
+            {outcome?.status === "confirmed" ? <Outcome row={outcome} count={offers.length} /> : null}
           </section>
           <section className="rounded-3xl border border-white/10 bg-gradient-to-b from-white/5 to-pine/90 p-4 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.8)] sm:p-5 lg:sticky lg:top-4">
             {outcome?.status === "confirmed" ? (
@@ -225,6 +238,17 @@ export default function SocialCheckoutPage() {
                   <CalendarDays className="h-4 w-4" aria-hidden="true" />
                   View my bookings
                 </Link>
+              </div>
+            ) : waiting || paymentFailed || paymentProcessing ? (
+              <div className="space-y-3" role="status">
+                <p className="text-sm leading-relaxed text-mist/80">
+                  {waiting
+                    ? "Checkout is paused until Stripe answers."
+                    : paymentFailed
+                      ? "You can start a new payment when you are ready."
+                      : "Keep this page, or check My bookings while the bank confirms."}
+                </p>
+                {formError ? <p className="text-sm text-mist" role="alert">{formError}</p> : null}
               </div>
             ) : (
               <form
@@ -352,13 +376,5 @@ function Outcome({ row, count }: { row: SocialRegistration; count: number }) {
       </div>
     );
   }
-  if (row.status === "expired" || row.paymentStatus === "failed") {
-    return <p className="mt-6 text-sm text-mist" role="alert">The payment did not go through. The seats were released and your points are back.</p>;
-  }
-  return (
-    <div className="mt-6 space-y-3" role="status">
-      <p className="text-sm text-mist/80">Your seats are held until the bank confirms this payment. Direct debit can take a few business days. PayTo can take a few minutes.</p>
-      <Link to="/profile/bookings" className="inline-flex text-sm text-line hover:underline">View my bookings</Link>
-    </div>
-  );
+  return null;
 }

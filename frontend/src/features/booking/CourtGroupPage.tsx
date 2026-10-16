@@ -9,6 +9,7 @@ import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { bookingPayment, type BookingPayment } from "../profile/profileApi";
 import { abandonCourtCheckout, bookAgainPath, courtHold, forgetOpenCheckout, readOpenCheckout, rememberOpenCheckout, startGroupCheckout, venuePromotions, type CourtHoldSession, type Promotion, type ReleasedRetry } from "../venues/venueApi";
+import { PaymentResultBanner, paymentOutcomeKind, paymentSettled } from "./PaymentResultBanner";
 
 const checkoutKey = "shuttle-sync-checkout";
 const pointPercents = [25, 50, 75, 100] as const;
@@ -45,7 +46,7 @@ function courtStatus(session: CourtHoldSession) {
 async function waitForBooking(id: string): Promise<BookingPayment> {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const row = await bookingPayment(id);
-    if (row.status === "confirmed" || row.status === "expired" || row.paymentStatus === "failed") {
+    if (paymentSettled(row)) {
       return row;
     }
     await new Promise((resolve) => window.setTimeout(resolve, 1500));
@@ -192,7 +193,19 @@ export default function CourtGroupPage() {
   const securedCount = rows.filter((session) => session.status === "confirmed").length;
   const paidWeekCount = weekGroups.filter((week) => week.some((session) => session.status === "confirmed")).length;
   const heldWeekCount = weekGroups.filter((week) => week.every((session) => session.status === "pending")).length;
-  const paidView = (checkoutState === "success" && (waiting || securedCount > 0)) || (checkoutState !== "cancel" && rows.length > 0 && securedCount === rows.length);
+  const outcomeKind = outcome ? paymentOutcomeKind(outcome) : null;
+  const paymentFailed = outcomeKind === "failed" || outcomeKind === "cancelled";
+  const paymentProcessing = outcomeKind === "processing";
+  const paidView = !paymentFailed && ((checkoutState === "success" && (waiting || securedCount > 0 || paymentProcessing)) || (checkoutState !== "cancel" && rows.length > 0 && securedCount === rows.length));
+  const intro = waiting
+    ? "We are checking with Stripe. Courts are only saved after Stripe confirms the payment — please wait."
+    : paymentFailed
+      ? "That payment did not go through. Courts were not confirmed."
+      : paymentProcessing
+        ? "Stripe has the payment, but the bank has not confirmed it yet. Courts stay held until confirmation."
+        : paidView
+          ? "The courts you just paid are secured. Every later week stays held until 24 hours before it starts. Pay those weeks from My bookings. There is no deposit."
+          : null;
   const unpaid = rows.filter((session) => session.status === "pending" && picked.includes(session.bookingId));
   const subtotal = unpaid.reduce((sum, session) => sum + session.price, 0);
   const pickedCourts = [...unpaid].sort((left, right) => left.courtNumber - right.courtNumber).map((session) => session.courtName);
@@ -247,10 +260,13 @@ export default function CourtGroupPage() {
     <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
       <Link to={`/${slug}/book`} className="text-sm text-line hover:underline">Back to booking</Link>
       <h1 className="mt-3 flex items-center gap-2 font-display text-3xl text-white">
-        {paidView ? waiting ? <Spinner className="h-7 w-7 shrink-0 text-line" /> : <CircleCheck className="h-8 w-8 shrink-0 text-line" aria-hidden="true" /> : null}
-        <span>{paidView ? waiting ? "Checking your payment" : "This week is paid" : "Pay one week"}</span>
+        {waiting || paymentProcessing ? <Spinner className="h-7 w-7 shrink-0 text-line" /> : paymentFailed ? null : paidView ? <CircleCheck className="h-8 w-8 shrink-0 text-line" aria-hidden="true" /> : null}
+        <span>{waiting ? "Checking your payment" : paymentFailed ? "Payment not confirmed" : paymentProcessing ? "Waiting for bank confirmation" : paidView ? "This week is paid" : "Pay one week"}</span>
       </h1>
-      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">{paidView ? "The courts you just paid are secured. Every later week stays held until 24 hours before it starts. Pay those weeks from My bookings. There is no deposit." : payIntro}</p>
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">{intro ?? payIntro}</p>
+      {waiting ? <PaymentResultBanner kind="waiting" subject="courts" className="mt-6 max-w-3xl" /> : null}
+      {!waiting && paymentFailed ? <PaymentResultBanner kind={outcomeKind === "cancelled" ? "cancelled" : "failed"} subject="courts" retryTo={`/${slug}/book`} className="mt-6 max-w-3xl" /> : null}
+      {!waiting && paymentProcessing ? <PaymentResultBanner kind="processing" subject="courts" className="mt-6 max-w-3xl" /> : null}
       {released ? (
         <section className="mt-6 max-w-3xl rounded-3xl border border-amber-300/40 bg-amber-400/10 p-4 sm:p-5" role="status">
           <p className="flex items-start gap-2 text-sm leading-relaxed text-amber-50">
@@ -286,13 +302,13 @@ export default function CourtGroupPage() {
         <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
       ) : sessions && preview ? (
         <div className={paidView ? "mt-6 space-y-4" : "mt-6 grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]"}>
-          {paidView ? (
+          {paidView && !waiting && !paymentProcessing ? (
             <section className="overflow-hidden rounded-3xl border border-line/30 bg-gradient-to-br from-line/15 via-pine/90 to-pine/80 p-4 sm:p-5" role="status">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 font-semibold text-line">
-                    {waiting ? <Spinner className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5 shrink-0" aria-hidden="true" />}
-                    {waiting ? "Waiting for Stripe to confirm…" : `${securedCount} ${securedCount === 1 ? "court is" : "courts are"} secured`}
+                    <ShieldCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    {`${securedCount} ${securedCount === 1 ? "court is" : "courts are"} secured`}
                   </p>
                   <p className="mt-2 text-sm leading-relaxed text-mist/80">
                     {heldWeekCount === 0
