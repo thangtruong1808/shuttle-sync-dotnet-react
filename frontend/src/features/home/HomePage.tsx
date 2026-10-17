@@ -289,6 +289,7 @@ function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueS
   const sendingRef = useRef(false);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  const threadRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     window.speechSynthesis?.getVoices();
@@ -299,6 +300,12 @@ function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueS
       stopRecording();
     };
   }, []);
+
+  useEffect(() => {
+    const thread = threadRef.current;
+    if (!thread) return;
+    thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" });
+  }, [messages, sending, notice]);
 
   function stopSpeaking() {
     window.speechSynthesis?.cancel();
@@ -454,7 +461,7 @@ function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueS
             />
           </div>
           <p className="mt-3 text-sm text-mist/70">Help for {venueName}.</p>
-          <div className="mt-3 flex-1 space-y-3 overflow-y-auto">
+          <div ref={threadRef} className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto" data-chat-thread>
             {messages.length === 0 ? <p className="text-sm text-mist/75">Ask about booking, cancellations, points, or which courts are free.</p> : null}
             {messages.map((message, index) => (
               <div key={index} className={message.role === "user" ? "flex justify-end" : "flex items-end gap-2"}>

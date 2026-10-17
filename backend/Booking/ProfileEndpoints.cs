@@ -22,6 +22,7 @@ public static class ProfileEndpoints
         me.MapPut("/social-friends/{id:guid}", RenameFriendAsync);
         me.MapGet("/rewards", RewardsAsync);
         me.MapGet("/payments", PaymentsAsync);
+        me.MapGet("/recommendations", RecommendationEndpoints.MineAsync);
     }
 
     private static async Task<IResult> BookingsAsync(

@@ -40,6 +40,8 @@ builder.Services.AddSingleton<PasswordHasher<UserRow>>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<BookingRepository>();
 builder.Services.AddScoped<DashboardRepository>();
+builder.Services.AddScoped<RecommendationRepository>();
+builder.Services.AddSingleton<ComebackCopy>();
 builder.Services.AddScoped<PaymentRepository>();
 builder.Services.AddScoped<BookingPayments>();
 builder.Services.AddHttpClient("oauth", client => client.Timeout = TimeSpan.FromSeconds(15));

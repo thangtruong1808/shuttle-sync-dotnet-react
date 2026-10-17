@@ -172,9 +172,31 @@ export type DashRedemption = {
 export type DashRecommendation = {
   id: string;
   userEmail: string;
+  displayName?: string | null;
   recommendationType: string;
   createdAt: string;
   venueName: string | null;
+  timeZone?: string | null;
+  payload?: string | null;
+};
+
+export type DashPlayer = {
+  id: string;
+  email: string;
+  displayName: string | null;
+  reason: string;
+};
+
+export type WrittenRecommendation = {
+  created: boolean;
+  id: string;
+  userEmail: string;
+  displayName: string | null;
+  recommendationType: string;
+  venueName: string | null;
+  timeZone: string | null;
+  createdAt: string;
+  payload: string | null;
 };
 
 export type DashActivity = {
@@ -441,6 +463,23 @@ export function listRedemptions(venueId: string, page: number, pageSize: number)
 
 export function listRecommendations(page: number): Promise<DashPage<DashRecommendation>> {
   return read(`/api/dashboard/recommendations?page=${page}`);
+}
+
+export function listVenuePlayers(venueId: string): Promise<DashPlayer[]> {
+  return read(`/api/dashboard/recommendations/players?venueId=${encodeURIComponent(venueId)}`);
+}
+
+export async function writeRecommendation(venueId: string, userId: string, points: number): Promise<WrittenRecommendation> {
+  const response = await apiFetch("/api/dashboard/recommendations", {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ venueId, userId, points }),
+  });
+  if (!response.ok) {
+    return fail(response);
+  }
+  return (await response.json()) as WrittenRecommendation;
 }
 
 export function listActivity(userId: string, from: string, to: string, page: number, pageSize: number): Promise<DashPage<DashActivity>> {

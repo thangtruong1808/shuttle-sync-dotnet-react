@@ -1603,7 +1603,8 @@ public sealed class DashboardRepository(IConfiguration configuration)
             new { Allowed = allowed }, cancellationToken: cancellationToken));
         var rows = await connection.QueryAsync<DashRecommendationRow>(new CommandDefinition(
             $"""
-            SELECT r.Id, u.Email AS UserEmail, r.RecommendationType, r.CreatedAt, v.Name AS VenueName
+            SELECT r.Id, u.Email AS UserEmail, u.DisplayName, r.RecommendationType, r.CreatedAt,
+                   v.Name AS VenueName, v.TimeZone, CAST(r.Payload AS CHAR) AS Payload
             FROM AIRecommendations r
             JOIN Users u ON u.Id = r.UserId
             LEFT JOIN Venues v ON v.Id = r.VenueId
@@ -2262,9 +2263,12 @@ public sealed class DashRecommendationRow
 {
     public Guid Id { get; init; }
     public string UserEmail { get; init; } = "";
+    public string? DisplayName { get; init; }
     public string RecommendationType { get; init; } = "";
     public DateTime CreatedAt { get; init; }
     public string? VenueName { get; init; }
+    public string? TimeZone { get; init; }
+    public string? Payload { get; init; }
 }
 
 public sealed class BookingHead

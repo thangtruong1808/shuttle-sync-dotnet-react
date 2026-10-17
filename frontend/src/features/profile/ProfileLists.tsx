@@ -48,7 +48,7 @@ export function RewardsSection() {
   return (
     <div>
       <h1 className="font-display text-3xl text-white">Reward points</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/75">Available points can be used now. Pending points are set aside for a court, a public social, or a friend, and they join your balance after that session ends.</p>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/75">Available points can be used now. Pending points wait for a court, a public social, a friend, or your next completed visit after a comeback note.</p>
       {error ? (
         <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
       ) : loading && pageMove === null ? (
@@ -73,11 +73,11 @@ export function RewardsSection() {
             rows={slicePage(data.pendingItems ?? [], pendingPage, pendingPageSize).map((item) => ({
               id: `${item.kind}-${item.id}`,
               kind: item.kind,
-              when: formatVenueDay(item.startTime, item.timeZone),
-              whenNote: "After the session ends",
+              when: item.kind === "Comeback" ? "Waiting" : formatVenueDay(item.startTime, item.timeZone),
+              whenNote: item.kind === "Comeback" ? "After your next completed visit" : "After the session ends",
               venueName: item.venueName,
-              courtName: item.courtName,
-              session: formatVenueRange(item.startTime, item.endTime, item.timeZone),
+              courtName: item.kind === "Comeback" ? "Comeback reward" : item.courtName,
+              session: item.kind === "Comeback" ? "Joins your balance then" : formatVenueRange(item.startTime, item.endTime, item.timeZone),
               points: item.points,
               courtCount: item.courtCount,
               cancelledCourts: item.cancelledCourts,
