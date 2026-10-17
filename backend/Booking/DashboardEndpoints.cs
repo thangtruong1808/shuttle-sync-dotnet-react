@@ -60,6 +60,8 @@ public static class DashboardEndpoints
         dash.MapGet("/redemptions", ListRedemptionsAsync);
         dash.MapGet("/awards", ListAwardsAsync);
         dash.MapGet("/recommendations", ListRecommendationsAsync);
+        dash.MapGet("/recommendations/players", RecommendationEndpoints.ListPlayersAsync);
+        dash.MapPost("/recommendations", RecommendationEndpoints.WriteAsync);
         dash.MapGet("/activity", ListActivityAsync);
         dash.MapPost("/activity/page-view", PageViewAsync);
         dash.MapPost("/images", UploadImageAsync);
@@ -700,9 +702,12 @@ public static class DashboardEndpoints
         {
             id = row.Id,
             userEmail = row.UserEmail,
+            displayName = row.DisplayName,
             recommendationType = row.RecommendationType,
             createdAt = Utc(row.CreatedAt),
             venueName = row.VenueName,
+            timeZone = row.TimeZone,
+            payload = row.Payload,
         }));
     }
 

@@ -16,7 +16,8 @@ import SocialPayPage from "./features/booking/SocialPayPage";
 import CourtsPage from "./features/courts/CourtsPage";
 import DashboardLayout from "./features/dashboard/DashboardLayout";
 import DashboardPage from "./features/dashboard/DashboardPage";
-import { ActivityPage, BookingsPage, PaymentsPage, PromotionsPage, RecommendationsPage, RewardsPage as DashboardRewardsPage } from "./features/dashboard/OpsPages";
+import { ActivityPage, BookingsPage, PaymentsPage, PromotionsPage, RewardsPage as DashboardRewardsPage } from "./features/dashboard/OpsPages";
+import { RecommendationsPage } from "./features/dashboard/RecommendationsPage";
 import { UserDesk, UsersPage } from "./features/dashboard/UsersDesk";
 import VenueDesk from "./features/dashboard/VenueDesk";
 import VenuesPage from "./features/dashboard/VenuesPage";
@@ -27,6 +28,7 @@ import { FriendSpotsSection } from "./features/profile/FriendSpotsSection";
 import ProfileLayout from "./features/profile/ProfileLayout";
 import { DetailsSection, OverviewSection } from "./features/profile/ProfileBasics";
 import { PaymentsSection, RewardsSection, SecuritySection } from "./features/profile/ProfileLists";
+import { RecommendationsSection } from "./features/profile/RecommendationsSection";
 import { venueForPage } from "./features/venues/venueApi";
 
 function HomeRedirect() {
@@ -127,6 +129,7 @@ export default function App() {
             <Route path="friend-spots" element={<FriendSpotsSection />} />
             <Route path="rewards" element={<RewardsSection />} />
             <Route path="payments" element={<PaymentsSection />} />
+            <Route path="recommendations" element={<RecommendationsSection />} />
             <Route path="security" element={<SecuritySection />} />
           </Route>
           <Route path="/:slug" element={<HomePage />} />

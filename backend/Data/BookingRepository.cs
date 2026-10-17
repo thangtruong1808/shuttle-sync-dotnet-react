@@ -2176,6 +2176,14 @@ public sealed class BookingRepository(IConfiguration configuration)
             JOIN PublicSocials s ON s.Id = f.SocialId
             JOIN Venues v ON v.Id = f.VenueId
             WHERE r.UserId = @UserId AND f.IncentiveAwardedAt IS NOT NULL AND f.IncentivePoints > 0
+            UNION ALL
+            SELECT CONCAT('comeback-', g.Id), 'Comeback', g.Points, g.ReleasedAt, v.Name, v.TimeZone,
+                   'Comeback', COALESCE(cs.StartTime, g.ReleasedAt), COALESCE(cs.EndTime, g.ReleasedAt), 1, 0, NULL
+            FROM ComebackPointGrants g
+            JOIN Venues v ON v.Id = g.VenueId
+            LEFT JOIN Bookings b ON b.Id = g.ReleasedBookingId
+            LEFT JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+            WHERE g.UserId = @UserId AND g.ReleasedAt IS NOT NULL
             """;
         var total = await connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
@@ -2239,6 +2247,12 @@ public sealed class BookingRepository(IConfiguration configuration)
             WHERE r.UserId = @UserId AND f.Status = 'confirmed'
               AND f.IncentivePoints > 0 AND f.IncentiveAwardedAt IS NULL
               AND s.EndTime > UTC_TIMESTAMP(6)
+            UNION ALL
+            SELECT CONCAT('comeback-', g.Id), 'Comeback', g.Points, v.Name, v.TimeZone,
+                   'Next visit', g.CreatedAt, g.CreatedAt, 1, 0, NULL
+            FROM ComebackPointGrants g
+            JOIN Venues v ON v.Id = g.VenueId
+            WHERE g.UserId = @UserId AND g.ReleasedAt IS NULL
             ORDER BY StartTime, Kind
             """,
             new { UserId = userId },
@@ -3208,8 +3222,86 @@ public sealed class BookingRepository(IConfiguration configuration)
                 cancellationToken: cancellationToken));
         }
 
+        await ReleaseComebackGrantsAsync(connection, tx, cancellationToken);
         await tx.CommitAsync(cancellationToken);
         await RollWeeklySocialsAsync(cancellationToken);
+    }
+
+    private static async Task ReleaseComebackGrantsAsync(MySqlConnection connection, MySqlTransaction tx, CancellationToken cancellationToken)
+    {
+        var grants = (await connection.QueryAsync<ComebackGrantRow>(new CommandDefinition(
+            """
+            SELECT Id, UserId, VenueId, Points, CreatedAt
+            FROM ComebackPointGrants
+            WHERE ReleasedAt IS NULL
+            FOR UPDATE
+            """,
+            transaction: tx,
+            cancellationToken: cancellationToken))).ToArray();
+        foreach (var grant in grants)
+        {
+            var court = await connection.QuerySingleOrDefaultAsync<ComebackReleaseRow>(new CommandDefinition(
+                """
+                SELECT b.Id AS BookingId, cs.EndTime
+                FROM Bookings b
+                JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+                WHERE b.UserId = @UserId AND b.VenueId = @VenueId AND b.IsDeleted = 0
+                  AND b.Status IN ('confirmed', 'completed')
+                  AND cs.EndTime <= UTC_TIMESTAMP(6) AND cs.EndTime > @CreatedAt
+                ORDER BY cs.EndTime
+                LIMIT 1
+                """,
+                new { grant.UserId, grant.VenueId, grant.CreatedAt },
+                tx,
+                cancellationToken: cancellationToken));
+            var socialEnds = await connection.ExecuteScalarAsync<DateTime?>(new CommandDefinition(
+                """
+                SELECT MIN(s.EndTime)
+                FROM PublicSocialRegistrations r
+                JOIN PublicSocials s ON s.Id = r.SocialId
+                WHERE r.UserId = @UserId AND r.VenueId = @VenueId AND r.Status = 'confirmed' AND s.IsDeleted = 0
+                  AND s.EndTime <= UTC_TIMESTAMP(6) AND s.EndTime > @CreatedAt
+                """,
+                new { grant.UserId, grant.VenueId, grant.CreatedAt },
+                tx,
+                cancellationToken: cancellationToken));
+            Guid? bookingId = court?.BookingId;
+            var hasCourt = court is not null;
+            var hasSocial = socialEnds is not null;
+            if (!hasCourt && !hasSocial)
+            {
+                continue;
+            }
+
+            if (hasCourt && hasSocial && socialEnds < court!.EndTime)
+            {
+                bookingId = null;
+            }
+
+            var released = await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE ComebackPointGrants
+                SET ReleasedAt = UTC_TIMESTAMP(6), ReleasedBookingId = @BookingId
+                WHERE Id = @Id AND ReleasedAt IS NULL
+                """,
+                new { grant.Id, BookingId = bookingId },
+                tx,
+                cancellationToken: cancellationToken));
+            if (released != 1)
+            {
+                continue;
+            }
+
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Users
+                SET RewardPoints = RewardPoints + @Points, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @UserId
+                """,
+                new { grant.UserId, grant.Points },
+                tx,
+                cancellationToken: cancellationToken));
+        }
     }
 
     public async Task RollWeeklySocialsAsync(CancellationToken cancellationToken)
@@ -7396,4 +7488,19 @@ public sealed class PaymentListRow
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
     public decimal RefundedAmount { get; init; }
+}
+
+public sealed class ComebackGrantRow
+{
+    public Guid Id { get; init; }
+    public Guid UserId { get; init; }
+    public Guid VenueId { get; init; }
+    public int Points { get; init; }
+    public DateTime CreatedAt { get; init; }
+}
+
+public sealed class ComebackReleaseRow
+{
+    public Guid BookingId { get; init; }
+    public DateTime EndTime { get; init; }
 }

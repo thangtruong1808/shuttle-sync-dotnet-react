@@ -281,3 +281,16 @@ export function myRewards(page: number, pageSize = 5): Promise<Page<RewardRow> &
 export function myPayments(page: number, pageSize = 5): Promise<Page<PaymentRow>> {
   return readPage(`/api/me/payments?page=${page}&pageSize=${pageSize}`);
 }
+
+export type RecommendationRow = {
+  id: string;
+  recommendationType: string;
+  venueName: string | null;
+  timeZone: string | null;
+  createdAt: string;
+  payload: string | null;
+};
+
+export function myRecommendations(page: number, pageSize = 5): Promise<Page<RecommendationRow>> {
+  return readPage(`/api/me/recommendations?page=${page}&pageSize=${pageSize}`);
+}

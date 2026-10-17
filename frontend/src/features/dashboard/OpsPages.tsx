@@ -12,7 +12,6 @@ import {
   listPayments,
   listPromotions,
   deletePromotion,
-  listRecommendations,
   listRedemptions,
   listRefunds,
   listWebhooks,
@@ -24,7 +23,6 @@ import {
   type DashPage,
   type DashPayment,
   type DashPromo,
-  type DashRecommendation,
   type DashRedemption,
   type DashWebhook,
 } from "./dashboardApi";
@@ -87,7 +85,7 @@ function useVenueOptions() {
   return venues;
 }
 
-function Shell<T>({
+export function Shell<T>({
   title,
   refreshKey,
   load,
@@ -285,10 +283,28 @@ function BookingActions({ row, onChanged }: { row: DashBooking; onChanged: (mess
   );
 }
 
-function localInput(iso: string): string {
+function localDate(iso: string): string {
   const date = new Date(iso);
   const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Promotions always run 00:01–23:59 on the chosen calendar days (local). */
+function promoRangeIso(fromDate: string, toDate: string): { validFrom: string; validTo: string } {
+  return {
+    validFrom: new Date(`${fromDate}T00:01:00`).toISOString(),
+    validTo: new Date(`${toDate}T23:59:00`).toISOString(),
+  };
+}
+
+function todayLocalDate(): string {
+  return localDate(new Date().toISOString());
+}
+
+function addLocalDays(date: string, days: number): string {
+  const next = new Date(`${date}T12:00:00`);
+  next.setDate(next.getDate() + days);
+  return localDate(next.toISOString());
 }
 
 export function PromotionsPage() {
@@ -299,7 +315,17 @@ export function PromotionsPage() {
   const [revision, setRevision] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [form, setForm] = useState({ code: "", discountType: "percent", discountValue: "10", maxUses: "", maxUsesPerUser: "1", validFrom: "", validTo: "", isActive: true, venueId: "" });
+  const [form, setForm] = useState({
+    code: "",
+    discountType: "percent",
+    discountValue: "10",
+    maxUses: "",
+    maxUsesPerUser: "1",
+    validFrom: todayLocalDate(),
+    validTo: addLocalDays(todayLocalDate(), 365),
+    isActive: true,
+    venueId: "",
+  });
   const { busy, run } = useBusy();
 
   return (
@@ -325,6 +351,7 @@ export function PromotionsPage() {
               setNote(null);
               void run("save", async () => {
                 try {
+                  const range = promoRangeIso(form.validFrom, form.validTo);
                   await savePromotion({
                     venueId: form.venueId || null,
                     code: form.code,
@@ -332,12 +359,19 @@ export function PromotionsPage() {
                     discountValue: Number(form.discountValue),
                     maxUses: null,
                     maxUsesPerUser: 1000000,
-                    validFrom: new Date(form.validFrom).toISOString(),
-                    validTo: new Date(form.validTo).toISOString(),
+                    validFrom: range.validFrom,
+                    validTo: range.validTo,
                     isActive: form.isActive,
                   });
                   setRevision((value) => value + 1);
                   setNote("Promotion created.");
+                  setForm((current) => ({
+                    ...current,
+                    code: "",
+                    discountValue: "10",
+                    validFrom: todayLocalDate(),
+                    validTo: addLocalDays(todayLocalDate(), 365),
+                  }));
                 } catch (reason) {
                   setMessage(reason instanceof DashError ? reason.message : "The code could not be saved.");
                 }
@@ -358,8 +392,14 @@ export function PromotionsPage() {
               </select>
             </Field>
             <Field label="Value"><input className={control} type="number" min={0} step="0.01" value={form.discountValue} disabled={busy !== null} onChange={(event) => setForm({ ...form, discountValue: event.target.value })} /></Field>
-            <Field label="Valid from"><PickerInput className={control} type="datetime-local" value={form.validFrom} disabled={busy !== null} onChange={(event) => setForm({ ...form, validFrom: event.target.value })} required /></Field>
-            <Field label="Valid to"><PickerInput className={control} type="datetime-local" value={form.validTo} disabled={busy !== null} onChange={(event) => setForm({ ...form, validTo: event.target.value })} required /></Field>
+            <Field label="Valid from">
+              <PickerInput className={control} type="date" value={form.validFrom} disabled={busy !== null} onChange={(event) => setForm({ ...form, validFrom: event.target.value })} required />
+              <span className="mt-1 block text-xs text-mist/60">Starts at 00:01 on this day.</span>
+            </Field>
+            <Field label="Valid to">
+              <PickerInput className={control} type="date" value={form.validTo} disabled={busy !== null} onChange={(event) => setForm({ ...form, validTo: event.target.value })} required />
+              <span className="mt-1 block text-xs text-mist/60">Ends at 23:59 on this day.</span>
+            </Field>
             <Check label="Active" checked={form.isActive} disabled={busy !== null} onChange={(checked) => setForm({ ...form, isActive: checked })} />
             <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
               <Notice message={message} />
@@ -378,8 +418,8 @@ function promoForm(row: DashPromo) {
     code: row.code,
     discountType: row.discountType,
     discountValue: String(row.discountValue),
-    validFrom: localInput(row.validFrom),
-    validTo: localInput(row.validTo),
+    validFrom: localDate(row.validFrom),
+    validTo: localDate(row.validTo),
     isActive: row.isActive,
     venueId: row.venueId ?? "",
   };
@@ -398,7 +438,7 @@ function PromoRow({ row, admin, venues, onChanged }: { row: DashPromo; admin: bo
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium text-white">{row.code}</span>
         <span>{row.discountType} {row.discountValue} · {row.usedCount} used · {row.isActive ? "active" : "inactive"} · {venueName}</span>
-        <span>{localInput(row.validFrom)} → {localInput(row.validTo)}</span>
+        <span>{localDate(row.validFrom)} 00:01 → {localDate(row.validTo)} 23:59</span>
         {admin ? (
           <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             {confirming ? (
@@ -438,6 +478,7 @@ function PromoRow({ row, admin, venues, onChanged }: { row: DashPromo; admin: bo
             setMessage(null);
             void run("save", async () => {
               try {
+                const range = promoRangeIso(form.validFrom, form.validTo);
                 await savePromotion({
                   venueId: form.venueId || null,
                   code: form.code,
@@ -445,8 +486,8 @@ function PromoRow({ row, admin, venues, onChanged }: { row: DashPromo; admin: bo
                   discountValue: Number(form.discountValue),
                   maxUses: row.maxUses,
                   maxUsesPerUser: row.maxUsesPerUser,
-                  validFrom: new Date(form.validFrom).toISOString(),
-                  validTo: new Date(form.validTo).toISOString(),
+                  validFrom: range.validFrom,
+                  validTo: range.validTo,
                   isActive: form.isActive,
                 }, row.id);
                 setEditing(false);
@@ -471,8 +512,14 @@ function PromoRow({ row, admin, venues, onChanged }: { row: DashPromo; admin: bo
             </select>
           </Field>
           <Field label="Value"><input className={control} type="number" min={0} step="0.01" value={form.discountValue} disabled={busy !== null} onChange={(event) => setForm({ ...form, discountValue: event.target.value })} required /></Field>
-          <Field label="Valid from"><PickerInput className={control} type="datetime-local" value={form.validFrom} disabled={busy !== null} onChange={(event) => setForm({ ...form, validFrom: event.target.value })} required /></Field>
-          <Field label="Valid to"><PickerInput className={control} type="datetime-local" value={form.validTo} disabled={busy !== null} onChange={(event) => setForm({ ...form, validTo: event.target.value })} required /></Field>
+          <Field label="Valid from">
+            <PickerInput className={control} type="date" value={form.validFrom} disabled={busy !== null} onChange={(event) => setForm({ ...form, validFrom: event.target.value })} required />
+            <span className="mt-1 block text-xs text-mist/60">Starts at 00:01 on this day.</span>
+          </Field>
+          <Field label="Valid to">
+            <PickerInput className={control} type="date" value={form.validTo} disabled={busy !== null} onChange={(event) => setForm({ ...form, validTo: event.target.value })} required />
+            <span className="mt-1 block text-xs text-mist/60">Ends at 23:59 on this day.</span>
+          </Field>
           <Check label="Active" checked={form.isActive} disabled={busy !== null} onChange={(checked) => setForm({ ...form, isActive: checked })} />
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
             <Notice message={message} />
@@ -753,21 +800,6 @@ export function ActivityPage() {
           ),
         },
       ]}
-    />
-  );
-}
-
-export function RecommendationsPage() {
-  return (
-    <Shell
-      title="Recommendations"
-      refreshKey="recommendations"
-      load={(page) => listRecommendations(page)}
-      render={(row: DashRecommendation) => (
-        <li key={row.id} className="rounded-2xl border border-white/10 p-3 text-sm text-mist">
-          {row.userEmail} · {row.recommendationType} · {row.venueName || "Any venue"} · {formatVenueDateTime(row.createdAt, "UTC")}
-        </li>
-      )}
     />
   );
 }
