@@ -9,6 +9,7 @@ import type { RootState } from "../../app/store";
 import { initials } from "../../components/format";
 import { Skeleton, Spinner } from "../../components/ui";
 import { PaymentNotice } from "./PaymentReminder";
+import { useUnreadRecommendations } from "./RecommendationNotice";
 
 const sections = [
   { to: "/profile", label: "Overview", end: true, icon: LayoutDashboard },
@@ -43,6 +44,7 @@ export default function ProfileLayout() {
   const dispatch = useDispatch<AppDispatch>();
   const [leaving, setLeaving] = useState(false);
   const [open, setOpen] = useState(true);
+  const unreadRecommendations = useUnreadRecommendations();
 
   if (status === "unknown") {
     return (
@@ -95,8 +97,14 @@ export default function ProfileLayout() {
             const Icon = section.icon;
             const link = (
               <NavLink key={section.to} to={section.to} end={section.end} title={section.label} className={linkClass}>
-                <Icon className={open ? "h-4 w-4 shrink-0" : "h-6 w-6 shrink-0"} aria-hidden="true" />
+                <span className="relative">
+                  <Icon className={open ? "h-4 w-4 shrink-0" : "h-6 w-6 shrink-0"} aria-hidden="true" />
+                  {!open && section.to === "/profile/recommendations" && unreadRecommendations > 0 ? <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-line" /> : null}
+                </span>
                 {open ? section.label : <span className="sr-only">{section.label}</span>}
+                {open && section.to === "/profile/recommendations" && unreadRecommendations > 0 ? (
+                  <span className="ml-auto rounded-full bg-line px-1.5 py-0.5 text-[10px] font-bold text-ink">{unreadRecommendations}</span>
+                ) : null}
               </NavLink>
             );
             return open ? link : <Tip key={section.to} label={section.label}>{link}</Tip>;

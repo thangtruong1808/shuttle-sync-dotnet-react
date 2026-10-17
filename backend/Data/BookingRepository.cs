@@ -4793,6 +4793,29 @@ public sealed class BookingRepository(IConfiguration configuration)
         return await FriendPaymentExistsAsync(intentId, cancellationToken);
     }
 
+    public async Task<PendingFriendPaymentRow[]> ListPendingFriendPaymentsAsync(Guid userId, Guid? socialId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<PendingFriendPaymentRow>(new CommandDefinition(
+            """
+            SELECT p.FriendGroupId, p.StripePaymentIntentId
+            FROM PublicSocialPayments p
+            JOIN PublicSocialRegistrations r ON r.Id = p.RegistrationId
+            WHERE r.UserId = @UserId
+              AND p.FriendGroupId IS NOT NULL
+              AND p.Status = 'pending'
+              AND EXISTS (
+                  SELECT 1 FROM PublicSocialFriends f
+                  WHERE f.CheckoutGroupId = p.FriendGroupId
+                    AND f.Status IN ('pending', 'waitlist')
+                    AND (@SocialId IS NULL OR f.SocialId = @SocialId)
+              )
+            """,
+            new { UserId = userId, SocialId = socialId },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
     public async Task<SocialPaymentTransition?> MarkFriendSucceededAsync(string intentId, string? chargeId, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -7304,6 +7327,12 @@ public sealed class FriendPaymentStateRow
     public string PaymentStatus { get; init; } = "";
     public decimal Amount { get; init; }
     public Guid? FriendGroupId { get; init; }
+}
+
+public sealed class PendingFriendPaymentRow
+{
+    public Guid FriendGroupId { get; init; }
+    public string StripePaymentIntentId { get; init; } = "";
 }
 
 public sealed class FriendCancelContext

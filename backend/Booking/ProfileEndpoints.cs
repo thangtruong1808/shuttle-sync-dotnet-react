@@ -22,6 +22,9 @@ public static class ProfileEndpoints
         me.MapPut("/social-friends/{id:guid}", RenameFriendAsync);
         me.MapGet("/rewards", RewardsAsync);
         me.MapGet("/payments", PaymentsAsync);
+        me.MapGet("/recommendations/unread", RecommendationEndpoints.UnreadAsync);
+        me.MapPost("/recommendations/read", RecommendationEndpoints.MarkAllReadAsync);
+        me.MapPost("/recommendations/{id:guid}/read", RecommendationEndpoints.MarkReadAsync);
         me.MapGet("/recommendations", RecommendationEndpoints.MineAsync);
     }
 
@@ -325,12 +328,25 @@ public static class ProfileEndpoints
         int? pageSize,
         AuthRepository authRepository,
         BookingRepository repository,
+        BookingPayments payments,
         CancellationToken cancellationToken)
     {
         var userId = await RequireUserAsync(http, authRepository, cancellationToken);
         if (userId is null)
         {
             return SignInAgain();
+        }
+
+        if (status is not ("past" or "cancelled"))
+        {
+            try
+            {
+                await payments.SyncPendingFriendsAsync(userId.Value, null, cancellationToken);
+            }
+            catch (Stripe.StripeException)
+            {
+                // The stored friend status is still returned when Stripe cannot be reached.
+            }
         }
 
         var filter = status is "past" or "cancelled" ? status : "upcoming";

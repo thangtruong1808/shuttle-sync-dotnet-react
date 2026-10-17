@@ -297,6 +297,55 @@ public sealed class BookingPayments(
         await ApplySocialIntentAsync(intent, cancellationToken);
     }
 
+    public async Task SyncPendingFriendsAsync(Guid userId, Guid? socialId, CancellationToken cancellationToken)
+    {
+        if (!settings.IsConfigured)
+        {
+            return;
+        }
+
+        var rows = await bookings.ListPendingFriendPaymentsAsync(userId, socialId, cancellationToken);
+        if (rows.Length == 0)
+        {
+            return;
+        }
+
+        StripeConfiguration.ApiKey = settings.SecretKey;
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrWhiteSpace(row.StripePaymentIntentId))
+            {
+                continue;
+            }
+
+            var intentId = row.StripePaymentIntentId;
+            if (intentId.StartsWith("cs_", StringComparison.Ordinal))
+            {
+                var checkout = await new SessionService().GetAsync(intentId, cancellationToken: cancellationToken);
+                if (checkout.Status == "expired")
+                {
+                    await bookings.FailFriendPendingAsync(intentId, "cancelled", cancellationToken);
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(checkout.PaymentIntentId))
+                {
+                    continue;
+                }
+
+                if (!await bookings.BindFriendPaymentIntentAsync(row.FriendGroupId, checkout.PaymentIntentId, cancellationToken))
+                {
+                    continue;
+                }
+
+                intentId = checkout.PaymentIntentId;
+            }
+
+            var intent = await new PaymentIntentService().GetAsync(intentId, cancellationToken: cancellationToken);
+            await ApplyFriendIntentAsync(intent, cancellationToken);
+        }
+    }
+
     public async Task SyncAsync(Guid userId, Guid bookingId, CancellationToken cancellationToken)
     {
         if (!settings.IsConfigured)

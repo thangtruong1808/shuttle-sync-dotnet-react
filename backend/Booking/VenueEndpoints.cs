@@ -1149,6 +1149,7 @@ public static class VenueEndpoints
         HttpContext http,
         BookingRepository repository,
         AuthRepository auth,
+        BookingPayments payments,
         CancellationToken cancellationToken)
     {
         var current = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
@@ -1167,6 +1168,15 @@ public static class VenueEndpoints
         if (social is null)
         {
             return Results.NotFound();
+        }
+
+        try
+        {
+            await payments.SyncPendingFriendsAsync(current.UserId, socialId, cancellationToken);
+        }
+        catch (Stripe.StripeException)
+        {
+            // The stored friend status is still returned when Stripe cannot be reached.
         }
 
         var now = DateTime.UtcNow;

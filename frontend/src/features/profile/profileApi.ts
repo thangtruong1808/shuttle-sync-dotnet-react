@@ -288,9 +288,28 @@ export type RecommendationRow = {
   venueName: string | null;
   timeZone: string | null;
   createdAt: string;
+  readAt: string | null;
   payload: string | null;
 };
 
+export const recommendationListeners = new Set<() => void>();
+
+export function refreshRecommendations() {
+  recommendationListeners.forEach((listener) => listener());
+}
+
 export function myRecommendations(page: number, pageSize = 5): Promise<Page<RecommendationRow>> {
   return readPage(`/api/me/recommendations?page=${page}&pageSize=${pageSize}`);
+}
+
+export function unreadRecommendations(): Promise<{ count: number }> {
+  return readPage("/api/me/recommendations/unread");
+}
+
+export function markRecommendationRead(id: string): Promise<{ read: boolean }> {
+  return readPage(`/api/me/recommendations/${id}/read`, { method: "POST" });
+}
+
+export function markAllRecommendationsRead(): Promise<{ read: number }> {
+  return readPage("/api/me/recommendations/read", { method: "POST" });
 }

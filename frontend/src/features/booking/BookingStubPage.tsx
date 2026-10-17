@@ -8,7 +8,7 @@ import { ErrorState, Money, formatVenueDateTime } from "../../components/format"
 import { Button, Skeleton, Spinner } from "../../components/ui";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
-import { bookingPayment, type BookingPayment } from "../profile/profileApi";
+import { bookingPayment, refreshUnpaidHolds, type BookingPayment } from "../profile/profileApi";
 import { startCheckout, venuePromotions, venueSlot, type CourtSlotDetail, type Promotion } from "../venues/venueApi";
 import { PaymentResultBanner, paymentOutcomeKind, paymentSettled } from "./PaymentResultBanner";
 
@@ -96,6 +96,7 @@ export default function BookingStubPage() {
         if (!active) return;
         setOutcome(row);
         void dispatch(loadCurrentUser());
+        refreshUnpaidHolds();
       })
       .catch(() => {
         if (active) setFormError("The payment status could not be checked.");
@@ -150,6 +151,7 @@ export default function BookingStubPage() {
           pointsValue: result.pointsValue,
         });
         void dispatch(loadCurrentUser());
+        refreshUnpaidHolds();
       }
     } catch (reason) {
       setFormError(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "The booking could not be started." : "The booking could not be started.");

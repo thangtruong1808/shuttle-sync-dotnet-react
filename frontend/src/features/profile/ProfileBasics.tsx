@@ -2,7 +2,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useVenues } from "../../components/layout/SiteLayout";
 import { venueForPage } from "../venues/venueApi";
-import { CalendarDays, Gift, LogOut, Save, Users, Wallet } from "lucide-react";
+import { CalendarDays, CircleAlert, CircleCheck, Gift, LogOut, Save, Users, Wallet } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../app/store";
 import { formatVenueDay, formatVenueRange } from "../../components/format";
@@ -129,7 +129,7 @@ export function DetailsSection() {
   const [firstName, setFirstName] = useState(user?.firstName ?? "");
   const [lastName, setLastName] = useState(user?.lastName ?? "");
   const [mobile, setMobile] = useState(user?.mobile ?? "");
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const busy = saving || uploading;
@@ -145,9 +145,9 @@ export function DetailsSection() {
     try {
       const next = await updateProfile({ displayName, firstName, lastName, mobile });
       dispatch(signedIn(next));
-      setMessage("Profile saved.");
+      setMessage({ tone: "ok", text: "Updated Successfully." });
     } catch (error) {
-      setMessage(error instanceof AuthRequestError ? error.fieldErrors.form?.[0] ?? "Could not save." : "Could not save.");
+      setMessage({ tone: "error", text: error instanceof AuthRequestError ? error.fieldErrors.form?.[0] ?? "Could not save." : "Could not save." });
     } finally {
       setSaving(false);
     }
@@ -158,7 +158,7 @@ export function DetailsSection() {
       return;
     }
     if (!isPhotoFile(file) || file.size > 2 * 1024 * 1024) {
-      setMessage("Use a JPEG, PNG, or WebP image up to 2 MB.");
+      setMessage({ tone: "error", text: "Use a JPEG, PNG, or WebP image up to 2 MB." });
       return;
     }
     setUploading(true);
@@ -166,9 +166,9 @@ export function DetailsSection() {
     try {
       const next = await uploadAvatar(file);
       dispatch(signedIn(next));
-      setMessage("Photo updated.");
+      setMessage({ tone: "ok", text: "Photo updated. It now shows on your account." });
     } catch (error) {
-      setMessage(error instanceof AuthRequestError ? error.fieldErrors.form?.[0] ?? "Could not upload." : "Could not upload.");
+      setMessage({ tone: "error", text: error instanceof AuthRequestError ? error.fieldErrors.form?.[0] ?? "Could not upload." : "Could not upload." });
     } finally {
       setUploading(false);
     }
@@ -207,7 +207,12 @@ export function DetailsSection() {
         Email <span className="text-white">{user.email}</span>
         {user.emailVerified ? <span className="ml-2 rounded-full bg-line/15 px-2 py-0.5 text-xs font-semibold text-line">Verified</span> : <span className="ml-2 text-xs text-mist/50">Not verified</span>}
       </p>
-      {message ? <p className="text-sm text-mist" role="status">{message}</p> : null}
+      {message ? (
+        <p className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-sm ${message.tone === "ok" ? "border-line/40 bg-line/10 text-line" : "border-rose-400/30 bg-rose-500/10 text-rose-100"}`} role={message.tone === "ok" ? "status" : "alert"}>
+          {message.tone === "ok" ? <CircleCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> : <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
+          {message.text}
+        </p>
+      ) : null}
       <Button type="submit" icon={<Save className="h-4 w-4" aria-hidden="true" />} loading={saving} disabled={uploading}>Save</Button>
     </form>
   );

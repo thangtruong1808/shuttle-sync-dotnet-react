@@ -7,7 +7,7 @@ import { ErrorState, Money, formatVenueDateTime } from "../../components/format"
 import { Button, Skeleton, Spinner } from "../../components/ui";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
-import { bookingPayment, type BookingPayment } from "../profile/profileApi";
+import { bookingPayment, refreshUnpaidHolds, type BookingPayment } from "../profile/profileApi";
 import { abandonCourtCheckout, bookAgainPath, courtHold, forgetOpenCheckout, readOpenCheckout, rememberOpenCheckout, startGroupCheckout, venuePromotions, type CourtHoldSession, type Promotion, type ReleasedRetry } from "../venues/venueApi";
 import { PaymentResultBanner, paymentOutcomeKind, paymentSettled } from "./PaymentResultBanner";
 
@@ -171,6 +171,7 @@ export default function CourtGroupPage() {
         if (!active) return;
         setOutcome(row);
         void dispatch(loadCurrentUser());
+        refreshUnpaidHolds();
         setAttempt((value) => value + 1);
       })
       .catch(() => {
@@ -247,6 +248,7 @@ export default function CourtGroupPage() {
           pointsValue: result.pointsValue,
         });
         void dispatch(loadCurrentUser());
+        refreshUnpaidHolds();
         setAttempt((value) => value + 1);
       }
     } catch (reason) {

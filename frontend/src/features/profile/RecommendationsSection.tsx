@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { EmptyState, ErrorState, formatVenueDateTime } from "../../components/format";
-import { Skeleton } from "../../components/ui";
+import { Button, Skeleton } from "../../components/ui";
 import { Tag } from "../dashboard/dashboardUi";
 import { ListPager } from "./ProfileLists";
-import { myRecommendations, type Page, type RecommendationRow } from "./profileApi";
+import { useUnreadRecommendations } from "./RecommendationNotice";
+import { markAllRecommendationsRead, markRecommendationRead, myRecommendations, refreshRecommendations, type Page, type RecommendationRow } from "./profileApi";
 
 function payloadRead(payload: string | null | undefined): string {
   if (!payload?.trim()) return "—";
@@ -31,6 +32,11 @@ export function RecommendationsSection() {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [pageMove, setPageMove] = useState<string | null>(null);
+  const [markingId, setMarkingId] = useState<string | null>(null);
+  const [markingAll, setMarkingAll] = useState(false);
+  const [markError, setMarkError] = useState<string | null>(null);
+  const unread = useUnreadRecommendations();
+  const busy = markingId !== null || markingAll;
 
   useEffect(() => {
     let active = true;
@@ -56,10 +62,55 @@ export function RecommendationsSection() {
     };
   }, [page, pageSize, attempt]);
 
+  function stampRead(ids: Set<string> | null) {
+    const readAt = new Date().toISOString();
+    setData((current) => current ? {
+      ...current,
+      items: current.items.map((item) => ids === null || ids.has(item.id) ? { ...item, readAt: item.readAt ?? readAt } : item),
+    } : current);
+    refreshRecommendations();
+  }
+
+  async function onMarkOne(id: string) {
+    setMarkingId(id);
+    setMarkError(null);
+    try {
+      await markRecommendationRead(id);
+      stampRead(new Set([id]));
+    } catch {
+      setMarkError("This recommendation could not be marked read.");
+    } finally {
+      setMarkingId(null);
+    }
+  }
+
+  async function onMarkAll() {
+    setMarkingAll(true);
+    setMarkError(null);
+    try {
+      await markAllRecommendationsRead();
+      stampRead(null);
+    } catch {
+      setMarkError("Recommendations could not be marked read.");
+    } finally {
+      setMarkingAll(false);
+    }
+  }
+
   return (
     <div>
-      <h1 className="font-display text-3xl text-white">Recommendations</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/75">Notes written for you. This list is only yours.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-display text-3xl text-white">Recommendations</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/75">Notes written for you. A new note stays unread until you mark it read.</p>
+        </div>
+        {unread > 0 ? (
+          <Button variant="secondary" loading={markingAll} disabled={busy} onClick={() => void onMarkAll()}>
+            Mark all as read
+          </Button>
+        ) : null}
+      </div>
+      {markError ? <p className="mt-3 text-sm text-rose-200" role="alert">{markError}</p> : null}
       {error ? (
         <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
       ) : loading && pageMove === null ? (
@@ -74,8 +125,14 @@ export function RecommendationsSection() {
             {data.items.map((row) => (
               <li key={row.id} className="rounded-2xl border border-white/10 bg-pine/80 p-4">
                 <div className="flex flex-wrap items-center gap-2">
+                  {!row.readAt ? <span className="inline-flex rounded-full bg-line px-2 py-0.5 text-xs font-bold text-ink">New</span> : null}
                   <Tag value={typeLabel(row.recommendationType)} />
                   <span className="text-sm text-white">{row.venueName?.trim() || "Any venue"}</span>
+                  {!row.readAt ? (
+                    <Button className="w-full sm:ml-auto sm:w-auto" variant="secondary" loading={markingId === row.id} disabled={busy} onClick={() => void onMarkOne(row.id)}>
+                      Mark as read
+                    </Button>
+                  ) : null}
                 </div>
                 <p className="mt-2 text-sm text-mist">{payloadRead(row.payload)}</p>
                 <p className="mt-2 text-xs text-mist/55">{formatVenueDateTime(row.createdAt, row.timeZone || "UTC")}</p>

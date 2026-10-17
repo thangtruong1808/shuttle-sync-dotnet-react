@@ -10,6 +10,7 @@ import { useVenues } from "../../components/layout/SiteLayout";
 import { addHoldCourts, bookAgainPath, venueAvailability, venueForPage } from "../venues/venueApi";
 import { AuthRequestError } from "../auth/authApi";
 import { cancelBooking, deleteSeries, deleteSeriesPreview, deleteUnpaidHold, moveCourtSessions, myBookings, myCourtWeeks, refreshUnpaidHolds, setCourtRepeat, type BookingRow, type CancelResult, type CourtWeekCourt, type Page, type SeriesCancelPreview } from "./profileApi";
+import { RecommendationBanner } from "./RecommendationNotice";
 import { ListPager } from "./ProfileLists";
 
 const tabs = [
@@ -761,6 +762,7 @@ export function BookingsSection() {
     return (
       <div>
         <h1 className="font-display text-3xl text-white">My bookings</h1>
+        <RecommendationBanner />
         <div className="mt-4 space-y-3" aria-busy="true">
           <span className="sr-only">Loading bookings</span>
           <Skeleton className="h-24" />
@@ -865,6 +867,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
     <div>
       <h1 className="font-display text-3xl text-white">My bookings</h1>
       {venueName ? <p className="mt-1 text-sm leading-relaxed text-mist/75">Showing bookings at <span className="font-semibold text-white">{venueName}</span>. Choose another venue in the menu above to see its bookings.</p> : null}
+      <RecommendationBanner />
       <div className="mt-4 flex gap-2" role="tablist" aria-label="Booking status">
         {tabs.map((item) => (
           <button

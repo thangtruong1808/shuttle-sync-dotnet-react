@@ -6,6 +6,7 @@ import type { RootState } from "../../app/store";
 import { initials } from "../format";
 import { Skeleton } from "../ui";
 import { PaymentBell } from "../../features/profile/PaymentReminder";
+import { RecommendationBell } from "../../features/profile/RecommendationNotice";
 import { rememberVenueSlug, venueForPage } from "../../features/venues/venueApi";
 import { useVenues } from "./SiteLayout";
 
@@ -135,6 +136,7 @@ export function Navbar() {
             </div>
           ) : (
             <>
+            <RecommendationBell />
             <PaymentBell />
             <NavLink
               to="/profile"
@@ -188,6 +190,7 @@ export function Navbar() {
             {user && (user.role === "staff" || user.role === "admin") ? (
               <NavLink to="/dashboard" className={linkClass}><LayoutDashboard className="h-4 w-4" aria-hidden="true" />Dashboard</NavLink>
             ) : null}
+            {status === "authenticated" ? <RecommendationBell /> : null}
             {status === "authenticated" ? <PaymentBell /> : null}
             {status === "unknown" ? (
               <div aria-busy="true">

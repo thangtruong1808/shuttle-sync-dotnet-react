@@ -184,7 +184,7 @@ public sealed class RecommendationRepository(IConfiguration configuration)
             cancellationToken: cancellationToken));
         var rows = await connection.QueryAsync<RecommendationItem>(new CommandDefinition(
             """
-            SELECT r.Id, r.RecommendationType, r.CreatedAt, v.Name AS VenueName, v.TimeZone,
+            SELECT r.Id, r.RecommendationType, r.CreatedAt, r.ReadAt, v.Name AS VenueName, v.TimeZone,
                    CAST(r.Payload AS CHAR) AS Payload
             FROM AIRecommendations r
             LEFT JOIN Venues v ON v.Id = r.VenueId
@@ -195,6 +195,51 @@ public sealed class RecommendationRepository(IConfiguration configuration)
             new { UserId = userId, Take = size, Skip = skip },
             cancellationToken: cancellationToken));
         return new RecommendationPage(rows.ToArray(), number, size, total);
+    }
+
+    public async Task<int> CountUnreadAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        return await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(*) FROM AIRecommendations WHERE UserId = @UserId AND ReadAt IS NULL",
+            new { UserId = userId },
+            cancellationToken: cancellationToken));
+    }
+
+    public async Task<bool> MarkReadAsync(Guid userId, Guid id, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var owned = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(*) FROM AIRecommendations WHERE Id = @Id AND UserId = @UserId",
+            new { Id = id, UserId = userId },
+            cancellationToken: cancellationToken));
+        if (owned != 1)
+        {
+            return false;
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE AIRecommendations
+            SET ReadAt = UTC_TIMESTAMP(6)
+            WHERE Id = @Id AND UserId = @UserId AND ReadAt IS NULL
+            """,
+            new { Id = id, UserId = userId },
+            cancellationToken: cancellationToken));
+        return true;
+    }
+
+    public async Task<int> MarkAllReadAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        return await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE AIRecommendations
+            SET ReadAt = UTC_TIMESTAMP(6)
+            WHERE UserId = @UserId AND ReadAt IS NULL
+            """,
+            new { UserId = userId },
+            cancellationToken: cancellationToken));
     }
 
     private static async Task<RecommendationItem?> FindAsync(
@@ -315,6 +360,7 @@ public sealed class RecommendationItem
     public string? DisplayName { get; init; }
     public string RecommendationType { get; init; } = "";
     public DateTime CreatedAt { get; init; }
+    public DateTime? ReadAt { get; init; }
     public string? VenueName { get; init; }
     public string? TimeZone { get; init; }
     public string? Payload { get; init; }

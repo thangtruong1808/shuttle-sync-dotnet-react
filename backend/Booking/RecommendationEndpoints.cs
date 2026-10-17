@@ -94,12 +94,51 @@ public static class RecommendationEndpoints
                 venueName = item.VenueName,
                 timeZone = item.TimeZone,
                 createdAt = VenueClock.AsUtc(item.CreatedAt).ToString("O"),
+                readAt = item.ReadAt is null ? null : VenueClock.AsUtc(item.ReadAt.Value).ToString("O"),
                 payload = item.Payload,
             }),
             page = result.Page,
             pageSize = result.PageSize,
             total = result.Total,
         });
+    }
+
+    public static async Task<IResult> UnreadAsync(
+        HttpContext http,
+        AuthRepository auth,
+        RecommendationRepository recommendations,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
+        if (current is null) return SignIn();
+        var count = await recommendations.CountUnreadAsync(current.UserId, cancellationToken);
+        return Results.Ok(new { count });
+    }
+
+    public static async Task<IResult> MarkReadAsync(
+        Guid id,
+        HttpContext http,
+        AuthRepository auth,
+        RecommendationRepository recommendations,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
+        if (current is null) return SignIn();
+        var saved = await recommendations.MarkReadAsync(current.UserId, id, cancellationToken);
+        if (!saved) return Missing();
+        return Results.Ok(new { read = true });
+    }
+
+    public static async Task<IResult> MarkAllReadAsync(
+        HttpContext http,
+        AuthRepository auth,
+        RecommendationRepository recommendations,
+        CancellationToken cancellationToken)
+    {
+        var current = await AuthEndpoints.CurrentSessionAsync(http, auth, cancellationToken);
+        if (current is null) return SignIn();
+        var count = await recommendations.MarkAllReadAsync(current.UserId, cancellationToken);
+        return Results.Ok(new { read = count });
     }
 
     private static object WrittenJson(RecommendationItem item, bool created) => new
