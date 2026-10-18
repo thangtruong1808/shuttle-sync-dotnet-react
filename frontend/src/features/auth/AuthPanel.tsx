@@ -3,6 +3,8 @@ import { useDispatch, useSelector } from "react-redux";
 import {
   CircleAlert,
   CircleCheck,
+  Eye,
+  EyeOff,
   LockKeyhole,
   LogIn,
   LogOut,
@@ -46,6 +48,7 @@ export default function AuthPanel({
   const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formMessage, setFormMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<"error" | "success">("error");
@@ -229,7 +232,7 @@ export default function AuthPanel({
         <button
           type="button"
           className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 ${mode === "login" ? "bg-white/10 text-mist" : "text-mist/55"}`}
-          onClick={() => setMode("login")}
+          onClick={() => { setMode("login"); setShowPassword(false); }}
         >
           <LogIn className="h-4 w-4" aria-hidden="true" />
           Sign in
@@ -237,7 +240,7 @@ export default function AuthPanel({
         <button
           type="button"
           className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 ${mode === "register" ? "bg-white/10 text-mist" : "text-mist/55"}`}
-          onClick={() => setMode("register")}
+          onClick={() => { setMode("register"); setShowPassword(false); }}
         >
           <UserPlus className="h-4 w-4" aria-hidden="true" />
           Create account
@@ -260,14 +263,24 @@ export default function AuthPanel({
         error={fieldErrors.password?.[0]}
       >
         <input
-          type="password"
+          type={showPassword ? "text" : "password"}
           autoComplete={mode === "login" ? "current-password" : "new-password"}
           value={password}
           disabled={submitting}
           onChange={(event) => setPassword(event.target.value)}
-          className="w-full bg-transparent py-2.5 pr-3 text-mist outline-none placeholder:text-mist/35"
+          className="min-w-0 flex-1 bg-transparent py-2.5 text-mist outline-none placeholder:text-mist/35"
           placeholder="At least 12 characters"
         />
+        <button
+          type="button"
+          className="shrink-0 rounded-lg p-1 text-mist/70 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label={showPassword ? "Hide password" : "Show password"}
+          aria-pressed={showPassword}
+          disabled={submitting}
+          onClick={() => setShowPassword((visible) => !visible)}
+        >
+          {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+        </button>
       </Field>
       {formMessage && (
         <p className={`flex items-start gap-2 text-sm ${messageTone === "success" ? "text-line" : "text-amber-200"}`}>

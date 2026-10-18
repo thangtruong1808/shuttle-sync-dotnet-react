@@ -62,6 +62,7 @@ public static class WeekChangeEndpoints
         HttpContext http,
         AuthRepository auth,
         BookingRepository bookings,
+        BookingPayments payments,
         CancellationToken cancellationToken)
     {
         var userId = await UserIdAsync(http, auth, cancellationToken);
@@ -77,7 +78,9 @@ public static class WeekChangeEndpoints
             body.CourtIds ?? [],
             body.AcceptPriceIncrease,
             http.Connection.RemoteIpAddress?.ToString(),
-            cancellationToken);
+            cancellationToken,
+            body.ChangeHours,
+            body.AcceptRefund);
         if (!result.Ok)
         {
             return Results.Json(new
@@ -86,11 +89,42 @@ public static class WeekChangeEndpoints
                 code = result.Code,
                 fallback = result.Fallback,
                 facts = result.Facts,
+                paid = result.Paid,
+                quote = result.Quote,
+                difference = result.Difference,
                 errors = new Dictionary<string, string[]> { ["form"] = [result.Fallback] },
             }, statusCode: StatusCodes.Status409Conflict);
         }
 
-        return Results.Ok(new { ok = true, addedBookingIds = result.AddedBookingIds, topUpAmount = result.TopUpAmount, payNow = result.PayNow, payBookingIds = result.PayBookingIds });
+        var refunded = new HashSet<Guid>();
+        foreach (var refund in result.Refunds)
+        {
+            var refundError = await payments.RefundCourtDifferenceAsync(userId.Value, refund.BookingId, refund.Amount, refund.Key, cancellationToken);
+            if (refundError is not null)
+            {
+                foreach (var pending in result.Refunds)
+                {
+                    if (!refunded.Contains(pending.BookingId) && pending.Snapshot is not null)
+                    {
+                        await bookings.RestoreCourtMoveAsync(pending.Snapshot, cancellationToken);
+                    }
+                }
+
+                return Form(refundError, StatusCodes.Status502BadGateway);
+            }
+
+            refunded.Add(refund.BookingId);
+        }
+
+        return Results.Ok(new
+        {
+            ok = true,
+            addedBookingIds = result.AddedBookingIds,
+            topUpAmount = result.TopUpAmount,
+            payNow = result.PayNow,
+            payBookingIds = result.PayBookingIds,
+            refundAmount = result.Refunds.Sum(refund => refund.Amount),
+        });
     }
 
     private static async Task<IResult> CopyAsync(
@@ -118,7 +152,7 @@ public static class WeekChangeEndpoints
 
     private static IResult SignIn() => Form("Sign in again.", StatusCodes.Status401Unauthorized);
 
-    private sealed record ApplyWeekBody(string? StartTime, string? Date, string? Start, string? End, Guid[]? CourtIds, bool AcceptPriceIncrease);
+    private sealed record ApplyWeekBody(string? StartTime, string? Date, string? Start, string? End, Guid[]? CourtIds, bool AcceptPriceIncrease, bool ChangeHours = false, bool AcceptRefund = false);
 
     private sealed record WeekCopyBody(string? Code, string[]? Courts, string? When, WeekSlotFact[]? Alternatives);
 }

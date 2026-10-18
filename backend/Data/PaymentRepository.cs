@@ -539,6 +539,7 @@ public sealed class PaymentRepository(IConfiguration configuration)
             new { Id = bookingId, seed.PayGroupId },
             tx,
             cancellationToken: cancellationToken))).ToArray();
+        var previous = new List<object>();
         var marker = tops.Length == 0 ? "" : tops[0].CancelReason;
         var extend = marker.EndsWith("|extend", StringComparison.Ordinal);
         var stamp = marker.StartsWith("week-topup|", StringComparison.Ordinal) ? marker["week-topup|".Length..] : "";
@@ -556,7 +557,7 @@ public sealed class PaymentRepository(IConfiguration configuration)
         {
             var old = await connection.QuerySingleOrDefaultAsync<WeekTopUpOld>(new CommandDefinition(
                 """
-                SELECT b.Id, b.Status, b.CourtSessionId, cs.EndTime
+                SELECT b.Id, b.Status, b.CourtSessionId, b.SubtotalAmount, b.TotalAmount, cs.EndTime
                 FROM Bookings b
                 JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
                 WHERE b.GroupId = @GroupId AND b.UserId = @UserId AND b.IsDeleted = 0
@@ -569,6 +570,11 @@ public sealed class PaymentRepository(IConfiguration configuration)
                 new { top.GroupId, UserId = userId, TopId = top.Id, top.CourtId, OldStart = oldStart },
                 tx,
                 cancellationToken: cancellationToken));
+            if (old is not null)
+            {
+                previous.Add(new { bookingId = old.Id, courtId = top.CourtId, start = oldStart, end = old.EndTime, subtotal = old.SubtotalAmount, total = old.TotalAmount });
+            }
+
             if (old is null || old.Status != "confirmed")
             {
                 if (old is not null)
@@ -671,8 +677,8 @@ public sealed class PaymentRepository(IConfiguration configuration)
                 UserId = userId,
                 VenueId = venueId,
                 EntityId = tops[0].GroupId,
-                OldValues = JsonSerializer.Serialize(new { start = oldStart }),
-                NewValues = JsonSerializer.Serialize(new { rows = tops.Select(top => new { top.CourtId, top.StartTime, top.EndTime }) }),
+                OldValues = JsonSerializer.Serialize(new { start = oldStart, rows = previous }),
+                NewValues = JsonSerializer.Serialize(new { rows = tops.Select(top => new { top.CourtId, top.StartTime, top.EndTime, quote = top.Price, charge = top.TotalAmount }) }),
             },
             tx,
             cancellationToken: cancellationToken));
@@ -1853,6 +1859,8 @@ public sealed class WeekTopUpOld
     public Guid Id { get; init; }
     public string Status { get; init; } = "";
     public Guid CourtSessionId { get; init; }
+    public decimal SubtotalAmount { get; init; }
+    public decimal TotalAmount { get; init; }
     public DateTime EndTime { get; init; }
 }
 

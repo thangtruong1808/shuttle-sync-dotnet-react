@@ -1,11 +1,12 @@
 import { useEffect, useId, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CalendarClock, CalendarDays, CircleAlert, CircleCheck, CreditCard, TriangleAlert, Undo2 } from "lucide-react";
+import { CalendarClock, CalendarDays, ChevronDown, CircleAlert, CircleCheck, Clock, CreditCard, TriangleAlert, Undo2 } from "lucide-react";
 import { Button, PickerInput, Spinner } from "../../components/ui";
 import { Money, formatVenueRange } from "../../components/format";
 import { AuthRequestError } from "../auth/authApi";
 import { applyWeekChange, cancelBooking, deleteUnpaidHold, refreshUnpaidHolds, setCourtRepeat, weekAvailability, weekOpenTimes, WeekChangeError, type CourtWeekCourt, type WeekFacts, type WeekSlot } from "./profileApi";
 import { ConfirmTimeDialog } from "./ConfirmTimeDialog";
+import { ChangeHours } from "./ChangeHours";
 import { CourtReschedule } from "./CourtReschedule";
 import { WeekReason } from "./WeekReason";
 
@@ -102,9 +103,13 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [courtMoving, setCourtMoving] = useState(false);
+  const [changingHours, setChangingHours] = useState(false);
+  const [hourBookingId, setHourBookingId] = useState<string | null>(null);
+  const [hourBusy, setHourBusy] = useState(false);
   const [availability, setAvailability] = useState<"loading" | "open" | "full">("loading");
-  const locked = saving || moving || deleting || accepting || courtMoving;
+  const locked = saving || moving || deleting || accepting || courtMoving || hourBusy;
   const sessionCourt = sessionId ? courts.find((court) => court.bookingId === sessionId) ?? null : null;
+  const hourCourt = hourBookingId ? courts.find((court) => court.bookingId === hourBookingId) ?? null : null;
   const removed = courts.filter((court) => !checked.has(court.courtId));
   const selected = courts.filter((court) => checked.has(court.courtId));
   const total = selected.reduce((sum, court) => sum + court.price, 0);
@@ -257,7 +262,7 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
                 type="checkbox"
                 className="h-4 w-4 accent-line"
                 checked={checked.has(court.courtId)}
-                disabled={locked || rescheduling || sessionCourt !== null}
+                disabled={locked || rescheduling || sessionCourt !== null || changingHours || hourCourt !== null}
                 onChange={() => {
                   setConfirmPaid(false);
                   setChecked((current) => {
@@ -274,20 +279,44 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
               </span>
               <span className="ml-auto text-xs text-mist/60">{court.status === "confirmed" ? "Paid" : "Held"}</span>
             </label>
-            <button
-              type="button"
-              className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-line hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={locked || dirty}
-              onClick={() => {
-                setRescheduling(false);
-                setSessionId(court.bookingId);
-                setError(null);
-                setBlock(null);
-              }}
-            >
-              <CalendarClock className="h-3 w-3" aria-hidden="true" />
-              Reschedule
-            </button>
+            <div className="mt-1 flex flex-wrap gap-3">
+              <button
+                type="button"
+                aria-expanded={sessionId === court.bookingId}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-line hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={locked || dirty}
+                onClick={() => {
+                  setRescheduling(false);
+                  setChangingHours(false);
+                  setHourBookingId(null);
+                  setSessionId((current) => current === court.bookingId ? null : court.bookingId);
+                  setError(null);
+                  setBlock(null);
+                }}
+              >
+                <CalendarClock className="h-3 w-3" aria-hidden="true" />
+                Reschedule
+                <ChevronDown className={`h-3 w-3 transition-transform ${sessionId === court.bookingId ? "rotate-180" : ""}`} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-expanded={hourBookingId === court.bookingId}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-line hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={locked || dirty}
+                onClick={() => {
+                  setRescheduling(false);
+                  setChangingHours(false);
+                  setSessionId(null);
+                  setHourBookingId((current) => current === court.bookingId ? null : court.bookingId);
+                  setError(null);
+                  setBlock(null);
+                }}
+              >
+                <Clock className="h-3 w-3" aria-hidden="true" />
+                Change hours
+                <ChevronDown className={`h-3 w-3 transition-transform ${hourBookingId === court.bookingId ? "rotate-180" : ""}`} aria-hidden="true" />
+              </button>
+            </div>
           </li>
         ))}
       </ul>
@@ -314,13 +343,31 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
           <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked} onClick={() => { setBlock(null); setPendingMove(null); }}>Keep this time</Button>
         </div>
       ) : null}
-      {sessionCourt ? (
+      {hourCourt ? (
+        <ChangeHours
+          courts={[hourCourt]}
+          scope="court"
+          disabled={saving || moving || deleting || accepting}
+          onBusy={setHourBusy}
+          onSaved={(message) => { setNotice(message); setHourBookingId(null); refreshUnpaidHolds(); onChanged(); }}
+          onClose={() => setHourBookingId(null)}
+        />
+      ) : sessionCourt ? (
         <CourtReschedule
           court={sessionCourt}
           disabled={saving || moving || deleting || accepting}
           onBusy={setCourtMoving}
           onSaved={(message) => { setNotice(message); setSessionId(null); refreshUnpaidHolds(); onChanged(); }}
           onClose={() => setSessionId(null)}
+        />
+      ) : changingHours ? (
+        <ChangeHours
+          courts={courts}
+          scope="week"
+          disabled={saving || moving || deleting || accepting}
+          onBusy={setHourBusy}
+          onSaved={(message) => { setNotice(message); setChangingHours(false); refreshUnpaidHolds(); onChanged(); }}
+          onClose={() => setChangingHours(false)}
         />
       ) : rescheduling ? (
         <div className="mt-3 rounded-xl border border-line/30 bg-line/5 p-3">
@@ -357,12 +404,51 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
             />
           ) : null}
         </div>
-      ) : (
+      ) : null}
+      {hourCourt || sessionCourt ? null : (
         <div className="mt-3 flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-mist/80"><span className="font-medium text-white">Need a different day or time?</span></p>
-          <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked || dirty} icon={<CalendarDays className="h-4 w-4" aria-hidden="true" />} onClick={() => { setRescheduling(true); setError(null); setBlock(null); setChosenTime(null); }}>
-            Reschedule this week
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Button
+              type="button"
+              variant="secondary"
+              aria-expanded={rescheduling}
+              className={`w-full sm:w-auto ${rescheduling ? "border-line bg-line/15 text-white" : ""}`}
+              disabled={locked || dirty}
+              icon={<CalendarDays className="h-4 w-4" aria-hidden="true" />}
+              onClick={() => {
+                setChangingHours(false);
+                setHourBookingId(null);
+                setSessionId(null);
+                setError(null);
+                setBlock(null);
+                setChosenTime(null);
+                setRescheduling((open) => !open);
+              }}
+            >
+              Reschedule this week
+              <ChevronDown className={`h-4 w-4 transition-transform ${rescheduling ? "rotate-180" : ""}`} aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              aria-expanded={changingHours}
+              className={`w-full sm:w-auto ${changingHours ? "border-line bg-line/15 text-white" : ""}`}
+              disabled={locked || dirty}
+              icon={<Clock className="h-4 w-4" aria-hidden="true" />}
+              onClick={() => {
+                setRescheduling(false);
+                setHourBookingId(null);
+                setSessionId(null);
+                setError(null);
+                setBlock(null);
+                setChangingHours((open) => !open);
+              }}
+            >
+              Change hours for this week
+              <ChevronDown className={`h-4 w-4 transition-transform ${changingHours ? "rotate-180" : ""}`} aria-hidden="true" />
+            </Button>
+          </div>
         </div>
       )}
       <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">

@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using ShuttleSync.Api.Data;
 using ShuttleSync.Api.Support;
 
 namespace ShuttleSync.Api.Booking;
@@ -22,6 +23,10 @@ public sealed class WeekChangeResult
     public Guid[] AddedBookingIds { get; init; } = [];
     public bool PayNow { get; init; }
     public Guid[] PayBookingIds { get; init; } = [];
+    public decimal Paid { get; init; }
+    public decimal Quote { get; init; }
+    public decimal Difference { get; init; }
+    public CourtRefundDue[] Refunds { get; init; } = [];
 }
 
 public static class WeekChangeText
@@ -33,10 +38,11 @@ public static class WeekChangeText
         return facts.Code switch
         {
             "SLOT_TAKEN" => $"{court} was just taken for that time. Choose another time.{extra}",
-            "HELD_FOR_RECURRING" => "That time is held for a later week because you keep weeks ahead. Choose another time, or cancel that held week and book again.",
+            "HELD_FOR_RECURRING" => $"{court} is held for a later week because you keep weeks ahead. Choose another time, or cancel that held week and book again.",
             "OUTSIDE_POLICY_WINDOW" => "This session starts within 24 hours, so it cannot be saved unpaid. Pay for it when you register, or choose a later time.",
             "COURT_UNAVAILABLE" => $"{court} is closed or not available then.{extra}",
             "PRICE_INCREASE" => "The new time costs more than you already paid. Stay at the current time, or accept the difference before this week moves.",
+            "PRICE_DECREASE" => "The new time costs less than you already paid. Stay at the current time, or agree to the refund before these hours change.",
             "ALL_COURTS_BOOKED" => "All courts are booked for this week.",
             _ => "That change could not be saved. Choose another time.",
         };

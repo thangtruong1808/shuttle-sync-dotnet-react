@@ -1493,6 +1493,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         string? end,
         bool acceptPriceIncrease,
         bool acceptRefund,
+        bool changeHours,
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -1611,6 +1612,25 @@ public sealed partial class BookingRepository(IConfiguration configuration)
             var busy = await ActiveOverlapAsync(connection, tx, overlaps, cancellationToken);
             if (busy is not null)
             {
+                if (busy.UserId == userId)
+                {
+                    var heldForLaterWeek = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                        """
+                        SELECT COUNT(*)
+                        FROM Bookings
+                        WHERE CourtSessionId = @SessionId AND UserId = @UserId AND GroupId = @GroupId
+                          AND IsDeleted = 0 AND RepeatHold = 1 AND Id NOT IN @Keep
+                          AND Status IN ('pending', 'confirmed')
+                        """,
+                        new { SessionId = busy.Session.Id, UserId = userId, GroupId = groupId, Keep = rows.Select(item => item.Id).ToArray() },
+                        tx,
+                        cancellationToken: cancellationToken));
+                    if (heldForLaterWeek > 0)
+                    {
+                        return CourtMoveResult.Fail($"{row.CourtName} is held for a later week because you keep weeks ahead. Choose another time, or cancel that held week and book again.");
+                    }
+                }
+
                 return CourtMoveResult.Fail(OccupiedMessage(row.CourtName, sample.TimeZone, busy.Session.StartTime, busy.Session.EndTime, busy.UserId, userId));
             }
 
@@ -1676,7 +1696,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                 cancellationToken: cancellationToken));
 
             var created = extend
-                ? await InsertExtensionSliceAsync(connection, tx, row, row.EndTime, newEndUtc, price, charge, userId, marker, cancellationToken)
+                ? await InsertExtensionSliceAsync(connection, tx, row, row.EndTime, newEndUtc, price, charge, userId, marker, cancellationToken, newStartUtc <= DateTime.UtcNow.AddHours(24) ? DateTime.UtcNow.AddMinutes(30) : null)
                 : await InsertWeekCourtAsync(
                     connection,
                     tx,
@@ -1803,6 +1823,21 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                     });
                 }
             }
+        }
+
+        if (changeHours)
+        {
+            await AuditWeekAsync(
+                connection,
+                tx,
+                userId,
+                sample.VenueId,
+                groupId,
+                "booking.hours_changed",
+                new { rows = rows.Select(row => new { row.CourtId, row.CourtName, row.StartTime, row.EndTime, row.SubtotalAmount, row.TotalAmount }) },
+                new { start = newStartUtc, end = newEndUtc, price, quote, refunds = refunds.Select(item => new { item.BookingId, item.Amount }) },
+                null,
+                cancellationToken);
         }
 
         await tx.CommitAsync(cancellationToken);

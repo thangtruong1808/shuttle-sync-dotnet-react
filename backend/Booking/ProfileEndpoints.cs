@@ -286,6 +286,7 @@ public static class ProfileEndpoints
             body.End,
             body.AcceptPriceIncrease,
             body.AcceptRefund,
+            body.ChangeHours,
             cancellationToken);
         if (result.Error is not null)
         {
@@ -666,7 +667,7 @@ public static class ProfileEndpoints
     private sealed record RenameFriendBody(string? Name);
     private sealed record RepeatHoldBody(bool Enabled);
     private sealed record DeleteBookingsBody(Guid[]? BookingIds);
-    private sealed record MoveSessionsBody(string? StartTime, Guid? BookingId, string? Date, string? Start, string? End, bool AcceptPriceIncrease = false, bool AcceptRefund = false);
+    private sealed record MoveSessionsBody(string? StartTime, Guid? BookingId, string? Date, string? Start, string? End, bool AcceptPriceIncrease = false, bool AcceptRefund = false, bool ChangeHours = false);
 
     private static IResult Form(string message, int status) =>
         Results.Json(new

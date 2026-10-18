@@ -738,7 +738,7 @@ public static class VenueEndpoints
                 status = row.Status,
                 incentivePoints = row.IncentivePoints,
                 holdExpiresAt = row.HoldExpiresAt is null ? (DateTimeOffset?)null : VenueClock.AsUtc(row.HoldExpiresAt.Value),
-                payNow = row.Status == "pending" && row.StartTime <= now.AddHours(24),
+                payNow = row.Status == "pending" && (row.StartTime <= now.AddHours(24) || (row.HoldExpiresAt is not null && row.HoldExpiresAt.Value <= now.AddMinutes(31) && row.StartTime > now.AddHours(24))),
             }),
         });
     }

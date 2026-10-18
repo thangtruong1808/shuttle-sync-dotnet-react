@@ -490,6 +490,10 @@ function FriendPanel({
   }, [slug, socialId, attempt]);
 
   useEffect(() => {
+    if (names.every((name) => name.trim().length === 0)) setAppliedCode(null);
+  }, [names]);
+
+  useEffect(() => {
     if (returning === "friends-cancel") {
       setError("Payment was cancelled. You can add these friends again when you're ready.");
       return;
@@ -747,7 +751,7 @@ function FriendPanel({
                       <p className="break-all font-semibold tracking-wide text-white">{promotion.code}</p>
                       <p className="text-sm text-line">{promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}</p>
                     </div>
-                    <Button type="button" variant={selected ? "primary" : "secondary"} className="w-full shrink-0 sm:w-auto" disabled={paying || waiting} onClick={() => setAppliedCode(selected ? null : promotion)}>
+                    <Button type="button" variant={selected ? "primary" : "secondary"} className="w-full shrink-0 sm:w-auto" disabled={paying || waiting || filled.length === 0} title={filled.length === 0 ? "Enter a friend's name before applying a code." : undefined} onClick={() => setAppliedCode(selected ? null : promotion)}>
                       {selected ? "Applied" : "Apply"}
                     </Button>
                   </li>
@@ -755,6 +759,7 @@ function FriendPanel({
               })}
             </ul>
           ) : null}
+          {promotions && promotions.length > 0 && filled.length === 0 ? <p className="text-sm text-mist/70">Enter a friend's name before applying a code.</p> : null}
           <div>
             <p className="text-sm text-mist/80">Reward points</p>
             <div className="mt-2 flex flex-wrap gap-2">
