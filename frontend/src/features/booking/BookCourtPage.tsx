@@ -8,6 +8,7 @@ import { useVenues } from "../../components/layout/SiteLayout";
 import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
 import { AuthRequestError } from "../auth/authApi";
 import { abandonCourtCheckout, courtPrice, forgetOpenCheckout, openCourtHold, payNowHold, readOpenCheckout, rememberOpenCheckout, rememberVenueSlug, venueAvailability, venuePromotions, type AvailableCourt, type Promotion, type ScheduleClosure } from "../venues/venueApi";
+import { WeekExtendPage } from "./WeekExtendPage";
 
 const pointPercents = [25, 50, 75, 100] as const;
 
@@ -115,7 +116,7 @@ function sessionAmount(start: string, end: string, rate: number) {
   return Math.round((rate * minutes) / 60 * 100) / 100;
 }
 
-export default function BookCourtPage() {
+function FreshCourtBooking() {
   const { slug = "" } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -496,4 +497,12 @@ export default function BookCourtPage() {
       </div>
     </main>
   );
+}
+
+export default function BookCourtPage() {
+  const { slug = "" } = useParams();
+  const location = useLocation();
+  const groupId = new URLSearchParams(location.search).get("groupId");
+  if (groupId) return <WeekExtendPage slug={slug} groupId={groupId} search={location.search} />;
+  return <FreshCourtBooking />;
 }

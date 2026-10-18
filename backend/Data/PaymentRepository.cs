@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using Dapper;
 using MySqlConnector;
 
@@ -27,23 +29,7 @@ public sealed class PaymentRepository(IConfiguration configuration)
             FROM Bookings b
             WHERE b.Status = 'pending' AND b.IsDeleted = 0
               AND b.HoldExpiresAt IS NOT NULL
-              AND (
-                  b.HoldExpiresAt <= UTC_TIMESTAMP(6)
-                  OR (
-                      b.PayGroupId IS NULL
-                      AND b.CreatedAt <= UTC_TIMESTAMP(6) - INTERVAL 15 SECOND
-                      AND NOT EXISTS (
-                          SELECT 1 FROM Payments p
-                          WHERE p.BookingId = b.Id AND p.Status IN ('pending', 'processing', 'succeeded')
-                      )
-                      AND EXISTS (
-                          SELECT 1 FROM CourtSessions cs
-                          WHERE cs.Id = b.CourtSessionId
-                            AND cs.StartTime > UTC_TIMESTAMP(6)
-                            AND cs.StartTime <= DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 24 HOUR)
-                      )
-                  )
-              )
+              AND b.HoldExpiresAt <= UTC_TIMESTAMP(6)
             FOR UPDATE
             """,
             transaction: tx,
@@ -499,6 +485,7 @@ public sealed class PaymentRepository(IConfiguration configuration)
                 new { Id = row.BookingId },
                 tx,
                 cancellationToken: cancellationToken));
+            await FinishWeekTopUpAsync(connection, tx, row.BookingId, row.UserId, row.VenueId, cancellationToken);
         }
 
         var sessionIds = (await connection.QueryAsync<Guid>(new CommandDefinition(
@@ -520,6 +507,175 @@ public sealed class PaymentRepository(IConfiguration configuration)
             cancellationToken: cancellationToken))).ToArray();
         await tx.CommitAsync(cancellationToken);
         return new PaymentTransition(action, row.BookingId, row.UserId, row.VenueId, row.SessionId, row.Amount, row.PaymentStatus, sessionIds);
+    }
+
+    private static async Task FinishWeekTopUpAsync(
+        MySqlConnection connection,
+        MySqlTransaction tx,
+        Guid bookingId,
+        Guid userId,
+        Guid venueId,
+        CancellationToken cancellationToken)
+    {
+        var seed = await connection.QuerySingleOrDefaultAsync<WeekTopUpSeed>(new CommandDefinition(
+            "SELECT CancelReason, PayGroupId, GroupId FROM Bookings WHERE Id = @Id",
+            new { Id = bookingId },
+            tx,
+            cancellationToken: cancellationToken));
+        if (seed is null)
+        {
+            return;
+        }
+
+        var tops = (await connection.QueryAsync<WeekTopUpRow>(new CommandDefinition(
+            """
+            SELECT b.Id, b.CancelReason, b.CourtSessionId, b.GroupId, b.TotalAmount, cs.CourtId, cs.StartTime, cs.EndTime, cs.Price
+            FROM Bookings b
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+            WHERE b.IsDeleted = 0 AND b.CancelReason LIKE 'week-topup|%'
+              AND (b.Id = @Id OR (@PayGroupId IS NOT NULL AND b.PayGroupId = @PayGroupId))
+            FOR UPDATE
+            """,
+            new { Id = bookingId, seed.PayGroupId },
+            tx,
+            cancellationToken: cancellationToken))).ToArray();
+        var marker = tops.Length == 0 ? "" : tops[0].CancelReason;
+        var extend = marker.EndsWith("|extend", StringComparison.Ordinal);
+        var stamp = marker.StartsWith("week-topup|", StringComparison.Ordinal) ? marker["week-topup|".Length..] : "";
+        if (extend && stamp.EndsWith("|extend", StringComparison.Ordinal))
+        {
+            stamp = stamp[..^"|extend".Length];
+        }
+
+        if (tops.Length == 0 || !DateTime.TryParse(stamp, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var oldStart))
+        {
+            return;
+        }
+
+        foreach (var top in tops)
+        {
+            var old = await connection.QuerySingleOrDefaultAsync<WeekTopUpOld>(new CommandDefinition(
+                """
+                SELECT b.Id, b.Status, b.CourtSessionId, cs.EndTime
+                FROM Bookings b
+                JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+                WHERE b.GroupId = @GroupId AND b.UserId = @UserId AND b.IsDeleted = 0
+                  AND b.Status IN ('pending', 'confirmed') AND b.Id <> @TopId
+                  AND (b.CancelReason IS NULL OR b.CancelReason NOT LIKE 'week-topup|%')
+                  AND cs.CourtId = @CourtId
+                  AND ABS(TIMESTAMPDIFF(SECOND, cs.StartTime, @OldStart)) < 2
+                FOR UPDATE
+                """,
+                new { top.GroupId, UserId = userId, TopId = top.Id, top.CourtId, OldStart = oldStart },
+                tx,
+                cancellationToken: cancellationToken));
+            if (old is null || old.Status != "confirmed")
+            {
+                if (old is not null)
+                {
+                    await connection.ExecuteAsync(new CommandDefinition(
+                        """
+                        UPDATE Bookings
+                        SET Status = 'expired', HoldExpiresAt = NULL, UpdatedAt = UTC_TIMESTAMP(6)
+                        WHERE Id = @Id AND Status = 'pending'
+                        """,
+                        new { Id = old.Id },
+                        tx,
+                        cancellationToken: cancellationToken));
+                }
+
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE Bookings SET CancelReason = NULL, UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                    new { Id = top.Id },
+                    tx,
+                    cancellationToken: cancellationToken));
+                continue;
+            }
+
+            if (extend)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE CourtSessions SET EndTime = @EndTime, Price = @Price, UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                    new { Id = old.CourtSessionId, EndTime = top.EndTime, Price = top.Price },
+                    tx,
+                    cancellationToken: cancellationToken));
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    UPDATE Bookings
+                    SET SubtotalAmount = @Price, TotalAmount = TotalAmount + @Charge, UpdatedAt = UTC_TIMESTAMP(6)
+                    WHERE Id = @Id
+                    """,
+                    new { Id = old.Id, Price = top.Price, Charge = top.TotalAmount },
+                    tx,
+                    cancellationToken: cancellationToken));
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE Payments SET BookingId = @OldId, UpdatedAt = UTC_TIMESTAMP(6) WHERE BookingId = @NewId",
+                    new { OldId = old.Id, NewId = top.Id },
+                    tx,
+                    cancellationToken: cancellationToken));
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    UPDATE Bookings
+                    SET Status = 'cancelled', CancelledAt = UTC_TIMESTAMP(6), CancelReason = 'Rescheduled', HoldExpiresAt = NULL, UpdatedAt = UTC_TIMESTAMP(6)
+                    WHERE Id = @Id
+                    """,
+                    new { Id = top.Id },
+                    tx,
+                    cancellationToken: cancellationToken));
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE CourtSessions SET IsDeleted = 1, UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                    new { Id = top.CourtSessionId },
+                    tx,
+                    cancellationToken: cancellationToken));
+                continue;
+            }
+
+            await connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE Payments SET BookingId = @OldId, UpdatedAt = UTC_TIMESTAMP(6) WHERE BookingId = @NewId",
+                new { OldId = old.Id, NewId = top.Id },
+                tx,
+                cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Bookings
+                SET Status = 'cancelled', CancelledAt = UTC_TIMESTAMP(6), CancelReason = 'Rescheduled', HoldExpiresAt = NULL, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id
+                """,
+                new { Id = top.Id },
+                tx,
+                cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Bookings
+                SET CourtSessionId = @SessionId, SubtotalAmount = @Price, TotalAmount = TotalAmount + @Charge, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id
+                """,
+                new { Id = old.Id, SessionId = top.CourtSessionId, Price = top.Price, Charge = top.TotalAmount },
+                tx,
+                cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE CourtSessions SET IsDeleted = 1, UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                new { Id = old.CourtSessionId },
+                tx,
+                cancellationToken: cancellationToken));
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO AuditLogs (Id, UserId, VenueId, Action, Entity, EntityId, OldValues, NewValues, CreatedAt)
+            VALUES (@Id, @UserId, @VenueId, 'booking.week_rescheduled', 'Booking', @EntityId, @OldValues, @NewValues, UTC_TIMESTAMP(6))
+            """,
+            new
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                VenueId = venueId,
+                EntityId = tops[0].GroupId,
+                OldValues = JsonSerializer.Serialize(new { start = oldStart }),
+                NewValues = JsonSerializer.Serialize(new { rows = tops.Select(top => new { top.CourtId, top.StartTime, top.EndTime }) }),
+            },
+            tx,
+            cancellationToken: cancellationToken));
     }
 
     public async Task ExtendHoldAsync(string intentId, DateTime untilUtc, CancellationToken cancellationToken)
@@ -848,6 +1004,69 @@ public sealed class PaymentRepository(IConfiguration configuration)
             cancellationToken: cancellationToken));
     }
 
+    public async Task<CourtRefundPayment?> LoadCourtRefundAsync(Guid userId, Guid bookingId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        return await connection.QuerySingleOrDefaultAsync<CourtRefundPayment>(new CommandDefinition(
+            """
+            SELECT p.Id AS PaymentId, p.StripePaymentIntentId, p.Status AS PaymentStatus, COALESCE(p.Amount, 0) AS PaymentAmount,
+                   COALESCE((
+                       SELECT SUM(r.Amount) FROM Refunds r
+                       WHERE r.PaymentId = p.Id AND r.Status IN ('pending', 'succeeded')
+                   ), 0) AS RefundedAmount
+            FROM Bookings b
+            LEFT JOIN Payments p ON p.Id = (
+                SELECT p2.Id
+                FROM Payments p2
+                JOIN Bookings payer ON payer.Id = p2.BookingId
+                WHERE p2.BookingId = b.Id
+                   OR (b.PayGroupId IS NOT NULL AND payer.PayGroupId = b.PayGroupId)
+                ORDER BY p2.CreatedAt DESC
+                LIMIT 1
+            )
+            WHERE b.Id = @Id AND b.UserId = @UserId AND b.IsDeleted = 0
+            """,
+            new { Id = bookingId, UserId = userId },
+            cancellationToken: cancellationToken));
+    }
+
+    public async Task RecordCourtRefundAsync(Guid paymentId, string stripeRefundId, decimal amount, string status, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        try
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO Refunds
+                    (Id, PaymentId, StripeRefundId, Amount, Reason, Status, ProcessedAt, CreatedAt)
+                VALUES
+                    (@Id, @PaymentId, @StripeRefundId, @Amount, 'Shorter court time', @Status,
+                     CASE WHEN @Status = 'succeeded' THEN UTC_TIMESTAMP(6) ELSE NULL END,
+                     UTC_TIMESTAMP(6))
+                """,
+                new { Id = Guid.NewGuid(), PaymentId = paymentId, StripeRefundId = stripeRefundId, Amount = amount, Status = status },
+                cancellationToken: cancellationToken));
+        }
+        catch (MySqlException exception) when (exception.Number == 1062)
+        {
+            return;
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE Payments p
+            SET p.Status = 'refunded', p.UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE p.Id = @Id
+              AND p.Status <> 'refunded'
+              AND (
+                  SELECT COALESCE(SUM(r.Amount), 0) FROM Refunds r
+                  WHERE r.PaymentId = p.Id AND r.Status = 'succeeded'
+              ) >= p.Amount - 0.009
+            """,
+            new { Id = paymentId },
+            cancellationToken: cancellationToken));
+    }
+
     public static (int Points, decimal Value, decimal Cash, string? Error) Quote(int requested, int balance, int rate, decimal price)
     {
         if (requested < 0)
@@ -1129,6 +1348,11 @@ public sealed class PaymentRepository(IConfiguration configuration)
                 new { Id = Guid.NewGuid(), PromotionCodeId = promoId, UserId = userId, BookingId = primary, Discount = discount },
                 tx,
                 cancellationToken: cancellationToken));
+        }
+
+        if (cash <= 0)
+        {
+            await FinishWeekTopUpAsync(connection, tx, primary, userId, venueId, cancellationToken);
         }
 
         await tx.CommitAsync(cancellationToken);
@@ -1593,6 +1817,43 @@ sealed class PaymentStateRow
     public Guid PaymentId { get; init; }
     public string PaymentStatus { get; init; } = "";
     public decimal Amount { get; init; }
+}
+
+public sealed class CourtRefundPayment
+{
+    public Guid? PaymentId { get; init; }
+    public string? StripePaymentIntentId { get; init; }
+    public string? PaymentStatus { get; init; }
+    public decimal PaymentAmount { get; init; }
+    public decimal RefundedAmount { get; init; }
+}
+
+public sealed class WeekTopUpSeed
+{
+    public string? CancelReason { get; init; }
+    public Guid? PayGroupId { get; init; }
+    public Guid GroupId { get; init; }
+}
+
+public sealed class WeekTopUpRow
+{
+    public Guid Id { get; init; }
+    public string CancelReason { get; init; } = "";
+    public Guid CourtSessionId { get; init; }
+    public Guid GroupId { get; init; }
+    public decimal TotalAmount { get; init; }
+    public Guid CourtId { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public decimal Price { get; init; }
+}
+
+public sealed class WeekTopUpOld
+{
+    public Guid Id { get; init; }
+    public string Status { get; init; } = "";
+    public Guid CourtSessionId { get; init; }
+    public DateTime EndTime { get; init; }
 }
 
 public sealed record PaymentTransition(

@@ -4,7 +4,7 @@ using ShuttleSync.Api.Booking;
 
 namespace ShuttleSync.Api.Data;
 
-public sealed class BookingRepository(IConfiguration configuration)
+public sealed partial class BookingRepository(IConfiguration configuration)
 {
     public async Task<VenueRow[]> ListActiveVenuesAsync(CancellationToken cancellationToken)
     {
@@ -1262,7 +1262,7 @@ public sealed class BookingRepository(IConfiguration configuration)
             """
             SELECT b.Id AS BookingId, b.GroupId, b.Status, b.SubtotalAmount AS Price,
                    CAST(COALESCE(b.SeriesWeeks, 0) AS SIGNED) AS SeriesWeeks,
-                   CAST(b.RepeatHold AS SIGNED) AS RepeatHold, b.RepeatNote,
+                   CAST(b.RepeatHold AS SIGNED) AS RepeatHold, b.RepeatNote, b.CancelReason,
                    v.Name AS VenueName, v.Slug AS VenueSlug, v.TimeZone, v.Currency,
                    c.Id AS CourtId, c.CourtName, c.CourtNumber, cs.StartTime, cs.EndTime
             FROM Bookings b
@@ -1483,7 +1483,7 @@ public sealed class BookingRepository(IConfiguration configuration)
         return null;
     }
 
-    public async Task<string?> MoveSessionsAsync(
+    public async Task<CourtMoveResult> MoveSessionsAsync(
         Guid userId,
         Guid groupId,
         DateTime currentStartUtc,
@@ -1491,14 +1491,18 @@ public sealed class BookingRepository(IConfiguration configuration)
         string? date,
         string? start,
         string? end,
+        bool acceptPriceIncrease,
+        bool acceptRefund,
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
         var rows = (await connection.QueryAsync<MoveSessionRow>(new CommandDefinition(
             """
-            SELECT b.Id, b.CourtSessionId, b.Status, b.VenueId, c.Id AS CourtId, c.CourtName,
-                   v.TimeZone, v.HourlyRate, cs.StartTime, cs.EndTime,
-                   b.DiscountAmount, b.PointsRedeemed
+            SELECT b.Id, b.GroupId, b.CourtSessionId, b.Status, b.VenueId, c.Id AS CourtId, c.CourtName,
+                   v.TimeZone, v.HourlyRate, cs.StartTime, cs.EndTime, cs.Price AS SessionPrice,
+                   b.SubtotalAmount, b.TotalAmount, b.DiscountAmount, b.PointsRedeemed, b.PointsValue,
+                   CAST(COALESCE(b.SeriesWeeks, 0) AS SIGNED) AS SeriesWeeks,
+                   CAST(b.RepeatHold AS SIGNED) AS RepeatHold
             FROM Bookings b
             JOIN CourtSessions cs ON cs.Id = b.CourtSessionId AND cs.IsDeleted = 0
             JOIN Courts c ON c.Id = cs.CourtId
@@ -1522,39 +1526,39 @@ public sealed class BookingRepository(IConfiguration configuration)
             cancellationToken: cancellationToken))).ToArray();
         if (rows.Length == 0)
         {
-            return "That session was not found.";
+            return CourtMoveResult.Fail("That session was not found.");
         }
 
         if (string.IsNullOrWhiteSpace(date) || string.IsNullOrWhiteSpace(start) || string.IsNullOrWhiteSpace(end))
         {
-            return "Choose a date, a start time, and an end time.";
+            return CourtMoveResult.Fail("Choose a date, a start time, and an end time.");
         }
 
         if (!ShuttleSync.Api.Booking.VenueClock.TryGetDayWindow(rows[0].TimeZone, date, start, end, out var window, out var clockError))
         {
-            return clockError;
+            return CourtMoveResult.Fail(clockError);
         }
 
         var newStartUtc = window.StartUtc;
         var newEndUtc = window.EndUtc;
         if (newEndUtc <= newStartUtc)
         {
-            return "The end time must be later than the start time.";
+            return CourtMoveResult.Fail("The end time must be later than the start time.");
         }
 
         if (newStartUtc <= DateTime.UtcNow)
         {
-            return "Choose a time that has not started.";
+            return CourtMoveResult.Fail("Choose a time that has not started.");
         }
 
         if (newEndUtc - newStartUtc < TimeSpan.FromMinutes(30))
         {
-            return "Choose at least 30 minutes.";
+            return CourtMoveResult.Fail("Choose at least 30 minutes.");
         }
 
         if (rows.All(row => SameInstant(row.StartTime, newStartUtc) && SameInstant(row.EndTime, newEndUtc)))
         {
-            return "That is already the time for this session.";
+            return CourtMoveResult.Fail("That is already the time for this session.");
         }
 
         var sample = rows[0];
@@ -1562,14 +1566,14 @@ public sealed class BookingRepository(IConfiguration configuration)
         var social = await SocialBusyMessageAsync(connection, tx, sample.VenueId, sample.TimeZone, rows.Select(row => row.CourtId).ToArray(), newStartUtc, newEndUtc, cancellationToken);
         if (social is not null)
         {
-            return social;
+            return CourtMoveResult.Fail(social);
         }
 
         var windows = await LoadRateWindowsAsync(connection, sample.VenueId, tx, cancellationToken);
         var price = CourtRates.Quote(sample.TimeZone, sample.HourlyRate, newStartUtc, newEndUtc, windows);
         if (price <= 0)
         {
-            return "This venue has not set an hourly rate for that time.";
+            return CourtMoveResult.Fail("This venue has not set an hourly rate for that time.");
         }
 
         var movingSessions = rows.Select(row => row.CourtSessionId).ToArray();
@@ -1589,7 +1593,7 @@ public sealed class BookingRepository(IConfiguration configuration)
                 cancellationToken: cancellationToken));
             if (closed > 0)
             {
-                return $"{row.CourtName} is closed at that time. Choose another date or time.";
+                return CourtMoveResult.Fail($"{row.CourtName} is closed at that time. Choose another date or time.");
             }
 
             var overlaps = (await connection.QueryAsync<OverlapSessionRow>(new CommandDefinition(
@@ -1607,7 +1611,7 @@ public sealed class BookingRepository(IConfiguration configuration)
             var busy = await ActiveOverlapAsync(connection, tx, overlaps, cancellationToken);
             if (busy is not null)
             {
-                return OccupiedMessage(row.CourtName, sample.TimeZone, busy.Session.StartTime, busy.Session.EndTime, busy.UserId, userId);
+                return CourtMoveResult.Fail(OccupiedMessage(row.CourtName, sample.TimeZone, busy.Session.StartTime, busy.Session.EndTime, busy.UserId, userId));
             }
 
             var stale = overlaps.FirstOrDefault(item => SameInstant(item.StartTime, newStartUtc));
@@ -1617,6 +1621,108 @@ public sealed class BookingRepository(IConfiguration configuration)
             }
         }
 
+        var confirmed = rows.Where(row => row.Status == "confirmed").ToArray();
+        var paid = decimal.Round(confirmed.Sum(row => row.SubtotalAmount), 2, MidpointRounding.AwayFromZero);
+        var quote = decimal.Round(price * confirmed.Length, 2, MidpointRounding.AwayFromZero);
+        var gap = decimal.Round(quote - paid, 2, MidpointRounding.AwayFromZero);
+        if (rows.Length > 1 && Math.Abs(gap) > 0.009m)
+        {
+            return CourtMoveResult.Fail("Move one court at a time when the price changes.");
+        }
+
+        if (confirmed.Length == 1 && gap > 0.009m && !acceptPriceIncrease)
+        {
+            return new CourtMoveResult { Code = "PRICE_INCREASE", Paid = paid, Quote = quote, Difference = gap };
+        }
+
+        if (confirmed.Length == 1 && gap < -0.009m && !acceptRefund)
+        {
+            var cash = decimal.Round(Math.Min(confirmed[0].TotalAmount, -gap), 2, MidpointRounding.AwayFromZero);
+            return new CourtMoveResult { Code = "PRICE_DECREASE", Paid = paid, Quote = quote, Difference = decimal.Round(-gap, 2, MidpointRounding.AwayFromZero), RefundAmount = cash };
+        }
+
+        if (confirmed.Length == 1 && gap > 0.009m)
+        {
+            var row = confirmed[0];
+            var charge = gap;
+            var marker = "week-topup|" + DateTime.SpecifyKind(row.StartTime, DateTimeKind.Utc).ToString("o");
+            var extend = SameInstant(row.StartTime, newStartUtc) && newEndUtc > row.EndTime;
+            if (extend)
+            {
+                marker += "|extend";
+            }
+
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE CourtSessions cs
+                JOIN Bookings b ON b.CourtSessionId = cs.Id
+                SET cs.IsDeleted = 1, cs.UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE b.GroupId = @GroupId AND b.UserId = @UserId AND b.IsDeleted = 0 AND b.Status = 'pending'
+                  AND b.CancelReason LIKE 'week-topup|%'
+                  AND cs.Id <> @Keep
+                """,
+                new { GroupId = row.GroupId, UserId = userId, Keep = row.CourtSessionId },
+                tx,
+                cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Bookings
+                SET Status = 'expired', HoldExpiresAt = NULL, CancelReason = 'Replaced', UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE GroupId = @GroupId AND UserId = @UserId AND IsDeleted = 0 AND Status = 'pending'
+                  AND CancelReason LIKE 'week-topup|%'
+                """,
+                new { GroupId = row.GroupId, UserId = userId },
+                tx,
+                cancellationToken: cancellationToken));
+
+            var created = extend
+                ? await InsertExtensionSliceAsync(connection, tx, row, row.EndTime, newEndUtc, price, charge, userId, marker, cancellationToken)
+                : await InsertWeekCourtAsync(
+                    connection,
+                    tx,
+                    new WeekEditRow
+                    {
+                        GroupId = row.GroupId,
+                        VenueId = row.VenueId,
+                        TimeZone = row.TimeZone,
+                        HourlyRate = row.HourlyRate,
+                        SeriesWeeks = row.SeriesWeeks,
+                        RepeatHold = row.RepeatHold,
+                    },
+                    new HoldCourtRow { Id = row.CourtId, CourtName = row.CourtName },
+                    newStartUtc,
+                    newEndUtc,
+                    price,
+                    userId,
+                    cancellationToken,
+                    charge,
+                    marker,
+                    0,
+                    [row.CourtSessionId]);
+            if (created.Error is not null || created.BookingId is null)
+            {
+                return CourtMoveResult.Fail(created.Error switch
+                {
+                    "HELD_FOR_RECURRING" => $"{row.CourtName} is held for a later week. Choose another time.",
+                    "COURT_UNAVAILABLE" => $"{row.CourtName} is closed at that time. Choose another date or time.",
+                    _ => $"{row.CourtName} is not available at that time. Someone else just took it. Choose another time.",
+                });
+            }
+
+            await tx.CommitAsync(cancellationToken);
+            var withinDay = newStartUtc <= DateTime.UtcNow.AddHours(24);
+            return new CourtMoveResult
+            {
+                Moved = true,
+                Paid = paid,
+                Quote = quote,
+                Difference = gap,
+                PayNow = withinDay,
+                PayBookingIds = [created.BookingId.Value],
+            };
+        }
+
+        var refunds = new List<CourtRefundDue>();
         foreach (var row in rows)
         {
             if (staleTargets.TryGetValue(row.Id, out var target))
@@ -1646,7 +1752,7 @@ public sealed class BookingRepository(IConfiguration configuration)
             }
             catch (MySqlException exception) when (exception.Number == 1062)
             {
-                return $"{row.CourtName} is not available at that time. Someone else just took it. Choose another time.";
+                return CourtMoveResult.Fail($"{row.CourtName} is not available at that time. Someone else just took it. Choose another time.");
             }
 
             if (row.Status == "pending" && row.DiscountAmount == 0 && row.PointsRedeemed == 0)
@@ -1661,10 +1767,67 @@ public sealed class BookingRepository(IConfiguration configuration)
                     tx,
                     cancellationToken: cancellationToken));
             }
+
+            if (row.Status == "confirmed" && gap < -0.009m)
+            {
+                var drop = decimal.Round(row.SubtotalAmount - price, 2, MidpointRounding.AwayFromZero);
+                var cash = decimal.Round(Math.Min(row.TotalAmount, Math.Max(0, drop)), 2, MidpointRounding.AwayFromZero);
+                await connection.ExecuteAsync(new CommandDefinition(
+                    """
+                    UPDATE Bookings
+                    SET SubtotalAmount = @Price,
+                        TotalAmount = GREATEST(0, TotalAmount - @Cash),
+                        UpdatedAt = UTC_TIMESTAMP(6)
+                    WHERE Id = @Id AND Status = 'confirmed'
+                    """,
+                    new { Id = row.Id, Price = price, Cash = cash },
+                    tx,
+                    cancellationToken: cancellationToken));
+                if (cash > 0.009m)
+                {
+                    refunds.Add(new CourtRefundDue
+                    {
+                        BookingId = row.Id,
+                        Amount = cash,
+                        Key = $"court-refund-{row.Id:N}-{newStartUtc:yyyyMMddHHmmss}-{(int)decimal.Round(cash * 100m, 0)}",
+                        Snapshot = new CourtMoveSnapshot
+                        {
+                            BookingId = row.Id,
+                            SessionId = row.CourtSessionId,
+                            StartTime = row.StartTime,
+                            EndTime = row.EndTime,
+                            SessionPrice = row.SessionPrice,
+                            SubtotalAmount = row.SubtotalAmount,
+                            TotalAmount = row.TotalAmount,
+                        },
+                    });
+                }
+            }
         }
 
         await tx.CommitAsync(cancellationToken);
-        return null;
+        return new CourtMoveResult { Moved = true, Paid = paid, Quote = quote, Difference = gap < 0 ? decimal.Round(-gap, 2, MidpointRounding.AwayFromZero) : gap, RefundAmount = refunds.Sum(item => item.Amount), Refunds = refunds.ToArray() };
+    }
+
+    public async Task RestoreCourtMoveAsync(CourtMoveSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE CourtSessions
+            SET StartTime = @StartTime, EndTime = @EndTime, Price = @SessionPrice, UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE Id = @SessionId
+            """,
+            snapshot,
+            cancellationToken: cancellationToken));
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE Bookings
+            SET CourtSessionId = @SessionId, SubtotalAmount = @SubtotalAmount, TotalAmount = @TotalAmount, UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE Id = @BookingId
+            """,
+            snapshot,
+            cancellationToken: cancellationToken));
     }
 
     public async Task<(CourtHoldRow[] Added, string? Error)> AddCourtsToHoldWeekAsync(
@@ -6790,6 +6953,7 @@ public sealed class BookingRepository(IConfiguration configuration)
     private sealed class MoveSessionRow
     {
         public Guid Id { get; init; }
+        public Guid GroupId { get; init; }
         public Guid CourtSessionId { get; init; }
         public string Status { get; init; } = "";
         public Guid VenueId { get; init; }
@@ -6799,8 +6963,14 @@ public sealed class BookingRepository(IConfiguration configuration)
         public decimal HourlyRate { get; init; }
         public DateTime StartTime { get; init; }
         public DateTime EndTime { get; init; }
+        public decimal SessionPrice { get; init; }
+        public decimal SubtotalAmount { get; init; }
+        public decimal TotalAmount { get; init; }
         public decimal DiscountAmount { get; init; }
         public int PointsRedeemed { get; init; }
+        public decimal PointsValue { get; init; }
+        public int SeriesWeeks { get; init; }
+        public int RepeatHold { get; init; }
     }
 
     private const string VenueColumns = """
@@ -6876,6 +7046,41 @@ public sealed class HoldCourtRow
     public string CourtName { get; init; } = "";
 }
 
+public sealed class CourtMoveResult
+{
+    public bool Moved { get; init; }
+    public string? Code { get; init; }
+    public string? Error { get; init; }
+    public decimal Paid { get; init; }
+    public decimal Quote { get; init; }
+    public decimal Difference { get; init; }
+    public decimal RefundAmount { get; init; }
+    public bool PayNow { get; init; }
+    public Guid[] PayBookingIds { get; init; } = [];
+    public CourtRefundDue[] Refunds { get; init; } = [];
+
+    public static CourtMoveResult Fail(string error) => new() { Error = error };
+}
+
+public sealed class CourtRefundDue
+{
+    public Guid BookingId { get; init; }
+    public decimal Amount { get; init; }
+    public string Key { get; init; } = "";
+    public CourtMoveSnapshot? Snapshot { get; init; }
+}
+
+public sealed class CourtMoveSnapshot
+{
+    public Guid BookingId { get; init; }
+    public Guid SessionId { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public decimal SessionPrice { get; init; }
+    public decimal SubtotalAmount { get; init; }
+    public decimal TotalAmount { get; init; }
+}
+
 public sealed class WeekSampleRow
 {
     public Guid GroupId { get; init; }
@@ -6929,6 +7134,7 @@ public sealed class CourtWeekRow
     public int SeriesWeeks { get; init; }
     public int RepeatHold { get; init; }
     public string? RepeatNote { get; init; }
+    public string? CancelReason { get; init; }
     public string VenueName { get; init; } = "";
     public string VenueSlug { get; init; } = "";
     public string TimeZone { get; init; } = "";

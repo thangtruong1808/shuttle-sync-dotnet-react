@@ -116,6 +116,7 @@ export type CourtWeekCourt = {
   seriesWeeks?: number;
   repeatHold?: boolean;
   repeatNote?: string | null;
+  cancelReason?: string | null;
 };
 
 export function myCourtWeeks(): Promise<{ weeks: CourtWeekCourt[] }> {
@@ -181,10 +182,82 @@ export function deleteUnpaidHold(groupId: string, bookingIds?: string[]): Promis
   });
 }
 
+export type WeekSlot = { date: string; start: string; end: string; label: string };
+
+export type WeekFacts = {
+  code: string;
+  courts: string[];
+  when: string;
+  alternatives: WeekSlot[];
+  difference: number | null;
+};
+
+export class WeekChangeError extends Error {
+  code: string;
+  fallback: string;
+  facts: WeekFacts;
+
+  constructor(fallback: string, facts: WeekFacts) {
+    super(fallback);
+    this.code = facts.code;
+    this.fallback = fallback;
+    this.facts = facts;
+  }
+}
+
+export function weekAvailability(groupId: string, startTime: string): Promise<{ allCourtsBooked: boolean; courts: { id: string; courtName: string; yours: boolean; free: boolean }[] }> {
+  return readPage(`/api/me/holds/${groupId}/week-availability?start=${encodeURIComponent(startTime)}`);
+}
+
+export function weekOpenTimes(groupId: string, startTime: string, date: string, courtIds: string[], durationMinutes?: number): Promise<{ times: WeekSlot[]; heldForRecurring: WeekSlot[] }> {
+  const params = new URLSearchParams({ start: startTime, date, courts: courtIds.join(",") });
+  if (durationMinutes) params.set("duration", String(durationMinutes));
+  return readPage(`/api/me/holds/${groupId}/open-times?${params}`);
+}
+
+export async function applyWeekChange(
+  groupId: string,
+  body: { startTime: string; date: string; start: string; end: string; courtIds: string[]; acceptPriceIncrease?: boolean },
+): Promise<{ ok: true; addedBookingIds: string[]; topUpAmount: number; payNow: boolean; payBookingIds: string[] }> {
+  const response = await apiFetch(`/api/me/holds/${groupId}/week`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = (await response.json().catch(() => null)) as { ok?: boolean; fallback?: string; facts?: WeekFacts; addedBookingIds?: string[]; topUpAmount?: number; payNow?: boolean; payBookingIds?: string[]; errors?: FieldErrors } | null;
+  if (!response.ok || !payload?.ok) {
+    const facts = payload?.facts ?? { code: "COURT_UNAVAILABLE", courts: [], when: "", alternatives: [], difference: null };
+    throw new WeekChangeError(payload?.fallback || payload?.errors?.form?.[0] || "That change could not be saved.", facts);
+  }
+  return { ok: true, addedBookingIds: payload.addedBookingIds ?? [], topUpAmount: payload.topUpAmount ?? 0, payNow: payload.payNow ?? false, payBookingIds: payload.payBookingIds ?? [] };
+}
+
+export async function phraseWeekCopy(facts: WeekFacts): Promise<string | null> {
+  const response = await apiFetch("/api/me/week-copy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: facts.code, courts: facts.courts, when: facts.when, alternatives: facts.alternatives }),
+  });
+  if (!response.ok) return null;
+  const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+  return payload?.message ?? null;
+}
+
+export type CourtMoveResult = {
+  moved: boolean;
+  code: "PRICE_INCREASE" | "PRICE_DECREASE" | null;
+  paid: number;
+  quote: number;
+  difference: number;
+  refundAmount: number;
+  payNow: boolean;
+  payBookingIds: string[];
+};
+
 export function moveCourtSessions(
   groupId: string,
-  body: { startTime: string; bookingId?: string; date: string; start: string; end: string },
-): Promise<{ moved: boolean }> {
+  body: { startTime: string; bookingId?: string; date: string; start: string; end: string; acceptPriceIncrease?: boolean; acceptRefund?: boolean },
+): Promise<CourtMoveResult> {
   return readPage(`/api/me/holds/${groupId}/move`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

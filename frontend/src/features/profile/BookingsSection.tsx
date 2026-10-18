@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight, CalendarClock, CalendarDays, ChevronDown, CircleAlert, CircleCheck, Clock, CreditCard, Eye, Gift, MapPin, Repeat, ShieldCheck, TriangleAlert, Undo2, Unlock, UserPlus, Users, X } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { CalendarDays, ChevronDown, CircleAlert, CircleCheck, Clock, CreditCard, Eye, Gift, MapPin, Repeat, ShieldCheck, TriangleAlert, Undo2, Unlock, UserPlus, Users, X } from "lucide-react";
 import type { AppDispatch } from "../../app/store";
-import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
+import { Button, Skeleton, Spinner } from "../../components/ui";
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
 import { loadCurrentUser } from "../auth/authSlice";
 import { useVenues } from "../../components/layout/SiteLayout";
-import { addHoldCourts, bookAgainPath, venueAvailability, venueForPage } from "../venues/venueApi";
+import { venueForPage } from "../venues/venueApi";
 import { AuthRequestError } from "../auth/authApi";
-import { cancelBooking, deleteSeries, deleteSeriesPreview, deleteUnpaidHold, moveCourtSessions, myBookings, myCourtWeeks, refreshUnpaidHolds, setCourtRepeat, type BookingRow, type CancelResult, type CourtWeekCourt, type Page, type SeriesCancelPreview } from "./profileApi";
+import { cancelBooking, deleteSeries, deleteSeriesPreview, myBookings, myCourtWeeks, refreshUnpaidHolds, setCourtRepeat, type BookingRow, type CancelResult, type CourtWeekCourt, type Page, type SeriesCancelPreview } from "./profileApi";
+import { WeekEditor } from "./WeekEditor";
 import { RecommendationBanner } from "./RecommendationNotice";
 import { ListPager } from "./ProfileLists";
 
@@ -54,29 +55,6 @@ function weekOfYear(value: string, timeZone: string) {
   return { week, year: thursday.getUTCFullYear(), from: day.format(monday), to: day.format(sunday) };
 }
 
-function venueFields(iso: string, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timeZone || "Australia/Melbourne",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(iso));
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
-  const hour = part("hour") === "24" ? "00" : part("hour").padStart(2, "0");
-  return { date: `${part("year")}-${part("month")}-${part("day")}`, time: `${hour}:${part("minute").padStart(2, "0")}` };
-}
-
-function requestMessage(reason: unknown, fallback: string) {
-  return reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? fallback : fallback;
-}
-
-function overlaps(start: string, end: string, otherStart: string, otherEnd: string) {
-  return new Date(otherStart).getTime() < new Date(end).getTime() && new Date(otherEnd).getTime() > new Date(start).getTime();
-}
-
 const holdFilters = [
   { id: "all", label: "All" },
   { id: "pay", label: "Need payment" },
@@ -112,415 +90,26 @@ function weekSpan(weeks: CourtWeekCourt[][]) {
   return `Weeks ${first.week} of ${first.year} to ${last.week} of ${last.year}`;
 }
 
-type TimeFields = { date: string; start: string; end: string };
 
-function clockLabel(value: string) {
-  const [hour, minute] = value.split(":").map(Number);
-  if (Number.isNaN(hour) || Number.isNaN(minute)) return value;
-  return `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${hour < 12 ? "am" : "pm"}`;
+function sameSlot(left: CourtWeekCourt, right: CourtWeekCourt) {
+  return Math.abs(new Date(left.startTime).getTime() - new Date(right.startTime).getTime()) < 2000
+    && Math.abs(new Date(left.endTime).getTime() - new Date(right.endTime).getTime()) < 2000;
 }
 
-function fieldsLabel(fields: TimeFields) {
-  const [year, month, day] = fields.date.split("-").map(Number);
-  const date = year && month && day
-    ? new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, day)))
-    : fields.date;
-  return `${date}, ${clockLabel(fields.start)} – ${clockLabel(fields.end)}`;
+function timeGroups(courts: CourtWeekCourt[]) {
+  const groups: CourtWeekCourt[][] = [];
+  for (const court of [...courts].sort((left, right) => left.startTime < right.startTime ? -1 : left.startTime > right.startTime ? 1 : left.courtNumber - right.courtNumber)) {
+    const group = groups.find((item) => sameSlot(item[0], court));
+    if (group) group.push(court);
+    else groups.push([court]);
+  }
+  return groups;
 }
 
-function ReschedulePanel({
-  title,
-  scope,
-  court,
-  value,
-  original,
-  paid,
-  moving,
-  locked,
-  onChange,
-  onConfirm,
-  onClose,
-}: {
-  title: string;
-  scope: string;
-  court: CourtWeekCourt;
-  value: TimeFields;
-  original: TimeFields;
-  paid: boolean;
-  moving: boolean;
-  locked: boolean;
-  onChange: (next: TimeFields) => void;
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  const changed = value.date !== original.date || value.start !== original.start || value.end !== original.end;
-  const complete = Boolean(value.date && value.start && value.end);
-  const input = "w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]";
-  return (
-    <div className="mt-3 rounded-xl border border-line/30 bg-line/5 p-3">
-      <p className="flex items-center gap-2 text-sm font-semibold text-white">
-        <CalendarClock className="h-4 w-4 shrink-0 text-line" aria-hidden="true" />
-        {title}
-      </p>
-      <p className="mt-1 text-xs text-mist/70">
-        Currently {formatWeekDate(court.startTime, court.timeZone)} · {formatVenueRange(court.startTime, court.endTime, court.timeZone)}
-      </p>
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        <label className="text-sm text-mist">
-          <span className="mb-1 block text-mist/70">New date</span>
-          <PickerInput type="date" required value={value.date} disabled={locked} onChange={(event) => onChange({ ...value, date: event.target.value })} className={input} />
-        </label>
-        <label className="text-sm text-mist">
-          <span className="mb-1 block text-mist/70">Start</span>
-          <PickerInput type="time" required value={value.start} disabled={locked} onChange={(event) => onChange({ ...value, start: event.target.value })} className={input} />
-        </label>
-        <label className="text-sm text-mist">
-          <span className="mb-1 block text-mist/70">End</span>
-          <PickerInput type="time" required value={value.end} disabled={locked} onChange={(event) => onChange({ ...value, end: event.target.value })} className={input} />
-        </label>
-      </div>
-      {changed && complete ? (
-        <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-black/25 px-3 py-2 text-sm" aria-live="polite">
-          <span className="text-mist/60 line-through">{fieldsLabel(original)}</span>
-          <ArrowRight className="h-4 w-4 shrink-0 text-line" aria-hidden="true" />
-          <span className="font-semibold text-white">{fieldsLabel(value)}</span>
-        </p>
-      ) : null}
-      <ul className="mt-3 grid gap-1 text-xs leading-5 text-mist/70">
-        <li>{scope}</li>
-        <li>If a court is booked or closed at the new time, nothing moves and we tell you which court.</li>
-        {paid ? <li>Paid courts keep the price you paid.</li> : null}
-      </ul>
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-        <Button type="button" className="w-full sm:w-auto" loading={moving} disabled={(locked && !moving) || !changed || !complete} icon={<CircleCheck className="h-4 w-4 shrink-0" aria-hidden="true" />} onClick={onConfirm}>
-          Confirm new time
-        </Button>
-        <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked} icon={<Undo2 className="h-4 w-4 shrink-0" aria-hidden="true" />} onClick={onClose}>
-          Keep current time
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function WeekEditor({ courts, onChanged }: { courts: CourtWeekCourt[]; onChanged: () => void }) {
-  const first = courts[0];
-  const [checked, setChecked] = useState(() => new Set(courts.map((court) => court.courtId)));
-  const [choices, setChoices] = useState<{ id: string; name: string }[] | null>(null);
-  const [loadingCourts, setLoadingCourts] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmPaid, setConfirmPaid] = useState(false);
-  const openedAt = venueFields(first.startTime, first.timeZone);
-  const closedAt = venueFields(first.endTime, first.timeZone);
-  const weekOriginal = { date: openedAt.date, start: openedAt.time, end: closedAt.time };
-  const [when, setWhen] = useState(weekOriginal);
-  const [rescheduling, setRescheduling] = useState(false);
-  const [moving, setMoving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [sessionWhen, setSessionWhen] = useState(when);
-  const locked = saving || loadingCourts || moving || deleting;
-  const sessionCourt = sessionId ? courts.find((court) => court.bookingId === sessionId) ?? null : null;
-  const sessionOriginal = sessionCourt
-    ? { date: venueFields(sessionCourt.startTime, sessionCourt.timeZone).date, start: venueFields(sessionCourt.startTime, sessionCourt.timeZone).time, end: venueFields(sessionCourt.endTime, sessionCourt.timeZone).time }
-    : weekOriginal;
-  const courtsLocked = locked || rescheduling || sessionCourt !== null;
-  const held = new Set(courts.map((court) => court.courtId));
-  const removed = courts.filter((court) => !checked.has(court.courtId));
-  const added = [...checked].filter((id) => !held.has(id));
-  const selected = courts.filter((court) => checked.has(court.courtId));
-  const total = selected.reduce((sum, court) => sum + court.price, 0) + added.length * first.price;
-  const dirty = removed.length > 0 || added.length > 0;
-  const pending = selected.filter((court) => court.status === "pending");
-  const options = choices ?? courts.map((court) => ({ id: court.courtId, name: court.courtName }));
-  const currentTotal = courts.reduce((sum, court) => sum + court.price, 0);
-  const removedPaid = removed.filter((court) => court.status === "confirmed");
-  const addedNames = added.map((id) => options.find((court) => court.id === id)?.name ?? "Court");
-  const navigate = useNavigate();
-  const payNow = added.length > 0 && new Date(first.startTime).getTime() - Date.now() <= 24 * 60 * 60 * 1000;
-
-  function undoChanges() {
-    setChecked(new Set(courts.map((court) => court.courtId)));
-    setConfirmPaid(false);
-    setError(null);
-  }
-
-  async function loadCourts() {
-    setLoadingCourts(true);
-    setError(null);
-    try {
-      const day = new Intl.DateTimeFormat("en-CA", { timeZone: first.timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(first.startTime));
-      const availability = await venueAvailability(first.venueSlug, day, "", "");
-      setChoices(availability.courts
-        .filter((court) => held.has(court.id) || !court.bookings.some((booking) => overlaps(first.startTime, first.endTime, booking.startTime, booking.endTime)))
-        .map((court) => ({ id: court.id, name: court.courtName })));
-    } catch {
-      setError("Courts could not be loaded.");
-    } finally {
-      setLoadingCourts(false);
-    }
-  }
-
-  async function save() {
-    if (removed.some((court) => court.status === "confirmed") && !confirmPaid) {
-      setConfirmPaid(true);
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      for (const court of removed) {
-        await cancelBooking(court.bookingId);
-      }
-      if (payNow) {
-        refreshUnpaidHolds();
-        navigate(bookAgainPath(first.venueSlug, { ...weekOriginal, courtIds: added, weeks: 1, repeat: false }));
-        return;
-      }
-      if (added.length > 0) {
-        await addHoldCourts(first.venueSlug, first.groupId, first.startTime, first.endTime, added);
-      }
-      setConfirmPaid(false);
-      refreshUnpaidHolds();
-      onChanged();
-    } catch (reason) {
-      setError(requestMessage(reason, "This week could not be updated."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveTime(bookingId?: string, fields = when) {
-    const court = bookingId ? courts.find((item) => item.bookingId === bookingId) : first;
-    if (!court) return;
-    setMoving(true);
-    setError(null);
-    try {
-      await moveCourtSessions(first.groupId, {
-        startTime: court.startTime,
-        bookingId,
-        date: fields.date,
-        start: fields.start,
-        end: fields.end,
-      });
-      setRescheduling(false);
-      setSessionId(null);
-      refreshUnpaidHolds();
-      onChanged();
-    } catch (reason) {
-      setError(requestMessage(reason, "That date and time is not available."));
-    } finally {
-      setMoving(false);
-    }
-  }
-
-  async function removeWeek() {
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-    setDeleting(true);
-    setError(null);
-    try {
-      const pending = courts.filter((court) => court.status === "pending");
-      const paid = courts.filter((court) => court.status === "confirmed");
-      if (pending.length > 0) {
-        await deleteUnpaidHold(first.groupId, pending.map((court) => court.bookingId));
-      } else if (first.repeatHold) {
-        await setCourtRepeat(first.groupId, false);
-      }
-      for (const court of paid) {
-        await cancelBooking(court.bookingId);
-      }
-      refreshUnpaidHolds();
-      onChanged();
-    } catch (reason) {
-      setError(requestMessage(reason, "This week could not be deleted."));
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  return (
-    <div className="mt-2 rounded-xl bg-black/20 p-3">
-      <p className="text-sm text-mist/75">This week is <span className="font-semibold text-white"><Money amount={total} currency={first.currency} /></span> for the courts left ticked.</p>
-      <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-        {options.map((court) => {
-          const row = courts.find((item) => item.courtId === court.id);
-          return (
-            <li key={court.id}>
-              <label className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-mist">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-line"
-                  checked={checked.has(court.id)}
-                  disabled={courtsLocked}
-                  onChange={() => {
-                    setConfirmPaid(false);
-                    setChecked((current) => {
-                      const next = new Set(current);
-                      if (next.has(court.id)) next.delete(court.id);
-                      else next.add(court.id);
-                      return next;
-                    });
-                  }}
-                />
-                <span className={`min-w-0 ${row && !checked.has(court.id) ? "text-mist/50 line-through" : ""}`}>{court.name}</span>
-                <span className="ml-auto text-xs text-mist/60">{row ? (row.status === "confirmed" ? "Paid" : "Held") : "Add"}</span>
-              </label>
-              {row ? (
-                <button
-                  type="button"
-                  className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-line hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={locked || dirty}
-                  onClick={() => {
-                    const clock = venueFields(row.startTime, row.timeZone);
-                    const finish = venueFields(row.endTime, row.timeZone);
-                    setRescheduling(false);
-                    setWhen(weekOriginal);
-                    setSessionId(row.bookingId);
-                    setSessionWhen({ date: clock.date, start: clock.time, end: finish.time });
-                    setError(null);
-                  }}
-                >
-                  <CalendarClock className="h-3 w-3" aria-hidden="true" />
-                  Reschedule
-                </button>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-      {dirty ? (
-        <div className={`mt-3 rounded-xl border p-3 ${confirmPaid ? "border-amber-300/50 bg-amber-400/10" : "border-line/30 bg-line/5"}`} role="status" aria-live="polite">
-          <p className="flex items-center gap-2 text-sm font-semibold text-white">
-            {confirmPaid ? <TriangleAlert className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" /> : <CircleAlert className="h-4 w-4 shrink-0 text-line" aria-hidden="true" />}
-            {confirmPaid ? "Please confirm before we cancel paid courts" : "You have unsaved changes for this week"}
-          </p>
-          <div className="mt-2 grid gap-2 text-sm">
-            {removed.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-mist/70">Dropping:</span>
-                {removed.map((court) => (
-                  <span key={court.bookingId} className="inline-flex items-center gap-1 rounded-full border border-rose-300/40 bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-100">
-                    <X className="h-3 w-3" aria-hidden="true" />
-                    {court.courtName}
-                    <span className="text-rose-100/70">· {court.status === "confirmed" ? "Paid" : "Held"}</span>
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            {addedNames.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-mist/70">Adding:</span>
-                {addedNames.map((name, index) => (
-                  <span key={`${name}-${index}`} className="inline-flex items-center gap-1 rounded-full border border-line/40 bg-line/10 px-2 py-0.5 text-xs font-medium text-line">
-                    <CircleCheck className="h-3 w-3" aria-hidden="true" />
-                    {name}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            <p className="text-mist/80">
-              Weekly total:{" "}
-              <span className="text-mist/60 line-through"><Money amount={currentTotal} currency={first.currency} /></span>{" "}
-              <span className="font-semibold text-white"><Money amount={total} currency={first.currency} /></span>
-              <span className="text-mist/60"> · {selected.length + added.length} {selected.length + added.length === 1 ? "court" : "courts"} kept</span>
-            </p>
-          </div>
-          {payNow ? (
-            <p className="mt-2 flex items-start gap-2 rounded-lg bg-black/20 px-2.5 py-2 text-xs leading-5 text-mist/80">
-              <CreditCard className="mt-0.5 h-3.5 w-3.5 shrink-0 text-line" aria-hidden="true" />
-              <span>
-                This session starts within 24 hours, so new courts are paid when you add them.
-                {" "}Continue to payment opens checkout with {addedNames.join(", ")} at this time. We check they are still free before you pay.
-              </span>
-            </p>
-          ) : null}
-          {removedPaid.length > 0 ? (
-            <p className={`mt-2 flex items-start gap-2 rounded-lg px-2.5 py-2 text-xs leading-5 ${confirmPaid ? "bg-amber-400/15 text-amber-100" : "bg-black/20 text-mist/80"}`}>
-              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span>
-                {removedPaid.length} paid {removedPaid.length === 1 ? "court is" : "courts are"} cancelled under the cancellation policy.
-                {confirmPaid ? " Press Confirm update to continue, or Cancel changes to keep your booking as it was." : ""}
-              </span>
-            </p>
-          ) : null}
-        </div>
-      ) : (
-        <p className="mt-3 text-sm text-mist/75">Untick a court to drop it. The total follows the courts you leave ticked.</p>
-      )}
-      {confirmDelete ? <p className="mt-2 text-sm text-mist" role="status">Delete this week? Unpaid courts are released. A paid court is cancelled under the cancellation policy. Keep weeks ahead is turned off so this week is not added back.</p> : null}
-      {error ? <p className="mt-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-100" role="alert">{error}</p> : null}
-      {sessionCourt ? (
-        <ReschedulePanel
-          title={`Reschedule ${sessionCourt.courtName}`}
-          scope={`Only ${sessionCourt.courtName} moves. The other courts stay at their current time.`}
-          court={sessionCourt}
-          value={sessionWhen}
-          original={sessionOriginal}
-          paid={sessionCourt.status === "confirmed"}
-          moving={moving}
-          locked={locked}
-          onChange={(next) => { setError(null); setSessionWhen(next); }}
-          onConfirm={() => void saveTime(sessionCourt.bookingId, sessionWhen)}
-          onClose={() => { setSessionId(null); setError(null); }}
-        />
-      ) : rescheduling ? (
-        <ReschedulePanel
-          title="Reschedule this week"
-          scope={`All ${courts.length} ${courts.length === 1 ? "court moves" : "courts move"} together.`}
-          court={first}
-          value={when}
-          original={weekOriginal}
-          paid={courts.some((court) => court.status === "confirmed")}
-          moving={moving}
-          locked={locked}
-          onChange={(next) => { setError(null); setWhen(next); }}
-          onConfirm={() => void saveTime()}
-          onClose={() => { setRescheduling(false); setWhen(weekOriginal); setError(null); }}
-        />
-      ) : (
-        <div className="mt-3 flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="flex items-start gap-2 text-sm text-mist/80">
-            <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-line" aria-hidden="true" />
-            <span>
-              <span className="font-medium text-white">Need a different day or time?</span>
-              <span className="block text-xs text-mist/60">{dirty ? "Update or cancel your court changes first." : "Move every court in this week in one step."}</span>
-            </span>
-          </p>
-          <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked || dirty} icon={<CalendarClock className="h-4 w-4 shrink-0" aria-hidden="true" />} onClick={() => { setRescheduling(true); setError(null); }}>
-            Reschedule this week
-          </Button>
-        </div>
-      )}
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <Button type="button" variant="danger" className="w-full sm:w-auto" loading={deleting} disabled={locked && !deleting} onClick={() => void removeWeek()}>{confirmDelete ? "Confirm delete" : "Delete this week"}</Button>
-        {choices === null ? (
-          <Button type="button" variant="secondary" className="w-full sm:w-auto" loading={loadingCourts} disabled={courtsLocked && !loadingCourts} onClick={() => void loadCourts()}>Add another court</Button>
-        ) : null}
-        {dirty ? (
-          <>
-            <Button type="button" className="w-full sm:w-auto" loading={saving} disabled={locked && !saving} icon={payNow ? <CreditCard className="h-4 w-4 shrink-0" aria-hidden="true" /> : undefined} onClick={() => void save()}>
-              {confirmPaid ? "Confirm update" : payNow ? "Continue to payment" : "Update this week"}
-            </Button>
-            <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked} icon={<Undo2 className="h-4 w-4 shrink-0" aria-hidden="true" />} onClick={undoChanges}>
-              Cancel changes
-            </Button>
-          </>
-        ) : pending.length > 0 ? (
-          <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pending.map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
-            <CreditCard className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Pay this week
-          </Link>
-        ) : (
-          <p className="text-sm text-line">This week is paid.</p>
-        )}
-      </div>
-    </div>
-  );
+function leadCourt(courts: CourtWeekCourt[]) {
+  const pending = courts.filter((court) => court.status === "pending");
+  const pool = pending.length > 0 ? pending : courts;
+  return [...pool].sort((left, right) => left.startTime < right.startTime ? -1 : 1)[0];
 }
 
 function WeekPayStatus({ courts }: { courts: CourtWeekCourt[] }) {
@@ -533,7 +122,7 @@ function WeekPayStatus({ courts }: { courts: CourtWeekCourt[] }) {
       </span>
     );
   }
-  const dueAt = new Date(courts[0].startTime).getTime() - 24 * 60 * 60 * 1000;
+  const dueAt = new Date(leadCourt(courts).startTime).getTime() - 24 * 60 * 60 * 1000;
   const dueNow = dueAt <= Date.now();
   const Icon = dueNow ? CircleAlert : Clock;
   const tone = dueNow ? "border-rose-300/50 bg-rose-500/15 text-rose-100" : "border-amber-300/40 bg-amber-400/15 text-amber-100";
@@ -547,19 +136,28 @@ function WeekPayStatus({ courts }: { courts: CourtWeekCourt[] }) {
 
 function weekPayNote(courts: CourtWeekCourt[]) {
   if (courts.every((court) => court.status === "confirmed")) return null;
-  const due = new Date(new Date(courts[0].startTime).getTime() - 24 * 60 * 60 * 1000);
-  return due.getTime() <= Date.now() ? "Pay now to keep this week." : `Pay before ${formatVenueDateTime(due.toISOString(), courts[0].timeZone)}.`;
+  const lead = leadCourt(courts);
+  const due = new Date(new Date(lead.startTime).getTime() - 24 * 60 * 60 * 1000);
+  return due.getTime() <= Date.now() ? "Pay now to keep this week." : `Pay before ${formatVenueDateTime(due.toISOString(), lead.timeZone)}.`;
 }
 
-function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: { weeks: CourtWeekCourt[][]; open: boolean; onToggle: () => void; openWeek: string | null; onOpenWeek: (key: string | null) => void; onChanged: () => void }) {
+function topUpSource(reason?: string | null) {
+  if (!reason?.startsWith("week-topup|")) return null;
+  const time = Date.parse(reason.slice("week-topup|".length).split("|")[0]);
+  return Number.isNaN(time) ? null : time;
+}
+
+function SeriesCard({ weeks, topUps = [], open, onToggle, openWeek, onOpenWeek, onChanged }: { weeks: CourtWeekCourt[][]; topUps?: CourtWeekCourt[]; open: boolean; onToggle: () => void; openWeek: string | null; onOpenWeek: (key: string | null) => void; onChanged: () => void }) {
   const ordered = [...weeks].sort((left, right) => left[0].startTime < right[0].startTime ? -1 : 1);
   const sample = ordered[0][0];
-  const next = ordered.find((week) => new Date(week[0].endTime).getTime() > Date.now()) ?? ordered[0];
+  const everyCourt = ordered.flat();
+  const sharedTime = everyCourt.every((court) => sameSlot(court, sample));
+  const nextCourt = [...everyCourt].filter((court) => new Date(court.endTime).getTime() > Date.now()).sort((left, right) => left.startTime < right.startTime ? -1 : 1)[0] ?? sample;
   const nextUnpaid = ordered.find((week) => week.some((court) => court.status === "pending"));
   const securedWeeks = ordered.filter((week) => week.every((court) => court.status === "confirmed")).length;
   const heldWeeks = ordered.length - securedWeeks;
   const horizon = sample.seriesWeeks || ordered.length;
-  const due = nextUnpaid ? new Date(new Date(nextUnpaid[0].startTime).getTime() - 24 * 60 * 60 * 1000) : null;
+  const due = nextUnpaid ? new Date(new Date(leadCourt(nextUnpaid).startTime).getTime() - 24 * 60 * 60 * 1000) : null;
   const dueSoon = due !== null && due.getTime() <= Date.now();
   const note = ordered.find((week) => week[0].repeatNote)?.[0].repeatNote;
   const [repeatBusy, setRepeatBusy] = useState(false);
@@ -619,9 +217,9 @@ function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: 
             <ChevronDown className={`mt-1 h-4 w-4 shrink-0 text-mist transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
             <span className="min-w-0">
               <span className="block font-medium text-white">{sample.venueName}</span>
-              <span className="mt-1 block text-sm text-mist">{formatVenueRange(sample.startTime, sample.endTime, sample.timeZone)}</span>
-              <span className="mt-1 block text-sm leading-relaxed text-mist/80">{weekSpan(ordered)}. {ordered.length} {ordered.length === 1 ? "week" : "weeks"} at this time. Next session {formatWeekDate(next[0].startTime, next[0].timeZone)}.</span>
-              <span className="mt-1 block text-sm text-white">{securedWeeks} {securedWeeks === 1 ? "week" : "weeks"} secured · {heldWeeks} {heldWeeks === 1 ? "week" : "weeks"} held.{due ? dueSoon ? " The next session is inside 24 hours. Pay now to keep it." : ` Pay the next week before ${formatVenueDateTime(due.toISOString(), sample.timeZone)}.` : ""}</span>
+              <span className="mt-1 block text-sm text-mist">{sharedTime ? formatVenueRange(sample.startTime, sample.endTime, sample.timeZone) : <>Next session {formatWeekDate(nextCourt.startTime, nextCourt.timeZone)} · {formatVenueRange(nextCourt.startTime, nextCourt.endTime, nextCourt.timeZone)}</>}</span>
+              <span className="mt-1 block text-sm leading-relaxed text-mist/80">{weekSpan(ordered)}. {ordered.length} {ordered.length === 1 ? "week" : "weeks"}{sharedTime ? " at this time" : ", each court at its current time"}.{sharedTime ? <> Next session {formatWeekDate(nextCourt.startTime, nextCourt.timeZone)}.</> : null}</span>
+              <span className="mt-1 block text-sm text-white">{securedWeeks} {securedWeeks === 1 ? "week" : "weeks"} secured · {heldWeeks} {heldWeeks === 1 ? "week" : "weeks"} held.{due ? dueSoon ? " The next session is inside 24 hours. Pay now to keep it." : ` Pay the next week before ${formatVenueDateTime(due.toISOString(), nextUnpaid ? leadCourt(nextUnpaid).timeZone : sample.timeZone)}.` : ""}</span>
             </span>
           </span>
         </button>
@@ -706,8 +304,9 @@ function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: 
           <p className="mt-3 text-sm text-mist/75">No deposit. Open one week to change its courts. Pay that week before 24 hours of the session, or those courts are released.</p>
           <ul className="mt-3 space-y-2">
             {ordered.map((courts) => {
-              const key = `${courts[0].groupId}|${courts[0].startTime}`;
               const yearWeek = weekOfYear(courts[0].startTime, courts[0].timeZone);
+              const key = `${courts[0].groupId}|${yearWeek.year}-W${yearWeek.week}`;
+              const slots = timeGroups(courts);
               const amount = courts.reduce((sum, court) => sum + court.price, 0);
               const opened = openWeek === key;
               const payNote = weekPayNote(courts);
@@ -720,7 +319,12 @@ function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: 
                         <span className="font-medium text-white">Week {yearWeek.week} of {yearWeek.year}</span>
                         <WeekPayStatus courts={courts} />
                       </span>
-                      <span className="block text-sm text-mist/75">{formatWeekDate(courts[0].startTime, courts[0].timeZone)} · {courts.length} {courts.length === 1 ? "court" : "courts"}</span>
+                      {slots.map((slot) => (
+                        <span key={`${slot[0].startTime}|${slot[0].endTime}`} className="mt-1 flex items-start gap-1.5 text-sm text-mist/75">
+                          <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />
+                          <span>{slots.length > 1 ? `${slot.map((court) => court.courtName).join(", ")} · ` : ""}{formatWeekDate(slot[0].startTime, slot[0].timeZone)} · {formatVenueRange(slot[0].startTime, slot[0].endTime, slot[0].timeZone)} · {slot.length} {slot.length === 1 ? "court" : "courts"}</span>
+                        </span>
+                      ))}
                       {payNote ? <span className="block text-sm text-amber-100/90">{payNote}</span> : null}
                     </span>
                     <span className="inline-flex shrink-0 items-center gap-2">
@@ -731,7 +335,18 @@ function SeriesCard({ weeks, open, onToggle, openWeek, onOpenWeek, onChanged }: 
                       </span>
                     </span>
                   </button>
-                  {opened ? <div className="px-3 pb-3"><WeekEditor key={courts.map((court) => court.bookingId).join("-")} courts={courts} onChanged={onChanged} /></div> : null}
+                  {opened ? (
+                    <div className="space-y-3 px-3 pb-3">
+                      {slots.map((slot) => (
+                        <WeekEditor
+                          key={slot.map((court) => court.bookingId).join("-")}
+                          courts={slot}
+                          pendingTopUp={topUps.filter((row) => { const source = topUpSource(row.cancelReason); return source !== null && Math.abs(source - new Date(slot[0].startTime).getTime()) < 2000; })}
+                          onChanged={onChanged}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
                 </li>
               );
             })}
@@ -775,6 +390,8 @@ export function BookingsSection() {
 }
 
 function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; venueName: string | null }) {
+  const [params] = useSearchParams();
+  const weekSaved = params.get("weekSaved") === "1";
   const dispatch = useDispatch<AppDispatch>();
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("upcoming");
   const [page, setPage] = useState(1);
@@ -790,6 +407,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
   const [openId, setOpenId] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const [weeks, setWeeks] = useState<CourtWeekCourt[][] | null>(null);
+  const [topUps, setTopUps] = useState<CourtWeekCourt[]>([]);
   const [holdFilter, setHoldFilter] = useState<(typeof holdFilters)[number]["id"]>("all");
   const [openSeries, setOpenSeries] = useState<string | null>(null);
   const [openWeek, setOpenWeek] = useState<string | null>(null);
@@ -832,11 +450,18 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
       .then((result) => {
         if (!active) return;
         const grouped = new Map<string, CourtWeekCourt[]>();
+        const moves: CourtWeekCourt[] = [];
         for (const row of result.weeks) {
           if (venueSlug && row.venueSlug !== venueSlug) continue;
-          const key = `${row.groupId}|${row.startTime}`;
+          if (row.cancelReason?.startsWith("week-topup|")) {
+            moves.push(row);
+            continue;
+          }
+          const stamp = weekOfYear(row.startTime, row.timeZone);
+          const key = `${row.groupId}|${stamp.year}-W${stamp.week}`;
           grouped.set(key, [...(grouped.get(key) ?? []), row]);
         }
+        setTopUps(moves);
         setWeeks([...grouped.values()]);
       })
       .catch(() => {
@@ -866,6 +491,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
   return (
     <div>
       <h1 className="font-display text-3xl text-white">My bookings</h1>
+      {weekSaved ? <p className="mt-3 rounded-xl border border-line/40 bg-line/10 px-3 py-2 text-sm text-line" role="status">This week was updated. New courts stay on this card.</p> : null}
       {venueName ? <p className="mt-1 text-sm leading-relaxed text-mist/75">Showing bookings at <span className="font-semibold text-white">{venueName}</span>. Choose another venue in the menu above to see its bookings.</p> : null}
       <RecommendationBanner />
       <div className="mt-4 flex gap-2" role="tablist" aria-label="Booking status">
@@ -931,6 +557,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
                 <SeriesCard
                   key={group[0][0].groupId}
                   weeks={group}
+                  topUps={topUps.filter((row) => row.groupId === group[0][0].groupId)}
                   open={openSeries === group[0][0].groupId}
                   onToggle={() => setOpenSeries((current) => current === group[0][0].groupId ? null : group[0][0].groupId)}
                   openWeek={openWeek}

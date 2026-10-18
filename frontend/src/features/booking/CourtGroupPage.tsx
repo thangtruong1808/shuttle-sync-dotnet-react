@@ -208,6 +208,7 @@ export default function CourtGroupPage() {
           ? "The courts you just paid are secured. Every later week stays held until 24 hours before it starts. Pay those weeks from My bookings. There is no deposit."
           : null;
   const unpaid = rows.filter((session) => session.status === "pending" && picked.includes(session.bookingId));
+  const mustPayNow = unpaid.some((session) => session.payNow);
   const subtotal = unpaid.reduce((sum, session) => sum + session.price, 0);
   const pickedCourts = [...unpaid].sort((left, right) => left.courtNumber - right.courtNumber).map((session) => session.courtName);
   const otherWeeks = new Set(rows.filter((session) => session.status === "pending" && session.startTime !== unpaid[0]?.startTime).map((session) => session.startTime)).size;
@@ -399,7 +400,7 @@ export default function CourtGroupPage() {
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-mist/60">Checkout</p>
                   <p className="mt-1 text-lg font-semibold text-white">{unpaid.length === 0 ? "Choose courts to pay" : `Pay ${unpaid.length} ${unpaid.length === 1 ? "court" : "courts"}`}</p>
-                  <p className="mt-1 text-sm text-mist/75">{otherWeeks > 0 ? `${otherWeeks} more ${otherWeeks === 1 ? "week stays" : "weeks stay"} held after this payment.` : "Secure this week with Stripe, points, or both."}</p>
+                  <p className="mt-1 text-sm text-mist/75">{mustPayNow ? "This session starts within 24 hours. Pay now to keep it. It is only held for 30 minutes." : otherWeeks > 0 ? `${otherWeeks} more ${otherWeeks === 1 ? "week stays" : "weeks stay"} held after this payment.` : "Secure this week with Stripe, points, or both."}</p>
                 </div>
                 {outcome?.status === "confirmed" ? <p className="text-sm font-semibold text-line" role="status">That week is secured. Choose another week when you are ready.</p> : null}
                 <div>
@@ -453,11 +454,13 @@ export default function CourtGroupPage() {
                   <Button type="submit" className="w-full sm:w-auto" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={paying || waiting} disabled={cashTooSmall || unpaid.length === 0}>
                     {preview.cash === 0 ? "Secure with points" : "Pay and secure"}
                   </Button>
-                  <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<Clock className="h-4 w-4" aria-hidden="true" />} disabled={paying || waiting} onClick={() => navigate("/profile/bookings")}>
-                    Pay later
-                  </Button>
+                  {mustPayNow ? null : (
+                    <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<Clock className="h-4 w-4" aria-hidden="true" />} disabled={paying || waiting} onClick={() => navigate("/profile/bookings")}>
+                      Pay later
+                    </Button>
+                  )}
                 </div>
-                <p className="text-sm text-mist/70">Pay later is optional. These courts stay held, and you can pay them from My bookings before 24 hours of the session.</p>
+                {mustPayNow ? null : <p className="text-sm text-mist/70">Pay later is optional. These courts stay held, and you can pay them from My bookings before 24 hours of the session.</p>}
               </form>
             )}
           </section>

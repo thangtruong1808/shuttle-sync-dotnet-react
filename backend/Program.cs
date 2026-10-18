@@ -42,6 +42,7 @@ builder.Services.AddScoped<BookingRepository>();
 builder.Services.AddScoped<DashboardRepository>();
 builder.Services.AddScoped<RecommendationRepository>();
 builder.Services.AddSingleton<ComebackCopy>();
+builder.Services.AddSingleton<WeekChangeCopy>();
 builder.Services.AddScoped<PaymentRepository>();
 builder.Services.AddScoped<BookingPayments>();
 builder.Services.AddHttpClient("oauth", client => client.Timeout = TimeSpan.FromSeconds(15));

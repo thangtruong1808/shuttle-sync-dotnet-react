@@ -16,6 +16,7 @@ public static class ProfileEndpoints
         me.MapPost("/holds/{groupId:guid}/delete-series", DeleteSeriesAsync);
         me.MapGet("/holds/{groupId:guid}/delete-series/preview", DeleteSeriesPreviewAsync);
         me.MapPost("/holds/{groupId:guid}/move", MoveHoldAsync);
+        WeekChangeEndpoints.Map(me);
         me.MapGet("/friend-spots", FriendSpotsAsync);
         me.MapGet("/bookings/{id:guid}", BookingAsync);
         me.MapPost("/bookings/{id:guid}/cancel", CancelAsync);
@@ -131,6 +132,7 @@ public static class ProfileEndpoints
                 seriesWeeks = row.SeriesWeeks,
                 repeatHold = row.RepeatHold == 1,
                 repeatNote = row.RepeatNote,
+                cancelReason = row.CancelReason,
             }),
         });
     }
@@ -260,6 +262,7 @@ public static class ProfileEndpoints
         HttpContext http,
         AuthRepository authRepository,
         BookingRepository repository,
+        BookingPayments payments,
         CancellationToken cancellationToken)
     {
         var userId = await RequireUserAsync(http, authRepository, cancellationToken);
@@ -273,7 +276,7 @@ public static class ProfileEndpoints
             return Form("That session was not found.", StatusCodes.Status400BadRequest);
         }
 
-        var error = await repository.MoveSessionsAsync(
+        var result = await repository.MoveSessionsAsync(
             userId.Value,
             groupId,
             current.UtcDateTime,
@@ -281,13 +284,39 @@ public static class ProfileEndpoints
             body.Date,
             body.Start,
             body.End,
+            body.AcceptPriceIncrease,
+            body.AcceptRefund,
             cancellationToken);
-        if (error is not null)
+        if (result.Error is not null)
         {
-            return Form(error, StatusCodes.Status409Conflict);
+            return Form(result.Error, StatusCodes.Status409Conflict);
         }
 
-        return Results.Ok(new { moved = true });
+        foreach (var refund in result.Refunds)
+        {
+            var refundError = await payments.RefundCourtDifferenceAsync(userId.Value, refund.BookingId, refund.Amount, refund.Key, cancellationToken);
+            if (refundError is not null)
+            {
+                if (refund.Snapshot is not null)
+                {
+                    await repository.RestoreCourtMoveAsync(refund.Snapshot, cancellationToken);
+                }
+
+                return Form(refundError, StatusCodes.Status502BadGateway);
+            }
+        }
+
+        return Results.Ok(new
+        {
+            moved = result.Moved,
+            code = result.Code,
+            paid = result.Paid,
+            quote = result.Quote,
+            difference = result.Difference,
+            refundAmount = result.RefundAmount,
+            payNow = result.PayNow,
+            payBookingIds = result.PayBookingIds,
+        });
     }
 
     private static async Task<IResult> SetRepeatAsync(
@@ -637,7 +666,7 @@ public static class ProfileEndpoints
     private sealed record RenameFriendBody(string? Name);
     private sealed record RepeatHoldBody(bool Enabled);
     private sealed record DeleteBookingsBody(Guid[]? BookingIds);
-    private sealed record MoveSessionsBody(string? StartTime, Guid? BookingId, string? Date, string? Start, string? End);
+    private sealed record MoveSessionsBody(string? StartTime, Guid? BookingId, string? Date, string? Start, string? End, bool AcceptPriceIncrease = false, bool AcceptRefund = false);
 
     private static IResult Form(string message, int status) =>
         Results.Json(new

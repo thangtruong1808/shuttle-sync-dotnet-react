@@ -944,6 +944,59 @@ public sealed class BookingPayments(
         _ => "pending",
     };
 
+    public async Task<string?> RefundCourtDifferenceAsync(Guid userId, Guid bookingId, decimal amount, string key, CancellationToken cancellationToken)
+    {
+        if (amount <= 0.009m)
+        {
+            return null;
+        }
+
+        var payment = await payments.LoadCourtRefundAsync(userId, bookingId, cancellationToken);
+        if (payment?.PaymentId is not Guid paymentId || payment.PaymentStatus != "succeeded" || string.IsNullOrWhiteSpace(payment.StripePaymentIntentId))
+        {
+            return "This court was not paid by card, so the refund cannot be sent.";
+        }
+
+        if (!settings.IsConfigured)
+        {
+            return "Card payments are not configured yet.";
+        }
+
+        var room = payment.PaymentAmount - payment.RefundedAmount;
+        var refundAmount = decimal.Round(Math.Min(amount, Math.Max(0, room)), 2, MidpointRounding.AwayFromZero);
+        if (refundAmount <= 0.009m)
+        {
+            return "This court has already been refunded.";
+        }
+
+        StripeConfiguration.ApiKey = settings.SecretKey;
+        var intentId = payment.StripePaymentIntentId;
+        if (intentId.StartsWith("cs_", StringComparison.Ordinal))
+        {
+            var checkout = await new SessionService().GetAsync(intentId, cancellationToken: cancellationToken);
+            if (string.IsNullOrWhiteSpace(checkout.PaymentIntentId))
+            {
+                return "The card payment could not be found.";
+            }
+
+            intentId = checkout.PaymentIntentId;
+        }
+
+        try
+        {
+            var refund = await new RefundService().CreateAsync(
+                new RefundCreateOptions { PaymentIntent = intentId, Amount = Cents(refundAmount) },
+                new RequestOptions { IdempotencyKey = key },
+                cancellationToken);
+            await payments.RecordCourtRefundAsync(paymentId, refund.Id, refundAmount, MapRefundStatus(refund.Status), cancellationToken);
+            return null;
+        }
+        catch (StripeException exception)
+        {
+            return exception.StripeError?.Message ?? "The refund could not be started.";
+        }
+    }
+
     public async Task<SocialCheckoutResponse> SocialCheckoutAsync(
         Guid venueId,
         Guid socialId,
