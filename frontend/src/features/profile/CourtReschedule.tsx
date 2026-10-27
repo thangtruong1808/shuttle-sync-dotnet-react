@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ShieldCheck, X } from "lucide-react";
-import { Button, PickerInput, Spinner } from "../../components/ui";
+import { Alert, Button, PickerInput, Spinner, controlClass } from "../../components/ui";
 import { Money } from "../../components/format";
 import { AuthRequestError } from "../auth/authApi";
 import { ConfirmTimeDialog } from "./ConfirmTimeDialog";
@@ -159,11 +159,11 @@ export function CourtReschedule({
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         <label className="text-sm text-fg">
           <span className="mb-1 block">New date</span>
-          <PickerInput type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setError(null); }} className="w-full rounded-xl border border-fg/15 bg-fg/5 px-3 py-2 text-fg [color-scheme:dark]" />
+          <PickerInput type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setError(null); }} className={controlClass} />
         </label>
         <label className="text-sm text-fg">
           <span className="mb-1 block">Length</span>
-          <select value={duration} disabled={busy} onChange={(event) => { setDuration(Number(event.target.value)); setError(null); }} className="w-full rounded-xl border border-fg/15 bg-surface px-3 py-2 text-fg [color-scheme:dark] disabled:opacity-60">
+          <select value={duration} disabled={busy} onChange={(event) => { setDuration(Number(event.target.value)); setError(null); }} className={controlClass}>
             {choices.map((minutes) => <option key={minutes} value={minutes} className="bg-surface text-fg">{lengthLabel(minutes)}</option>)}
           </select>
         </label>
@@ -230,8 +230,10 @@ export function CourtReschedule({
           </div>
         </div>
       ) : null}
-      {error ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-800 dark:text-rose-100" role="alert">{error}</p> : null}
-      <Button type="button" variant="secondary" className="mt-3 w-full sm:w-auto" disabled={busy} icon={<X className="h-4 w-4" aria-hidden="true" />} onClick={onClose}>Keep current time</Button>
+      {error ? <Alert tone="danger" className="mt-3">{error}</Alert> : null}
+      <div className="mt-3 flex flex-col gap-2 rounded-xl border border-border bg-inset p-2 sm:flex-row">
+        <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={busy} icon={<X className="h-4 w-4" aria-hidden="true" />} onClick={onClose}>Keep current time</Button>
+      </div>
     </div>
   );
 }

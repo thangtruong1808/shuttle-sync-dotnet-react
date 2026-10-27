@@ -151,7 +151,7 @@ export function BookedTime({ start, end, timeZone, unpaid = false }: { start: st
   return (
     <p className={`text-sm ${unpaid ? "text-amber-800 dark:text-amber-100" : "text-fg"}`}>
       <span className={`font-semibold ${unpaid ? "text-amber-700 dark:text-amber-200" : ""}`}>{unpaid ? "Held" : "Booked"}</span>
-      <span className="text-fg/45"> · </span>
+      <span className="text-fg-muted"> · </span>
       <span className="whitespace-nowrap">{formatVenueRange(start, end, timeZone)}</span>
     </p>
   );

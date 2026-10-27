@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, CalendarDays, CircleAlert, Clock, ShieldCheck } from "lucide-react";
-import { Spinner } from "../../components/ui";
+import { ArrowRight, CalendarDays } from "lucide-react";
+import { Alert, buttonClass } from "../../components/ui";
 
 export type PaymentResultKind = "waiting" | "processing" | "failed" | "cancelled";
 
@@ -31,78 +31,74 @@ function subjectLabel(subject: NonNullable<Props["subject"]>) {
   }
 }
 
+function Retry({ onRetry, retryTo, retryLabel }: { onRetry?: () => void; retryTo?: string; retryLabel: string }) {
+  const className = buttonClass("primary", "md", "w-full sm:w-auto");
+  if (onRetry) {
+    return (
+      <button type="button" className={className} onClick={onRetry}>
+        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        {retryLabel}
+      </button>
+    );
+  }
+  if (!retryTo) return null;
+  return (
+    <Link to={retryTo} className={className}>
+      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+      {retryLabel}
+    </Link>
+  );
+}
+
+function NextSteps({ children }: { children: ReactNode }) {
+  return <div className="mt-3 flex flex-col gap-2 sm:flex-row">{children}</div>;
+}
+
 export function PaymentResultBanner({ kind, subject = "courts", retryTo, onRetry, retryLabel = "Try again", className = "" }: Props) {
   const labels = subjectLabel(subject);
-  const retryClass = "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto";
 
   if (kind === "waiting") {
     return (
-      <section className={`rounded-3xl border border-sky-300/35 bg-sky-400/10 p-4 sm:p-5 ${className}`} role="status" aria-live="polite">
-        <p className="flex items-start gap-2 font-semibold text-sky-800 dark:text-sky-100">
-          <Spinner className="mt-0.5 h-5 w-5 shrink-0 text-sky-700 dark:text-sky-200" />
-          Checking your payment with Stripe
-        </p>
-        <p className="mt-2 text-sm leading-relaxed text-fg/85">
+      <Alert tone="info" title="Checking your payment with Stripe" className={className}>
+        <p>
           Your {labels.place} is not confirmed yet. We only save it after Stripe confirms the payment. Please wait a moment — do not close this page.
         </p>
-      </section>
+      </Alert>
     );
   }
 
   if (kind === "processing") {
     return (
-      <section className={`rounded-3xl border border-amber-300/40 bg-amber-400/10 p-4 sm:p-5 ${className}`} role="status" aria-live="polite">
-        <p className="flex items-start gap-2 font-semibold text-amber-800 dark:text-amber-50">
-          <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-200" aria-hidden="true" />
-          Waiting for the bank to confirm
-        </p>
-        <p className="mt-2 text-sm leading-relaxed text-fg/85">
+      <Alert tone="warning" title="Waiting for the bank to confirm" className={className}>
+        <p>
           Stripe received the payment, but it is not confirmed yet. Your {labels.one} stay held until the bank confirms. Direct debit can take a few business days. PayTo can take a few minutes. The {labels.place} is only secured after confirmation.
         </p>
-        <Link to="/profile/bookings" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
-          <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
-          View my bookings
-        </Link>
-      </section>
+        <NextSteps>
+          <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
+            <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
+            View my bookings
+          </Link>
+        </NextSteps>
+      </Alert>
     );
   }
 
   const cancelled = kind === "cancelled";
   return (
-    <section className={`rounded-3xl border border-rose-300/40 bg-rose-500/10 p-4 sm:p-5 ${className}`} role="alert">
-      <p className="flex items-start gap-2 font-semibold text-rose-800 dark:text-rose-100">
-        <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-rose-700 dark:text-rose-200" aria-hidden="true" />
-        {cancelled ? "Payment was cancelled" : "Payment could not go through"}
-      </p>
-      <p className="mt-2 text-sm leading-relaxed text-fg/85">
+    <Alert tone="danger" title={cancelled ? "Payment was cancelled" : "Payment could not go through"} className={className}>
+      <p>
         {cancelled
           ? `The Stripe checkout was cancelled, so this ${labels.place} was not saved. No card charge was completed.`
           : `Stripe did not confirm this payment, so this ${labels.place} was not saved. Any reward points used for this attempt are back.`}
       </p>
-      <p className="mt-2 flex items-start gap-2 text-sm leading-relaxed text-fg/75">
-        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-fg/50" aria-hidden="true" />
-        <span>Courts and places are only booked after Stripe confirms success.</span>
-      </p>
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        {onRetry ? (
-          <button type="button" className={retryClass} onClick={onRetry}>
-            <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            {retryLabel}
-          </button>
-        ) : retryTo ? (
-          <Link to={retryTo} className={retryClass}>
-            <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            {retryLabel}
-          </Link>
-        ) : null}
-        <Link
-          to="/profile/bookings"
-          className="inline-flex w-full items-center justify-center rounded-xl border border-fg/15 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg hover:bg-fg/10 sm:w-auto"
-        >
+      <p className="mt-2">Courts and places are only booked after Stripe confirms success.</p>
+      <NextSteps>
+        <Retry onRetry={onRetry} retryTo={retryTo} retryLabel={retryLabel} />
+        <Link to="/profile/bookings" className={buttonClass("secondary", "md", "w-full sm:w-auto")}>
           My bookings
         </Link>
-      </div>
-    </section>
+      </NextSteps>
+    </Alert>
   );
 }
 

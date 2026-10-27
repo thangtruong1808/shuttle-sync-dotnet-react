@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Spinner } from "./ui";
 
 export function Money({ amount, currency }: { amount: number; currency: string }) {
@@ -57,7 +58,7 @@ export function CourtImage({ src, alt }: { src: string | null; alt: string }) {
       {src ? (
         <img src={src} alt={alt} loading="lazy" className="h-full w-full object-cover" />
       ) : (
-        <div className="flex h-full items-center justify-center text-sm text-fg/45" role="img" aria-label={alt}>
+        <div className="flex h-full items-center justify-center text-sm text-fg-muted" role="img" aria-label={alt}>
           Court photo coming soon
         </div>
       )}
@@ -65,11 +66,28 @@ export function CourtImage({ src, alt }: { src: string | null; alt: string }) {
   );
 }
 
-export function EmptyState({ title, body }: { title: string; body: string }) {
+function EmptyMark() {
   return (
-    <div className="rounded-2xl border border-dashed border-fg/15 px-4 py-8 text-center">
-      <p className="font-medium text-fg">{title}</p>
-      <p className="mt-2 text-sm leading-relaxed text-fg/70">{body}</p>
+    <svg className="mx-auto h-16 w-16 text-accent-text" viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="18" fill="currentColor" fillOpacity="0.12" />
+      <g transform="translate(20 16)" fill="currentColor">
+        <path d="M7.1 13.2C7.4 8.6 8.8 4.4 9.8 2.6c.4-.7 1.5-.3 1.3.5-.6 2.6-1.8 6.4-1.9 9.1 0 .6-.5 1-1.1 1h-.1c-.5 0-.9-.4-.9-1Z" />
+        <path d="M11.1 13.6c.1-4.8.9-9.2 1.5-11 .2-.6 1.1-.6 1.3 0 .6 1.8 1.4 6.2 1.4 11 0 .6-.5 1.1-1.1 1.1h-.6c-.6 0-1.1-.5-1.1-1.1Z" />
+        <path d="M16.9 13.2c-.1-2.7-1.3-6.5-1.9-9.1-.2-.8.9-1.2 1.3-.5 1 1.8 2.4 6 2.7 10.6 0 .6-.4 1-.9 1h-.1c-.6 0-1.1-.4-1.1-1Z" />
+        <path d="M8.2 14.8h7.6l-1.05 2.15a1.55 1.55 0 0 1-1.4.8h-2.7a1.55 1.55 0 0 1-1.4-.8L8.2 14.8Z" />
+        <circle cx="12" cy="19.7" r="2.05" />
+      </g>
+    </svg>
+  );
+}
+
+export function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-border bg-surface px-4 py-10 text-center">
+      <EmptyMark />
+      <p className="mt-4 font-medium text-fg">{title}</p>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-fg-muted">{body}</p>
+      {action ? <div className="mt-5 flex justify-center">{action}</div> : null}
     </div>
   );
 }
@@ -84,7 +102,7 @@ export function ErrorState({
   loading?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-5" role="alert">
+    <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-5" role="alert" aria-live="assertive">
       <p className="text-sm text-rose-800 dark:text-rose-100">{message}</p>
       <button
         type="button"

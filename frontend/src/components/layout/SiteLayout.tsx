@@ -77,7 +77,7 @@ export function SiteLayout() {
     <VenueContext.Provider value={{ venues, error, reload: () => setAttempt((value) => value + 1), defaultSlug, setDefaultVenue }}>
       <div className="flex min-h-screen flex-col bg-canvas text-fg">
         <Navbar />
-        <div className="flex-1">
+        <div id="main-content" tabIndex={-1} className="flex-1 outline-none">
           <Outlet />
         </div>
         <Footer />

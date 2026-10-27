@@ -2,11 +2,11 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useVenues } from "../../components/layout/SiteLayout";
 import { venueForPage } from "../venues/venueApi";
-import { CalendarDays, CircleAlert, CircleCheck, Gift, LogOut, Save, Users, Wallet } from "lucide-react";
+import { CalendarDays, Gift, LogOut, Save, Users, Wallet } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../app/store";
 import { formatVenueDay, formatVenueRange } from "../../components/format";
-import { Button, Skeleton, Spinner } from "../../components/ui";
+import { Alert, Button, Card, Field, Input, PageHeader, Skeleton, Spinner, StatCard } from "../../components/ui";
 import { AuthRequestError, updateProfile, uploadAvatar } from "../auth/authApi";
 import { loadCurrentUser, logout, signedIn } from "../auth/authSlice";
 import { myBookings, myCourtWeeks, myRewards, type BookingRow, type CourtWeekCourt } from "./profileApi";
@@ -92,31 +92,29 @@ export function OverviewSection() {
   const name = user.displayName || user.firstName || "there";
   return (
     <div>
-      <h1 className="font-display text-3xl text-fg">Hello, {name}</h1>
-      <p className="mt-2 text-fg/70">You have {user.rewardPoints} reward points ready to use.</p>
-      {pendingPoints > 0 ? (
-        <p className="mt-1 text-sm text-fg/75">
-          <Link className="font-semibold text-accent-text hover:underline" to="/profile/rewards">{pendingPoints} points</Link>
-          {" "}are waiting and join your balance after those sessions end.
-        </p>
-      ) : null}
-      {loadingNext ? (
-        <div className="mt-4" aria-busy="true">
-          <span className="sr-only">Loading your next booking</span>
-          <Skeleton className="h-12" />
-        </div>
-      ) : nextBooking ? (
-        <p className="mt-4 rounded-2xl border border-fg/10 px-4 py-3 text-sm text-fg">
-          Next booking: {nextBooking.venueName}, {nextBooking.place}, {formatVenueDay(nextBooking.startTime, nextBooking.timeZone)}, {formatVenueRange(nextBooking.startTime, nextBooking.endTime, nextBooking.timeZone)}
-        </p>
-      ) : (
-        <p className="mt-4 text-sm text-fg/70">{venue ? `No upcoming booking at ${venue.name}.` : "No upcoming booking."}</p>
-      )}
+      <PageHeader title={`Hello, ${name}`} description={`You have ${user.rewardPoints} reward points ready to use.`} />
+      <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
+        <StatCard label="Reward points" value={user.rewardPoints} icon={<Gift className="h-4 w-4" aria-hidden="true" />} hint={pendingPoints > 0 ? <><Link className="font-semibold text-accent-text hover:underline" to="/profile/rewards">{pendingPoints} points</Link> are waiting and join your balance after those sessions end.</> : undefined} />
+        <Card title="Next booking" description={loadingNext ? "Loading your next booking" : undefined}>
+          {loadingNext ? (
+            <div aria-busy="true">
+              <span className="sr-only">Loading your next booking</span>
+              <Skeleton className="h-12" />
+            </div>
+          ) : nextBooking ? (
+            <p className="text-sm text-fg">
+              Next booking: {nextBooking.venueName}, {nextBooking.place}, {formatVenueDay(nextBooking.startTime, nextBooking.timeZone)}, {formatVenueRange(nextBooking.startTime, nextBooking.endTime, nextBooking.timeZone)}
+            </p>
+          ) : (
+            <p className="text-sm text-fg-muted">{venue ? `No upcoming booking at ${venue.name}.` : "No upcoming booking."}</p>
+          )}
+        </Card>
+      </div>
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Link className="inline-flex items-center gap-2 rounded-2xl border border-fg/10 p-4 hover:border-accent-text/40" to="/profile/bookings"><CalendarDays className="h-4 w-4 text-accent-text" aria-hidden="true" />My bookings</Link>
-        <Link className="inline-flex items-center gap-2 rounded-2xl border border-fg/10 p-4 hover:border-accent-text/40" to="/profile/friend-spots"><Users className="h-4 w-4 text-accent-text" aria-hidden="true" />Friend spots</Link>
-        <Link className="inline-flex items-center gap-2 rounded-2xl border border-fg/10 p-4 hover:border-accent-text/40" to="/profile/rewards"><Gift className="h-4 w-4 text-accent-text" aria-hidden="true" />Reward history</Link>
-        <Link className="inline-flex items-center gap-2 rounded-2xl border border-fg/10 p-4 hover:border-accent-text/40" to="/profile/payments"><Wallet className="h-4 w-4 text-accent-text" aria-hidden="true" />Payments</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-border bg-surface p-4 shadow-card hover:border-accent-text/40 dark:shadow-none" to="/profile/bookings"><CalendarDays className="h-4 w-4 text-accent-text" aria-hidden="true" />My bookings</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-border bg-surface p-4 shadow-card hover:border-accent-text/40 dark:shadow-none" to="/profile/friend-spots"><Users className="h-4 w-4 text-accent-text" aria-hidden="true" />Friend spots</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-border bg-surface p-4 shadow-card hover:border-accent-text/40 dark:shadow-none" to="/profile/rewards"><Gift className="h-4 w-4 text-accent-text" aria-hidden="true" />Reward history</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-border bg-surface p-4 shadow-card hover:border-accent-text/40 dark:shadow-none" to="/profile/payments"><Wallet className="h-4 w-4 text-accent-text" aria-hidden="true" />Payments</Link>
       </div>
     </div>
   );
@@ -176,7 +174,8 @@ export function DetailsSection() {
 
   return (
     <form className="max-w-xl space-y-4" onSubmit={onSubmit}>
-      <h1 className="font-display text-3xl text-fg">Personal info</h1>
+      <PageHeader title="Personal info" />
+      <Card>
       <div className="text-sm">
         <span className="mb-1 block text-fg/70" id="profile-photo-label">Photo</span>
         <label className={`group relative inline-flex max-w-full rounded-xl focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent-text ${busy ? "cursor-not-allowed" : "cursor-pointer"}`}>
@@ -199,21 +198,17 @@ export function DetailsSection() {
           />
         </label>
       </div>
-      <Field label="Display name" value={displayName} onChange={setDisplayName} disabled={busy} />
-      <Field label="First name" value={firstName} onChange={setFirstName} disabled={busy} />
-      <Field label="Last name" value={lastName} onChange={setLastName} disabled={busy} />
-      <Field label="Mobile" value={mobile} onChange={setMobile} disabled={busy} />
+      <Field label="Display name">{({ id }) => <Input id={id} value={displayName} disabled={busy} onChange={(event) => setDisplayName(event.target.value)} />}</Field>
+      <Field label="First name">{({ id }) => <Input id={id} value={firstName} disabled={busy} onChange={(event) => setFirstName(event.target.value)} />}</Field>
+      <Field label="Last name">{({ id }) => <Input id={id} value={lastName} disabled={busy} onChange={(event) => setLastName(event.target.value)} />}</Field>
+      <Field label="Mobile">{({ id }) => <Input id={id} value={mobile} disabled={busy} onChange={(event) => setMobile(event.target.value)} />}</Field>
       <p className="text-sm text-fg/70">
         Email <span className="text-fg">{user.email}</span>
         {user.emailVerified ? <span className="ml-2 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent-text">Verified</span> : <span className="ml-2 text-xs text-fg/50">Not verified</span>}
       </p>
-      {message ? (
-        <p className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-sm ${message.tone === "ok" ? "border-accent-text/40 bg-accent/10 text-accent-text" : "border-rose-400/30 bg-rose-500/10 text-rose-800 dark:text-rose-100"}`} role={message.tone === "ok" ? "status" : "alert"}>
-          {message.tone === "ok" ? <CircleCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> : <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
-          {message.text}
-        </p>
-      ) : null}
+      {message ? <Alert tone={message.tone === "ok" ? "success" : "danger"}>{message.text}</Alert> : null}
       <Button type="submit" icon={<Save className="h-4 w-4" aria-hidden="true" />} loading={saving} disabled={uploading}>Save</Button>
+      </Card>
     </form>
   );
 }
@@ -225,30 +220,6 @@ function isPhotoFile(file: File) {
   }
   const name = file.name.toLowerCase();
   return name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp");
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  disabled = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <label className="block text-sm">
-      <span className="mb-1 block text-fg/70">{label}</span>
-      <input
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-xl border border-fg/10 bg-inset px-3 py-2.5 text-fg disabled:cursor-not-allowed disabled:opacity-60"
-      />
-    </label>
-  );
 }
 
 export function LogoutSection() {

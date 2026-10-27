@@ -47,7 +47,7 @@ export function Footer() {
     <footer className="mt-auto border-t border-border bg-surface">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_2fr] lg:px-8">
         <div>
-          <Link to={activeSlug ? `/${activeSlug}` : "/"} aria-label="Home" className={`inline-flex items-center gap-2.5 ${focusRing}`}>
+          <Link to={activeSlug ? `/${activeSlug}` : "/"} className={`inline-flex items-center gap-2.5 ${focusRing}`}>
             <BrandMark />
             <Wordmark />
           </Link>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Building2, LayoutGrid } from "lucide-react";
 import { EmptyState, ErrorState } from "../../components/format";
-import { Skeleton } from "../../components/ui";
+import { PageHeader, Skeleton, StatCard } from "../../components/ui";
 import { dashboardVenues, type Venue } from "../venues/venueApi";
 import { DashError, overview } from "./dashboardApi";
 
@@ -35,36 +36,27 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-fg">Overview</h1>
-      <p className="mt-2 text-sm text-fg/70">Venues and courts you can manage.</p>
+      <PageHeader title="Overview" description="Venues and courts you can manage." />
       {error ? (
-        <div className="mt-6">
-          <ErrorState
-            message={error}
-            loading={retrying}
-            onRetry={() => {
-              setRetrying(true);
-              setAttempt((value) => value + 1);
-            }}
-          />
-        </div>
+        <ErrorState
+          message={error}
+          loading={retrying}
+          onRetry={() => {
+            setRetrying(true);
+            setAttempt((value) => value + 1);
+          }}
+        />
       ) : counts === null || venues === null ? (
-        <div className="mt-6" aria-busy="true">
+        <div aria-busy="true">
           <span className="sr-only">Loading overview</span>
           <Skeleton className="h-40" />
         </div>
       ) : (
         <>
-          <dl className="mt-6 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-fg/10 px-4 py-3">
-              <dt className="text-sm text-fg/65">Venues</dt>
-              <dd className="font-display text-3xl text-fg">{counts.venues}</dd>
-            </div>
-            <div className="rounded-2xl border border-fg/10 px-4 py-3">
-              <dt className="text-sm text-fg/65">Courts</dt>
-              <dd className="font-display text-3xl text-fg">{counts.courts}</dd>
-            </div>
-          </dl>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <StatCard label="Venues" value={counts.venues} hint="Places you can open from this desk." icon={<Building2 className="h-4 w-4" aria-hidden="true" />} />
+            <StatCard label="Courts" value={counts.courts} hint="Courts across those venues." icon={<LayoutGrid className="h-4 w-4" aria-hidden="true" />} />
+          </div>
           {venues.length === 0 ? (
             <div className="mt-6">
               <EmptyState title="No venues to show" body="Assigned venues will appear here." />
@@ -73,9 +65,9 @@ export default function DashboardPage() {
             <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {venues.map((venue) => (
                 <li key={venue.id}>
-                  <Link to={`/dashboard/venues/${venue.id}`} className="block rounded-2xl border border-fg/10 p-4 hover:bg-fg/5">
+                  <Link to={`/dashboard/venues/${venue.id}`} className="block rounded-2xl border border-border bg-surface p-4 shadow-card hover:bg-surface-2 dark:shadow-none">
                     <p className="font-medium text-fg">{venue.name}</p>
-                    <p className="text-sm text-fg/65">{[venue.suburb, venue.state].filter(Boolean).join(", ") || venue.slug}</p>
+                    <p className="text-sm text-fg-muted">{[venue.suburb, venue.state].filter(Boolean).join(", ") || venue.slug}</p>
                   </Link>
                 </li>
               ))}

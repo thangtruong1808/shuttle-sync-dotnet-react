@@ -1,120 +1,18 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { ArrowRight, CircleAlert, Tag } from "lucide-react";
+import { ArrowRight, Tag } from "lucide-react";
 import { useSelector } from "react-redux";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { RootState } from "../../app/store";
-import { ErrorState, Money, formatVenueDateTime, venueToday } from "../../components/format";
+import { ErrorState, Money, venueToday } from "../../components/format";
 import { useVenues } from "../../components/layout/SiteLayout";
-import { Button, PickerInput, Skeleton, Spinner } from "../../components/ui";
+import { Alert, Button, controlClass, Field, PickerInput, Select, Skeleton, Spinner } from "../../components/ui";
 import { AuthRequestError } from "../auth/authApi";
 import { abandonCourtCheckout, courtPrice, forgetOpenCheckout, openCourtHold, payNowHold, readOpenCheckout, rememberOpenCheckout, rememberVenueSlug, venueAvailability, venuePromotions, type AvailableCourt, type Promotion, type ScheduleClosure } from "../venues/venueApi";
+import { courtBusyLabel, pointsQuote, promoDiscount, sessionAmount, shownHoldError, startsWithin24Hours, unavailableReason } from "./bookingMath";
+import { PayBar, Step, summaryAside, summaryLines } from "./checkoutUi";
 import { WeekExtendPage } from "./WeekExtendPage";
 
 const pointPercents = [25, 50, 75, 100] as const;
-
-function promoDiscount(price: number, promo: Promotion | null) {
-  if (!promo) return 0;
-  const amount = promo.discountType === "percent" ? Math.round(price * promo.discountValue) / 100 : promo.discountValue;
-  return Math.min(price, Math.max(0, amount));
-}
-
-function pointsQuote(requested: number, balance: number, rate: number, price: number) {
-  const safeRate = rate < 1 ? 100 : rate;
-  const points = Math.min(Math.max(0, Math.floor(requested)), Math.max(balance, 0), price <= 0 ? 0 : Math.floor(price * safeRate));
-  const value = Math.floor((points * 100) / safeRate) / 100;
-  const cash = Math.round((price - (value <= 0 ? 0 : value)) * 100) / 100;
-  return { points: value <= 0 ? 0 : points, value: value <= 0 ? 0 : value, cash };
-}
-
-function venueInstant(date: string, time: string, timeZone: string) {
-  if (!date || !time) return null;
-  const [year, month, day] = date.split("-").map(Number);
-  const [hour, minute] = time.split(":").map(Number);
-  if ([year, month, day, hour, minute].some((part) => Number.isNaN(part))) return null;
-  let utc = Date.UTC(year, month - 1, day, hour, minute);
-  const target = utc;
-  for (let pass = 0; pass < 3; pass += 1) {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: timeZone || "Australia/Melbourne",
-      hourCycle: "h23",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).formatToParts(new Date(utc));
-    const pick = (type: string) => Number(parts.find((part) => part.type === type)?.value);
-    const shown = Date.UTC(pick("year"), pick("month") - 1, pick("day"), pick("hour") % 24, pick("minute"));
-    utc += target - shown;
-  }
-  return utc;
-}
-
-function startsWithin24Hours(date: string, time: string, timeZone: string) {
-  const utc = venueInstant(date, time, timeZone);
-  if (utc === null) return false;
-  const untilStart = utc - Date.now();
-  return untilStart > 0 && untilStart <= 24 * 60 * 60 * 1000;
-}
-
-function overlaps(start: number, end: number, otherStart: string, otherEnd: string) {
-  const from = new Date(otherStart).getTime();
-  const to = new Date(otherEnd).getTime();
-  return Number.isFinite(from) && Number.isFinite(to) && start < to && end > from;
-}
-
-function unavailableReason(courts: AvailableCourt[], closures: ScheduleClosure[], courtIds: string[], date: string, start: string, end: string, timeZone: string) {
-  const startMs = venueInstant(date, start, timeZone);
-  const endMs = venueInstant(date, end, timeZone);
-  if (startMs === null || endMs === null) return null;
-  if (endMs <= startMs) return "The end time needs to be later than the start time.";
-  if (endMs - startMs < 30 * 60 * 1000) return "Choose at least 30 minutes between the start and the end.";
-  if (startMs <= Date.now()) return "That time has already started. Choose a later time.";
-  const chosen = courts.filter((court) => courtIds.includes(court.id));
-  const booked = chosen.flatMap((court) => court.bookings.filter((booking) => overlaps(startMs, endMs, booking.startTime, booking.endTime)).map((booking) => ({ court, booking })));
-  if (booked.length > 0) {
-    const first = booked[0];
-    const from = formatVenueDateTime(first.booking.startTime, timeZone);
-    const to = formatVenueDateTime(first.booking.endTime, timeZone);
-    const extra = booked.length > 1 ? ` ${booked.length - 1} other selected ${booked.length === 2 ? "court is" : "courts are"} busy then too.` : "";
-    if (first.booking.status === "pending") {
-      return `${first.court.courtName} is already in a booking from ${from} to ${to}, and the payment is not finished.${extra} Complete the payment or delete it in My bookings.`;
-    }
-    return `${first.court.courtName} is already booked from ${from} to ${to}.${extra} Choose another time or another court.`;
-  }
-  const closed = closures.find((closure) => (closure.courtId === null || courtIds.includes(closure.courtId)) && overlaps(startMs, endMs, closure.startTime, closure.endTime));
-  if (closed) {
-    const name = closed.courtId ? chosen.find((court) => court.id === closed.courtId)?.courtName ?? "That court" : "This venue";
-    return `${name} is closed from ${formatVenueDateTime(closed.startTime, timeZone)} to ${formatVenueDateTime(closed.endTime, timeZone)}. Choose another time.`;
-  }
-  return null;
-}
-
-function courtBusyLabel(court: AvailableCourt, closures: ScheduleClosure[], date: string, start: string, end: string, timeZone: string) {
-  const startMs = venueInstant(date, start, timeZone);
-  const endMs = venueInstant(date, end, timeZone);
-  if (startMs === null || endMs === null || endMs <= startMs) return null;
-  const booking = court.bookings.find((item) => overlaps(startMs, endMs, item.startTime, item.endTime));
-  if (booking) return booking.status === "pending" ? "Held" : "Booked";
-  const closed = closures.some((closure) => (closure.courtId === null || closure.courtId === court.id) && overlaps(startMs, endMs, closure.startTime, closure.endTime));
-  return closed ? "Closed" : null;
-}
-
-function shownHoldError(message: string | undefined) {
-  if (!message || message === "The request could not be completed.") {
-    return "That date and time is not available for the courts you chose. It may already be booked or closed. Choose another time.";
-  }
-  return message;
-}
-
-function sessionAmount(start: string, end: string, rate: number) {
-  if (!start || !end || rate <= 0) return null;
-  const [startHour, startMinute] = start.split(":").map(Number);
-  const [endHour, endMinute] = end.split(":").map(Number);
-  const minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
-  if (!Number.isFinite(minutes) || minutes < 30) return null;
-  return Math.round((rate * minutes) / 60 * 100) / 100;
-}
 
 function FreshCourtBooking() {
   const { slug = "" } = useParams();
@@ -319,24 +217,53 @@ function FreshCourtBooking() {
     }
   }
 
+  const submitLabel = payAtRegistration ? (showPayOptions && payPreview.cash === 0 ? "Pay this week with points" : "Pay this week now") : "Continue";
+  const canSubmit = !(busy || releasing || loading || quoting || cashTooSmall || form.courtIds.length === 0 || !date || !form.start || !form.end);
+
   return (
-    <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
+    <main className="w-full px-4 py-8 sm:px-6 lg:px-8">
       <Link to={`/${slug}`} className="text-sm text-accent-text hover:underline">Back to the venue</Link>
-      <div className="mt-3 grid items-start gap-4 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
-        <div>
-          <h1 className="font-display text-3xl text-fg">Book a court</h1>
-          <p className="mt-2 text-sm leading-relaxed text-fg/75">Choose the courts and the time you want each week. A week that starts in more than 24 hours can be held, and you pay it before that session. A week that starts within 24 hours is not saved unless you pay for it now.</p>
+      <h1 className="mt-3 font-display text-3xl font-semibold text-fg">Book a court</h1>
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-fg-muted">Choose the courts and the time you want each week. A week that starts in more than 24 hours can be held, and you pay it before that session. A week that starts within 24 hours is not saved unless you pay for it now.</p>
+      {status === "unknown" || (!date && !venue) ? (
+        <div className="mt-6" aria-busy="true">
+          <span className="sr-only">Loading booking form</span>
+          <Skeleton className="h-28" />
         </div>
-        {status === "unknown" || (!date && !venue) ? (
-          <div aria-busy="true">
-            <span className="sr-only">Loading booking form</span>
-            <Skeleton className="h-28" />
-          </div>
-        ) : (
-          <form className="grid gap-3 rounded-3xl border border-fg/10 bg-surface/80 p-4 sm:grid-cols-2 xl:grid-cols-4" onSubmit={onContinue}>
-            <fieldset className="min-w-0 sm:col-span-2 xl:col-span-4">
-              <legend className="mb-2 text-sm text-fg/70">Courts</legend>
-              <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-3">
+      ) : (
+        <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <form id="book-court" className="grid gap-4" onSubmit={onContinue}>
+            <Step index={1} title="Date and time">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Date">
+                  {({ id }) => (
+                    <span className="relative block">
+                      <PickerInput id={id} type="date" required value={date} disabled={busy || loading} onChange={(event) => { setFormError(null); setDate(event.target.value); }} className={controlClass} />
+                      {loading ? <Spinner className="absolute right-10 top-1/2 h-3.5 w-3.5 -translate-y-1/2" /> : null}
+                    </span>
+                  )}
+                </Field>
+                <Field label="Start" required>
+                  {({ id }) => <PickerInput id={id} type="time" required value={form.start} disabled={busy} onChange={(event) => { setFormError(null); setForm({ ...form, start: event.target.value }); }} className={controlClass} />}
+                </Field>
+                <Field label="End" required>
+                  {({ id }) => <PickerInput id={id} type="time" required value={form.end} disabled={busy} onChange={(event) => { setFormError(null); setForm({ ...form, end: event.target.value }); }} className={controlClass} />}
+                </Field>
+                <Field label="Weeks">
+                  {({ id }) => (
+                    <Select id={id} value={form.weeks} disabled={busy} onChange={(event) => setForm({ ...form, weeks: Number(event.target.value) })}>
+                      {Array.from({ length: 12 }, (_, index) => index + 1).map((weeks) => (
+                        <option key={weeks} value={weeks}>{weeks === 1 ? "This week only" : `${weeks} weeks`}</option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+              </div>
+            </Step>
+            <Step index={2} title="Courts">
+            <fieldset className="min-w-0">
+              <legend className="sr-only">Courts</legend>
+              <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
                 {(courts ?? []).map((court) => {
                   const taken = courtBusyLabel(court, closures, date, form.start, form.end, venue?.timeZone ?? "Australia/Melbourne");
                   const checked = !taken && form.courtIds.includes(court.id);
@@ -366,135 +293,108 @@ function FreshCourtBooking() {
                   );
                 })}
               </div>
-              {droppedNote ? (
-                <p className="mt-2 flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-800 dark:text-amber-100" role="status">
-                  <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  {droppedNote}
-                </p>
-              ) : null}
+              {droppedNote ? <Alert tone="warning" className="mt-3">{droppedNote}</Alert> : null}
             </fieldset>
-            <label className="text-sm">
-              <span className="mb-1 flex items-center gap-2 text-fg/70">Date {loading ? <Spinner className="h-3.5 w-3.5" /> : null}</span>
-              <PickerInput type="date" required value={date} disabled={busy || loading} onChange={(event) => { setFormError(null); setDate(event.target.value); }} iconClassName="text-fg" className="w-full rounded-xl border border-fg/15 bg-surface px-3 py-2.5 text-fg" />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-fg/70">Start</span>
-              <PickerInput type="time" required value={form.start} disabled={busy} onChange={(event) => { setFormError(null); setForm({ ...form, start: event.target.value }); }} iconClassName="text-fg" className="w-full rounded-xl border border-fg/15 bg-surface px-3 py-2.5 text-fg" />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-fg/70">End</span>
-              <PickerInput type="time" required value={form.end} disabled={busy} onChange={(event) => { setFormError(null); setForm({ ...form, end: event.target.value }); }} iconClassName="text-fg" className="w-full rounded-xl border border-fg/15 bg-surface px-3 py-2.5 text-fg" />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-fg/70">Weeks</span>
-              <select
-                value={form.weeks}
-                disabled={busy}
-                className="w-full rounded-xl border border-fg/15 bg-surface px-3 py-2.5 text-fg disabled:opacity-60"
-                onChange={(event) => setForm({ ...form, weeks: Number(event.target.value) })}
-              >
-                {Array.from({ length: 12 }, (_, index) => index + 1).map((weeks) => (
-                  <option key={weeks} value={weeks} className="bg-surface text-fg">{weeks === 1 ? "This week only" : `${weeks} weeks`}</option>
-                ))}
-              </select>
-            </label>
-            {formError ? (
-              <p className="flex items-start gap-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-800 dark:text-rose-100 sm:col-span-2 xl:col-span-4" role="alert">
-                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-700 dark:text-rose-200" aria-hidden="true" />
-                <span>{formError}</span>
-              </p>
-            ) : null}
-            <label className="flex items-start gap-2 text-sm text-fg sm:col-span-2 xl:col-span-4">
-              <input
-                type="checkbox"
-                className="mt-1 accent-accent-text"
-                checked={form.repeat}
-                disabled={busy}
-                onChange={(event) => setForm({ ...form, repeat: event.target.checked })}
-              />
-              <span>Keep {form.weeks} {form.weeks === 1 ? "week" : "weeks"} ahead. When one week passes, the next week is held automatically. You still pay each week before 24 hours of that session.</span>
-            </label>
+            </Step>
+            <Step index={3} title="Repeat">
+              <label className="flex items-start gap-2 text-sm text-fg">
+                <input
+                  type="checkbox"
+                  className="mt-1 accent-accent-text"
+                  checked={form.repeat}
+                  disabled={busy}
+                  onChange={(event) => setForm({ ...form, repeat: event.target.checked })}
+                />
+                <span>Keep {form.weeks} {form.weeks === 1 ? "week" : "weeks"} ahead. When one week passes, the next week is held automatically. You still pay each week before 24 hours of that session.</span>
+              </label>
+            </Step>
             {showPayOptions ? (
-              <div className="grid gap-4 rounded-2xl border border-fg/10 bg-inset p-3 sm:col-span-2 sm:p-4 lg:grid-cols-2 xl:col-span-4">
-                <div className="min-w-0">
-                  <p className="text-sm text-fg/80">Promotion code</p>
-                  {promotions === null ? (
-                    <div className="mt-2" aria-busy="true"><span className="sr-only">Loading promotion codes</span><Skeleton className="h-14" /></div>
-                  ) : promotions.length > 0 ? (
-                    <ul className="mt-2 grid gap-2">
-                      {promotions.map((promotion) => {
-                        const selected = appliedCode?.id === promotion.id;
-                        return (
-                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 transition-colors sm:flex-row sm:items-center sm:justify-between ${selected ? "border-accent-text/60 bg-accent/10 hover:bg-accent/20" : "border-fg/10 bg-inset hover:bg-fg/10"}`}>
-                            <div className="min-w-0">
-                              <p className="break-all font-semibold text-fg">{promotion.code}</p>
-                              <p className="text-sm text-accent-text">{promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}</p>
-                            </div>
-                            <Button type="button" variant={selected ? "primary" : "secondary"} className="w-full sm:w-auto" disabled={busy || releasing} onClick={() => setAppliedCode(selected ? null : promotion)}>
-                              {selected ? "Applied" : "Apply"}
-                            </Button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : <p className="mt-2 text-sm text-fg/70">No active promotion codes right now.</p>}
-                  {appliedCode ? <p className="mt-2 text-sm text-fg" role="status">{appliedCode.code} applied.</p> : null}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-fg/80">Reward points</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {pointPercents.map((percent) => (
-                      <button key={percent} type="button" disabled={busy || releasing || maxPoints === 0} className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg hover:bg-lime-300" : "border border-fg/15 text-fg hover:bg-fg/10"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
-                        {percent}%
-                      </button>
-                    ))}
+              <Step index={4} title="Promotion and points">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-fg">Promotion code</p>
+                    {promotions === null ? (
+                      <div className="mt-2" aria-busy="true"><span className="sr-only">Loading promotion codes</span><Skeleton className="h-14" /></div>
+                    ) : promotions.length > 0 ? (
+                      <ul className="mt-2 grid gap-2">
+                        {promotions.map((promotion) => {
+                          const selected = appliedCode?.id === promotion.id;
+                          return (
+                            <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between ${selected ? "border-accent-text/60 bg-accent/10" : "border-border bg-inset"}`}>
+                              <div className="min-w-0">
+                                <p className="break-all font-semibold text-fg">{promotion.code}</p>
+                                <p className="text-sm text-accent-text">{promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}</p>
+                              </div>
+                              <Button type="button" variant={selected ? "primary" : "secondary"} className="w-full sm:w-auto" disabled={busy || releasing} onClick={() => setAppliedCode(selected ? null : promotion)}>
+                                {selected ? "Applied" : "Apply"}
+                              </Button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : <p className="mt-2 text-sm text-fg-muted">No active promotion codes right now.</p>}
+                    {appliedCode ? <p className="mt-2 text-sm text-fg" role="status">{appliedCode.code} applied.</p> : null}
                   </div>
-                  <input type="range" min={0} max={Math.max(maxPoints, 1)} step={1} value={Math.min(points, maxPoints)} disabled={busy || releasing || maxPoints === 0} aria-label="Reward points" className="mt-3 w-full accent-accent-text disabled:opacity-60" onChange={(event) => setPoints(Number(event.target.value))} />
-                  <p className="mt-1 text-sm text-fg/70">{Math.min(points, maxPoints)} of {balance} points. {pointsRate} points = {currency} 1.</p>
-                  <dl className="mt-3 grid gap-1 text-sm text-fg/80">
-                    <div className="flex justify-between gap-3"><dt>This week, {form.courtIds.length} {form.courtIds.length === 1 ? "court" : "courts"}</dt><dd><Money amount={weekSubtotal} currency={currency} /></dd></div>
-                    {weekDiscount > 0 ? <div className="flex justify-between gap-3"><dt>Promotion</dt><dd>-<Money amount={weekDiscount} currency={currency} /></dd></div> : null}
-                    <div className="flex justify-between gap-3"><dt>Points value</dt><dd><Money amount={payPreview.value} currency={currency} /></dd></div>
-                    <div className="flex justify-between gap-3 font-semibold text-fg"><dt>{payAtRegistration ? "To pay now" : "To pay for this week"}</dt><dd><Money amount={payPreview.cash} currency={currency} /></dd></div>
-                  </dl>
-                  {!payAtRegistration ? <p className="mt-2 text-sm text-fg/70">Your code and points carry over to the next step, where you can pay this week now or later from My bookings.</p> : null}
-                  {cashTooSmall ? <p className="mt-2 text-sm text-fg">Use enough points to cover this week, or leave at least $0.50 to pay.</p> : null}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-fg">Reward points</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {pointPercents.map((percent) => (
+                        <button key={percent} type="button" disabled={busy || releasing || maxPoints === 0} className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg hover:bg-lime-300" : "border border-border text-fg hover:bg-fg/5"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
+                          {percent}%
+                        </button>
+                      ))}
+                    </div>
+                    <input type="range" min={0} max={Math.max(maxPoints, 1)} step={1} value={Math.min(points, maxPoints)} disabled={busy || releasing || maxPoints === 0} aria-label="Reward points" className="mt-3 w-full accent-accent-text disabled:opacity-60" onChange={(event) => setPoints(Number(event.target.value))} />
+                    <p className="mt-1 text-sm text-fg-muted">{Math.min(points, maxPoints)} of {balance} points. {pointsRate} points = {currency} 1.</p>
+                    {!payAtRegistration ? <p className="mt-2 text-sm text-fg-muted">Your code and points carry over to the next step, where you can pay this week now or later from My bookings.</p> : null}
+                    {cashTooSmall ? <p className="mt-2 text-sm text-fg">Use enough points to cover this week, or leave at least $0.50 to pay.</p> : null}
+                  </div>
                 </div>
-              </div>
+              </Step>
             ) : null}
-            <div className="flex flex-col gap-3 sm:col-span-2 xl:col-span-4">
-              <div className="text-sm leading-relaxed text-fg/75">
-                {each === null || form.courtIds.length === 0 ? (
-                  <p>Choose at least 30 minutes and one court. You can hold the same time for up to 12 weeks.</p>
-                ) : (
-                  <>
-                    <p className="font-semibold text-fg">
-                      Total for every selected court and week: <Money amount={totalAfterSavings} currency={currency} />
-                      {weekSavings > 0 ? <span className="ml-2 font-normal text-fg/60 line-through"><Money amount={fullTotal} currency={currency} /></span> : null}
-                    </p>
-                    {weekSavings > 0 ? (
-                      <p className="mt-1 inline-flex items-center gap-1.5 text-accent-text">
-                        <Tag className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                        <span>You save <Money amount={weekSavings} currency={currency} /> on this week with {weekDiscount > 0 && payPreview.value > 0 ? "your promotion code and points" : weekDiscount > 0 ? "your promotion code" : "your points"}.</span>
-                      </p>
-                    ) : null}
-                    <p className="mt-1">You do not pay every later week now. Each of those weeks is held until 24 hours before it starts. {scheduledRate ? "This total uses the venue rate for the days and hours you chose. " : ""}{payAtRegistration ? "The first week starts within 24 hours, so it is not held. Pay for that week now or those courts stay open." : "Pay each week before 24 hours of that session, or those courts are released."} {quoting ? <Spinner className="inline h-3.5 w-3.5" /> : null}</p>
-                  </>
-                )}
-              </div>
-              <Button type="submit" className="w-full sm:w-auto" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={busy || releasing} disabled={busy || releasing || loading || quoting || cashTooSmall || form.courtIds.length === 0 || !date || !form.start || !form.end}>
-                {payAtRegistration ? (showPayOptions && payPreview.cash === 0 ? "Pay this week with points" : "Pay this week now") : "Continue"}
-              </Button>
-            </div>
+            {formError ? <Alert tone="danger">{formError}</Alert> : null}
             {releasing ? (
-              <p className="flex items-center gap-2 text-sm text-fg sm:col-span-2 xl:col-span-4" role="status">
+              <p className="flex items-center gap-2 text-sm text-fg" role="status">
                 <Spinner className="h-4 w-4" /> You left the Stripe page before paying. Releasing that payment so you can book again.
               </p>
             ) : null}
-            {error ? <div className="sm:col-span-2 xl:col-span-4"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div> : null}
+            {error ? <ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /> : null}
           </form>
-        )}
-      </div>
+          <aside className={summaryAside}>
+            <h2 className="font-display text-lg font-semibold text-fg">Order summary</h2>
+            <dl className={`mt-4 ${summaryLines}`}>
+              <div className="flex justify-between gap-3"><dt>This week, {form.courtIds.length} {form.courtIds.length === 1 ? "court" : "courts"}</dt><dd className="text-fg"><Money amount={weekSubtotal} currency={currency} /></dd></div>
+              {weekDiscount > 0 ? <div className="flex justify-between gap-3"><dt>Promotion</dt><dd>-<Money amount={weekDiscount} currency={currency} /></dd></div> : null}
+              <div className="flex justify-between gap-3"><dt>Points value</dt><dd><Money amount={payPreview.value} currency={currency} /></dd></div>
+              <div className="mt-1 flex justify-between gap-3 border-t border-border pt-2 font-semibold text-fg"><dt>{payAtRegistration ? "To pay now" : "To pay for this week"}</dt><dd><Money amount={payPreview.cash} currency={currency} /></dd></div>
+            </dl>
+            <div className="mt-4 text-sm leading-relaxed text-fg-muted">
+              {each === null || form.courtIds.length === 0 ? (
+                <p>Choose at least 30 minutes and one court. You can hold the same time for up to 12 weeks.</p>
+              ) : (
+                <>
+                  <p className="font-semibold text-fg">
+                    Total for every selected court and week: <span className="tabular-nums"><Money amount={totalAfterSavings} currency={currency} /></span>
+                    {weekSavings > 0 ? <span className="ml-2 font-normal text-fg-muted line-through"><Money amount={fullTotal} currency={currency} /></span> : null}
+                  </p>
+                  {weekSavings > 0 ? (
+                    <p className="mt-1 inline-flex items-center gap-1.5 text-accent-text">
+                      <Tag className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span>You save <Money amount={weekSavings} currency={currency} /> on this week with {weekDiscount > 0 && payPreview.value > 0 ? "your promotion code and points" : weekDiscount > 0 ? "your promotion code" : "your points"}.</span>
+                    </p>
+                  ) : null}
+                  <p className="mt-1">You do not pay every later week now. Each of those weeks is held until 24 hours before it starts. {scheduledRate ? "This total uses the venue rate for the days and hours you chose. " : ""}{payAtRegistration ? "The first week starts within 24 hours, so it is not held. Pay for that week now or those courts stay open." : "Pay each week before 24 hours of that session, or those courts are released."} {quoting ? <Spinner className="inline h-3.5 w-3.5" /> : null}</p>
+                </>
+              )}
+            </div>
+            <PayBar total={each !== null && form.courtIds.length > 0 ? <><span>Total</span><Money amount={payAtRegistration ? payPreview.cash : totalAfterSavings} currency={currency} /></> : undefined}>
+              <Button type="submit" form="book-court" className="w-full" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={busy || releasing} disabled={!canSubmit}>
+                {submitLabel}
+              </Button>
+            </PayBar>
+          </aside>
+        </div>
+      )}
     </main>
   );
 }

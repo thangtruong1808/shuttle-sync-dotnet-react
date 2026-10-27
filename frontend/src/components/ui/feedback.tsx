@@ -51,7 +51,7 @@ export function Alert({
 }) {
   const { box, icon: Icon } = alertTones[tone];
   return (
-    <div role={tone === "danger" ? "alert" : "status"} className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${box} ${className}`}>
+    <div role={tone === "danger" ? "alert" : "status"} aria-live={tone === "danger" ? "assertive" : "polite"} className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${box} ${className}`}>
       <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         {title ? <p className="font-semibold">{title}</p> : null}

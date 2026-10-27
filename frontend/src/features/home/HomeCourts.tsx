@@ -86,11 +86,14 @@ export function HomeCourts({
           </ul>
         </>
       ) : (
-        <div className="mt-4 space-y-3">
-          <EmptyState title="No courts on this day" body="Try the next day or look at another venue." />
-          {nextDay ? (
-            <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={nextLoading} disabled={nextDisabled} onClick={onNext}>See {nextDay}</Button>
-          ) : null}
+        <div className="mt-4">
+          <EmptyState
+            title="No courts on this day"
+            body="Try the next day or look at another venue."
+            action={nextDay ? (
+              <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={nextLoading} disabled={nextDisabled} onClick={onNext}>See {nextDay}</Button>
+            ) : undefined}
+          />
         </div>
       )}
     </section>

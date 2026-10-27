@@ -70,7 +70,7 @@ export function RecommendationBanner() {
         <Sparkles className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         <span>A venue wrote {label} for you. {stay}</span>
       </p>
-      <Link className="mt-2 inline-flex font-semibold text-fg underline decoration-line underline-offset-4 hover:text-accent-text" to="/profile/recommendations">
+      <Link className="mt-2 inline-flex font-semibold text-fg underline decoration-accent-text underline-offset-4 hover:text-accent-text" to="/profile/recommendations">
         Open recommendations
       </Link>
     </section>

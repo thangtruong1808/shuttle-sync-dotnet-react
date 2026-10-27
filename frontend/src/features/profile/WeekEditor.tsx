@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { CalendarClock, CalendarDays, ChevronDown, CircleAlert, CircleCheck, Clock, CreditCard, TriangleAlert, Undo2 } from "lucide-react";
-import { Button, PickerInput, Spinner } from "../../components/ui";
+import { Alert, Button, PickerInput, Spinner, buttonClass, controlClass } from "../../components/ui";
 import { Money, formatVenueRange } from "../../components/format";
 import { AuthRequestError } from "../auth/authApi";
 import { applyWeekChange, cancelBooking, deleteUnpaidHold, refreshUnpaidHolds, setCourtRepeat, weekAvailability, weekOpenTimes, WeekChangeError, type CourtWeekCourt, type WeekFacts, type WeekSlot } from "./profileApi";
@@ -257,7 +257,7 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
       <ul className="mt-3 grid gap-2 sm:grid-cols-2">
         {courts.map((court) => (
           <li key={court.bookingId}>
-            <label className="flex items-center gap-2 rounded-xl border border-fg/10 px-3 py-2 text-sm text-fg">
+            <label className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm text-fg">
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-accent-text"
@@ -335,7 +335,7 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
       ) : null}
       {notice ? <p className="mt-3 rounded-xl border border-accent-text/40 bg-accent/10 px-3 py-2 text-sm text-accent-text" role="status">{notice}</p> : null}
       {confirmDelete ? <p className="mt-2 text-sm text-fg" role="status">Delete this week? Unpaid courts are released. A paid court is cancelled under the cancellation policy.</p> : null}
-      {error ? <p className="mt-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-800 dark:text-rose-100" role="alert">{error}</p> : null}
+      {error ? <Alert tone="danger" className="mt-2">{error}</Alert> : null}
       {block ? <WeekReason facts={block.facts} fallback={block.fallback} /> : null}
       {block?.facts.code === "PRICE_INCREASE" && pendingMove ? (
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
@@ -375,7 +375,7 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
           <p className="mt-1 text-xs text-fg/70">Every court in this week moves together. Currently {formatWeekDate(first.startTime, first.timeZone)} · {formatVenueRange(first.startTime, first.endTime, first.timeZone)}</p>
           <label className="mt-3 block text-sm text-fg">
             <span className="mb-1 block text-fg/70">Date</span>
-            <PickerInput type="date" required value={moveDate} disabled={locked} onChange={(event) => { setMoveDate(event.target.value); setBlock(null); setChosenTime(null); }} className="w-full rounded-xl border border-fg/15 bg-fg/5 px-3 py-2 text-fg [color-scheme:dark]" />
+            <PickerInput type="date" required value={moveDate} disabled={locked} onChange={(event) => { setMoveDate(event.target.value); setBlock(null); setChosenTime(null); }} className={controlClass} />
           </label>
           <p className="mt-3 text-xs text-fg/70">Pick a time, then confirm. Nothing moves until you confirm.</p>
           <WeekTimes slots={times ?? []} loading={loadingTimes || times === null} held={heldSlot} empty="No open time on this date fits every court in this week." busy={locked} selected={chosenTime} onPick={(slot) => { setChosenTime(slot); setBlock(null); setError(null); }} />
@@ -406,7 +406,7 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
         </div>
       ) : null}
       {hourCourt || sessionCourt ? null : (
-        <div className="mt-3 flex flex-col gap-2 rounded-xl border border-fg/10 bg-fg/[0.03] p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-3 flex flex-col gap-2 rounded-xl border border-border bg-inset p-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-fg/80"><span className="font-medium text-fg">Need a different day or time?</span></p>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Button
@@ -451,19 +451,19 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
           </div>
         </div>
       )}
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+      <div className="mt-3 flex flex-col gap-2 rounded-xl border border-border bg-inset p-2 sm:flex-row sm:flex-wrap">
         <Button type="button" variant="danger" className="w-full sm:w-auto" loading={deleting} disabled={locked && !deleting} onClick={() => void removeWeek()}>{confirmDelete ? "Confirm delete" : "Delete this week"}</Button>
         {availability === "full" ? (
-          <button type="button" aria-disabled="true" aria-describedby={reasonId} className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl border border-fg/15 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg/70 sm:w-auto" onClick={(event) => event.preventDefault()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") event.preventDefault(); }}>
+          <button type="button" aria-disabled="true" aria-describedby={reasonId} className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-semibold text-fg-muted sm:w-auto" onClick={(event) => event.preventDefault()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") event.preventDefault(); }}>
             Add another court
           </button>
         ) : availability === "loading" ? (
           <Button type="button" variant="secondary" className="w-full sm:w-auto" loading disabled>Add another court</Button>
         ) : (
-          <Link to={`/${first.venueSlug}/book?${addParams}`} className="inline-flex w-full items-center justify-center rounded-xl border border-fg/15 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg hover:bg-fg/10 sm:w-auto">Add another court</Link>
+          <Link to={`/${first.venueSlug}/book?${addParams}`} className="inline-flex w-full items-center justify-center rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-fg hover:bg-surface-2 sm:w-auto">Add another court</Link>
         )}
         {pendingTopUp.length > 0 ? (
-          <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pendingTopUp.map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
+          <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pendingTopUp.map((court) => court.bookingId).join(",")}`} className={buttonClass("primary", "md", "w-full sm:w-auto")}>
             <CreditCard className="h-4 w-4" aria-hidden="true" />
             Pay the difference
           </Link>
@@ -474,7 +474,7 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
             <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked} icon={<Undo2 className="h-4 w-4" aria-hidden="true" />} onClick={undoChanges}>Cancel changes</Button>
           </>
         ) : pending.length > 0 ? (
-          <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pending.map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
+          <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pending.map((court) => court.bookingId).join(",")}`} className={buttonClass("primary", "md", "w-full sm:w-auto")}>
             <CreditCard className="h-4 w-4" aria-hidden="true" />
             Pay this week
           </Link>

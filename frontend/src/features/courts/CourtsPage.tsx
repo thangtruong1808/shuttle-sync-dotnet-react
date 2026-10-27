@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { EmptyState, ErrorState, venueToday } from "../../components/format";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
-import { controlClass, Field, PageHeader, PickerInput, Skeleton } from "../../components/ui";
+import { Button, controlClass, Field, PageHeader, PickerInput, Skeleton } from "../../components/ui";
 import { venueAvailability, type Availability } from "../venues/venueApi";
 import { BookedTime, DayChart, IncentiveNote, SessionClock, SocialTimes, upcomingBookings, useNow } from "./CourtSchedule";
 import { CourtCard } from "./CourtCard";
@@ -108,7 +108,13 @@ export default function CourtsPage() {
             </ul>
           </>
         ) : (
-          <div className="mt-6"><EmptyState title="No courts on this day" body="Change the date or look at another venue." /></div>
+          <div className="mt-6">
+            <EmptyState
+              title="No courts on this day"
+              body="Change the date or look at another venue."
+              action={<Button variant="secondary" onClick={() => document.querySelector<HTMLInputElement>('input[type="date"]')?.focus()}>Change the date</Button>}
+            />
+          </div>
         )}
       </PageSection>
     </main>

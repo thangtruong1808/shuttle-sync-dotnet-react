@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Button, PickerInput, Spinner } from "../../components/ui";
+import { Button, controlClass, Field, PickerInput, Spinner } from "../../components/ui";
+import { PayBar, summaryAside, summaryLines } from "./checkoutUi";
 import { applyWeekChange, weekAvailability, weekOpenTimes, WeekChangeError, type WeekFacts, type WeekSlot } from "../profile/profileApi";
 import { WeekReason } from "../profile/WeekReason";
 
@@ -105,7 +106,8 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
       {loadingCourts || !courts ? (
         <p className="mt-4 flex items-center gap-2 text-sm text-fg" aria-busy="true"><Spinner className="h-4 w-4" /> Loading courts</p>
       ) : (
-        <form className="mt-4 grid max-w-3xl gap-4" onSubmit={(event) => { event.preventDefault(); if (picked) void confirm(picked); }}>
+        <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <form id="week-extend" className="grid gap-4" onSubmit={(event) => { event.preventDefault(); if (picked) void confirm(picked); }}>
           <fieldset>
             <legend className="mb-2 text-sm text-fg/70">Courts</legend>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -131,10 +133,9 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
               })}
             </div>
           </fieldset>
-          <label className="text-sm text-fg">
-            <span className="mb-1 block text-fg/70">Date</span>
-            <PickerInput type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setBlock(null); }} className="w-full max-w-xs rounded-xl border border-fg/15 bg-surface px-3 py-2.5 text-fg" />
-          </label>
+          <Field label="Date" className="max-w-xs">
+            {({ id }) => <PickerInput id={id} type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setBlock(null); }} className={controlClass} />}
+          </Field>
           <div>
             <p className="text-sm text-fg/70">Times that fit every ticked court</p>
             {loadingTimes || times === null ? (
@@ -152,12 +153,23 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
             )}
           </div>
           {block ? <WeekReason facts={block.facts} fallback={block.fallback} /> : null}
-          {block?.facts.code === "PRICE_INCREASE" && picked ? (
-            <Button type="button" className="w-full sm:w-auto" loading={accepting} disabled={busy && !accepting} onClick={() => void confirm(picked, true)}>Accept the difference and move</Button>
-          ) : (
-            <Button type="submit" className="w-full sm:w-auto" loading={busy} disabled={!picked || busy}>Update this week</Button>
-          )}
         </form>
+        <aside className={summaryAside}>
+          <h2 className="font-display text-lg font-semibold text-fg">This change</h2>
+          <dl className={`mt-4 ${summaryLines}`}>
+            <div className="flex justify-between gap-3"><dt>Courts</dt><dd className="text-right text-fg">{selected.length}</dd></div>
+            <div className="flex justify-between gap-3"><dt>Time</dt><dd className="text-right text-fg">{picked ? picked.label : "Choose a time"}</dd></div>
+          </dl>
+          <p className="mt-3 text-sm leading-relaxed text-fg-muted">This updates the same week.</p>
+          <PayBar>
+            {block?.facts.code === "PRICE_INCREASE" && picked ? (
+              <Button type="button" className="w-full" loading={accepting} disabled={busy && !accepting} onClick={() => void confirm(picked, true)}>Accept the difference and move</Button>
+            ) : (
+              <Button type="submit" form="week-extend" className="w-full" loading={busy} disabled={!picked || busy}>Update this week</Button>
+            )}
+          </PayBar>
+        </aside>
+        </div>
       )}
     </main>
   );

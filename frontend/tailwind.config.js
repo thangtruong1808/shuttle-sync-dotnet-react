@@ -23,10 +23,6 @@ export default {
           fg: token("accent-fg"),
           text: token("accent-text"),
         },
-        ink: token("canvas"),
-        pine: token("surface"),
-        line: token("accent"),
-        mist: token("fg"),
       },
       fontSize: {
         display: ["clamp(2.5rem, 5vw, 3.5rem)", { lineHeight: "1.05", letterSpacing: "-0.02em" }],

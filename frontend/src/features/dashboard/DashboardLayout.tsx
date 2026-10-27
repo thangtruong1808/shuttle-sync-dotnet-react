@@ -5,6 +5,7 @@ import { Building2, CalendarCheck, ChevronRight, CreditCard, Gift, House, Layout
 import type { AppDispatch, RootState } from "../../app/store";
 import { Skeleton, Spinner } from "../../components/ui";
 import { BrandMark, Wordmark } from "../../components/layout/BrandMark";
+import { SkipLink } from "../../components/SkipLink";
 import { ThemeToggle } from "../../components/theme/ThemeToggle";
 import { initials } from "../../components/format";
 import { loadCurrentUser, logout } from "../auth/authSlice";
@@ -46,7 +47,9 @@ function pageTitle(path: string): string {
   if (path.includes("/incentives")) return "Incentives";
   if (path.includes("/closures")) return "Closures";
   if (path.includes("/slots")) return "Slots";
+  if (path.includes("/rates")) return "Rates";
   if (path.includes("/courts")) return "Courts";
+  if (/^\/dashboard\/venues\/[^/]+$/.test(path)) return "Details";
   if (path.startsWith("/dashboard/venues/")) return "Venue";
   if (path.startsWith("/dashboard/users/")) return "User";
   return match?.label ?? "Dashboard";
@@ -94,6 +97,7 @@ export default function DashboardLayout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-canvas text-fg">
+      <SkipLink />
       <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-3 border-b border-border bg-canvas/85 px-4 backdrop-blur-md">
         <button
           type="button"
@@ -186,7 +190,7 @@ export default function DashboardLayout() {
         {open ? (
           <button type="button" className="fixed inset-0 z-20 bg-black/50 lg:hidden" aria-label="Close sidebar" onClick={() => setOpen(false)} />
         ) : null}
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 px-4 py-6 outline-none sm:px-6 lg:px-8 lg:py-8">
           <div className="mx-auto max-w-7xl">
             <Outlet />
           </div>

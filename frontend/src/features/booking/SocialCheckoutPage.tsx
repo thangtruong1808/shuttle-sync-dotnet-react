@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch } from "../../app/store";
 import { Link, Navigate, useLocation, useParams, useSearchParams } from "react-router-dom";
-import { ArrowRight, CalendarDays, CircleCheck, Clock, ShieldCheck } from "lucide-react";
+import { ArrowRight, CalendarDays, CircleCheck, Clock } from "lucide-react";
 import type { RootState } from "../../app/store";
 import { ErrorState, Money, formatVenueDay, formatVenueRange } from "../../components/format";
-import { Button, Skeleton, Spinner } from "../../components/ui";
+import { Alert, Button, Skeleton, Spinner } from "../../components/ui";
+import { PayBar, summaryAside, summaryLines } from "./checkoutUi";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { socialOffer, socialRegistration, startSocialBatchCheckout, venuePromotions, type Promotion, type SocialOffer, type SocialRegistration } from "../venues/venueApi";
@@ -229,18 +230,14 @@ export default function SocialCheckoutPage() {
             </p>
             {outcome?.status === "confirmed" ? <Outcome row={outcome} count={offers.length} /> : null}
           </section>
-          <section className="rounded-3xl border border-fg/10 bg-gradient-to-b from-fg/5 to-surface/90 p-4 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.8)] sm:p-5 lg:sticky lg:top-4">
+          <section className={summaryAside}>
             {outcome?.status === "confirmed" ? (
-              <div className="space-y-3" role="status">
-                <p className="flex items-center gap-2 font-semibold text-accent-text">
-                  <ShieldCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
-                  Payment confirmed
-                </p>
-                <Link to="/profile/bookings" className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300">
+              <Alert tone="success" title="Payment confirmed">
+                <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
                   <CalendarDays className="h-4 w-4" aria-hidden="true" />
                   View my bookings
                 </Link>
-              </div>
+              </Alert>
             ) : waiting || paymentFailed || paymentProcessing ? (
               <div className="space-y-3" role="status">
                 <p className="text-sm leading-relaxed text-fg/80">
@@ -338,17 +335,19 @@ export default function SocialCheckoutPage() {
                   />
                   <p className="mt-1 text-sm text-fg/70">{Math.min(points, maxPoints)} of {balance} points. {rate} points = {currency} 1.</p>
                 </div>
-                <dl className="grid gap-1 text-sm text-fg/80">
+                <dl className={summaryLines}>
                   {discount > 0 ? <div className="flex justify-between gap-3"><dt>Promotion</dt><dd>-<Money amount={discount} currency={currency} /></dd></div> : null}
                   <div className="flex justify-between gap-3"><dt>Points value</dt><dd><Money amount={preview.value} currency={currency} /></dd></div>
-                  <div className="flex justify-between gap-3 font-semibold text-fg"><dt>To pay</dt><dd><Money amount={preview.cash} currency={currency} /></dd></div>
+                  <div className="flex justify-between gap-3 border-t border-border pt-2 font-semibold text-fg"><dt>To pay</dt><dd><Money amount={preview.cash} currency={currency} /></dd></div>
                 </dl>
                 {cashTooSmall ? <p className="text-sm text-fg">Use enough points to cover the registration, or leave at least $0.50 to pay.</p> : null}
                 {formError ? <p className="text-sm text-fg" role="alert">{formError}</p> : null}
                 {waiting ? <p className="flex items-center gap-2 text-sm text-fg" role="status"><Spinner className="h-4 w-4" /> Checking the payment…</p> : null}
-                <Button type="submit" className="w-full" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={paying || waiting} disabled={cashTooSmall}>
-                  {preview.cash === 0 ? "Register with points" : "Continue to Stripe"}
-                </Button>
+                <PayBar total={<><span>To pay</span><Money amount={preview.cash} currency={currency} /></>}>
+                  <Button type="submit" className="w-full" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={paying || waiting} disabled={cashTooSmall}>
+                    {preview.cash === 0 ? "Register with points" : "Continue to Stripe"}
+                  </Button>
+                </PayBar>
               </form>
             )}
           </section>
@@ -361,21 +360,17 @@ export default function SocialCheckoutPage() {
 function Outcome({ row, count }: { row: SocialRegistration; count: number }) {
   if (row.status === "confirmed") {
     return (
-      <div className="mt-6 space-y-3 rounded-2xl border border-accent-text/30 bg-accent/10 p-4" role="status">
-        <p className="flex items-center gap-2 text-base font-semibold text-accent-text">
-          <CircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
-          You're registered for {count} drop-in times. Have a good game.
-        </p>
-        <p className="text-sm text-fg/80">
+      <Alert tone="success" className="mt-6" title={`You're registered for ${count} drop-in times. Have a good game.`}>
+        <p>
           {row.pointsRedeemed > 0 ? `${row.pointsRedeemed} points were used. ` : ""}
           {row.cashAmount > 0 ? "Your payment is confirmed. " : "No card payment was needed. "}
           {row.incentivePoints > 0 ? `${row.incentivePoints} points are added after the sessions end, and you can use them on a later booking.` : "Reward points from these sessions can offset a later booking."}
         </p>
-        <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
+        <Link to="/profile/bookings" className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
           <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
           View my bookings
         </Link>
-      </div>
+      </Alert>
     );
   }
   return null;

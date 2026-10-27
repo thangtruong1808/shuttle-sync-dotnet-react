@@ -37,7 +37,7 @@ function apply(resolved: "light" | "dark") {
   const root = document.documentElement;
   root.classList.toggle("dark", resolved === "dark");
   root.style.colorScheme = resolved;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", resolved === "dark" ? "#07140f" : "#f5f8f4");
+  document.getElementById("theme-color")?.setAttribute("content", resolved === "dark" ? "#07140f" : "#f5f8f4");
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

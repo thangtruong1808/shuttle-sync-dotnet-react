@@ -10,6 +10,7 @@ import { PaymentBell } from "../../features/profile/PaymentReminder";
 import { RecommendationBell } from "../../features/profile/RecommendationNotice";
 import { rememberVenueSlug, venueForPage } from "../../features/venues/venueApi";
 import { BrandMark, Wordmark } from "./BrandMark";
+import { SkipLink } from "../SkipLink";
 import { useVenues } from "./SiteLayout";
 
 const links = [
@@ -100,6 +101,7 @@ export function Navbar() {
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-canvas/85 backdrop-blur-md supports-[backdrop-filter]:bg-canvas/70">
+      <SkipLink />
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4 sm:px-6 lg:px-8">
         <NavLink to={activeSlug ? `/${activeSlug}` : "/"} className={`flex shrink-0 items-center gap-2.5 rounded-lg ${focusRing}`}>
           <BrandMark />
@@ -301,7 +303,7 @@ function VenuePicker({
               onChange={(event) => onQuery(event.target.value)}
               placeholder="Search venues"
               aria-label="Search venues"
-              className="w-full rounded-lg border border-border bg-surface-2 py-2 pl-9 pr-3 text-sm text-fg outline-none placeholder:text-fg-muted focus:border-accent-text"
+              className="w-full rounded-lg border border-border bg-surface-2 py-2 pl-9 pr-3 text-sm text-fg outline-none placeholder:text-fg-muted focus:border-accent-text focus-visible:ring-2 focus-visible:ring-accent-text/30"
             />
           </label>
           <ul id={listId} role="listbox" aria-label="Venues" className="mt-2 max-h-64 overflow-auto">

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Clock, ShieldCheck, X } from "lucide-react";
-import { Button, PickerInput, Spinner } from "../../components/ui";
+import { Alert, Button, PickerInput, Spinner, controlClass } from "../../components/ui";
 import { Money } from "../../components/format";
 import { AuthRequestError } from "../auth/authApi";
 import { ConfirmTimeDialog } from "./ConfirmTimeDialog";
@@ -240,15 +240,15 @@ export function ChangeHours({
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
         <label className="text-sm text-fg">
           <span className="mb-1 block">Date</span>
-          <PickerInput type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className="w-full rounded-xl border border-fg/15 bg-fg/5 px-3 py-2 text-fg [color-scheme:dark]" />
+          <PickerInput type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className={controlClass} />
         </label>
         <label className="text-sm text-fg">
           <span className="mb-1 block">Start</span>
-          <PickerInput type="time" required value={start} disabled={busy} onChange={(event) => { setStart(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className="w-full rounded-xl border border-fg/15 bg-fg/5 px-3 py-2 text-fg [color-scheme:dark]" />
+          <PickerInput type="time" required value={start} disabled={busy} onChange={(event) => { setStart(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className={controlClass} />
         </label>
         <label className="text-sm text-fg">
           <span className="mb-1 block">End</span>
-          <PickerInput type="time" required value={end} disabled={busy} onChange={(event) => { setEnd(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className="w-full rounded-xl border border-fg/15 bg-fg/5 px-3 py-2 text-fg [color-scheme:dark]" />
+          <PickerInput type="time" required value={end} disabled={busy} onChange={(event) => { setEnd(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className={controlClass} />
         </label>
       </div>
       <p className="mt-3 text-xs text-fg/70">Recommended times for {lengthLabel(duration)}. Picking one fills Start and End.</p>
@@ -269,7 +269,7 @@ export function ChangeHours({
           </div>
         </div>
       ) : null}
-      {error ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-800 dark:text-rose-100" role="alert">{error}</p> : null}
+      {error ? <Alert tone="danger" className="mt-3">{error}</Alert> : null}
       {prompt ? (
         <div className="mt-3 rounded-xl border border-amber-300/50 bg-amber-400/10 p-3" role="status">
           <p className="text-sm font-semibold text-fg">{prompt.code === "PRICE_INCREASE" ? "This time costs more" : "This time costs less"}</p>
@@ -287,7 +287,7 @@ export function ChangeHours({
           </div>
         </div>
       ) : null}
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <div className="mt-3 flex flex-col gap-2 rounded-xl border border-border bg-inset p-2 sm:flex-row">
         <Button type="button" className="w-full sm:w-auto" disabled={busy} icon={<Clock className="h-4 w-4" aria-hidden="true" />} onClick={review}>Review these hours</Button>
         <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={busy} icon={<X className="h-4 w-4" aria-hidden="true" />} onClick={onClose}>Keep current hours</Button>
       </div>

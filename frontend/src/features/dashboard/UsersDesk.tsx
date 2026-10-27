@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { EmptyState, ErrorState, formatVenueDateTime } from "../../components/format";
-import { Button, Skeleton } from "../../components/ui";
+import { Button, PageHeader, Skeleton } from "../../components/ui";
 import { dashboardVenues, type Venue } from "../venues/venueApi";
 import {
   assignVenue,
@@ -60,7 +60,7 @@ export function UsersPage() {
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-fg">Users</h1>
+      <PageHeader title="Users" description="Search players and staff, then open a person to update their account." />
       <div className="mt-4"><Success message={success} /></div>
       <form
         className="mt-4 flex flex-wrap gap-2"
@@ -74,7 +74,7 @@ export function UsersPage() {
           setAttempt((value) => value + 1);
         }}
       >
-        <input className={`${control} max-w-sm`} placeholder="Name or email" value={query} disabled={filtering} onChange={(event) => setQuery(event.target.value)} />
+        <input className={`${control} max-w-sm`} placeholder="Name or email" aria-label="Name or email" value={query} disabled={filtering} onChange={(event) => setQuery(event.target.value)} />
         <Button type="submit" variant="secondary" loading={filtering} disabled={pending !== null || pendingSize !== null}>Search</Button>
       </form>
       {rows && !error ? (
@@ -175,8 +175,7 @@ export function UserDesk() {
   return (
     <div className="grid gap-6">
       <div>
-        <h1 className="font-display text-3xl text-fg">{user.displayName || user.email}</h1>
-        <p className="text-sm text-fg/65">{user.email} · {user.rewardPoints} pts</p>
+        <PageHeader title={user.displayName || user.email} description={`${user.email} · ${user.rewardPoints} pts`} />
       </div>
       <form
         key={`${user.displayName ?? ""}:${user.role}:${user.mobile ?? ""}`}

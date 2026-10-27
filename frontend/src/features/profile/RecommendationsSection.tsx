@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { EmptyState, ErrorState, formatVenueDateTime } from "../../components/format";
-import { Button, Skeleton } from "../../components/ui";
+import { Badge, Button, PageHeader, Skeleton } from "../../components/ui";
 import { Tag } from "../dashboard/dashboardUi";
 import { ListPager } from "./ProfileLists";
 import { useUnreadRecommendations } from "./RecommendationNotice";
@@ -100,10 +100,7 @@ export function RecommendationsSection() {
   return (
     <div>
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-display text-3xl text-fg">Recommendations</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg/75">Notes written for you. A new note stays unread until you mark it read.</p>
-        </div>
+        <PageHeader title="Recommendations" description="Notes written for you. A new note stays unread until you mark it read." />
         {unread > 0 ? (
           <Button variant="secondary" loading={markingAll} disabled={busy} onClick={() => void onMarkAll()}>
             Mark all as read
@@ -123,9 +120,9 @@ export function RecommendationsSection() {
         <>
           <ul className="mt-4 grid gap-3">
             {data.items.map((row) => (
-              <li key={row.id} className="rounded-2xl border border-fg/10 bg-surface/80 p-4">
+              <li key={row.id} className="rounded-2xl border border-border bg-surface p-4 shadow-card dark:shadow-none">
                 <div className="flex flex-wrap items-center gap-2">
-                  {!row.readAt ? <span className="inline-flex rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-accent-fg">New</span> : null}
+                  {!row.readAt ? <Badge tone="accent">New</Badge> : null}
                   <Tag value={typeLabel(row.recommendationType)} />
                   <span className="text-sm text-fg">{row.venueName?.trim() || "Any venue"}</span>
                   {!row.readAt ? (

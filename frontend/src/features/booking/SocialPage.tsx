@@ -5,7 +5,7 @@ import { Link, Navigate, useLocation, useNavigate, useParams } from "react-route
 import type { RootState } from "../../app/store";
 import { ErrorState, Money, formatVenueDay, formatVenueRange } from "../../components/format";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
-import { Button, Skeleton } from "../../components/ui";
+import { Badge, Button, Skeleton } from "../../components/ui";
 import { CourtRoster, SessionClock, SocialRoster, useNow } from "../courts/CourtSchedule";
 import { openSocials, rememberVenueSlug, type PublicSocial } from "../venues/venueApi";
 
@@ -150,13 +150,25 @@ function SessionCard({
   const yours = social.yourStatus;
   const canSelect = !full && yours !== "confirmed" && yours !== "waitlist";
   const waiting = social.waitlistCount ?? 0;
+  const seats = limit > 0 ? limit * each : 0;
+  const taken = seats > 0 ? Math.min(seats, social.playerCount) : 0;
   const details = (
     <>
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {full ? <Badge tone="warning">Full</Badge> : null}
+        {yours === "waitlist" ? <Badge tone="info">Waitlist</Badge> : null}
+        {waiting > 0 ? <Badge tone="neutral">{waiting} waiting</Badge> : null}
+      </div>
       <p className="text-sm font-semibold text-fg">{formatVenueDay(social.startTime, timeZone)}</p>
       <p className="whitespace-nowrap text-sm text-fg">{formatVenueRange(social.startTime, social.endTime, timeZone)}</p>
       <SessionClock start={social.startTime} end={social.endTime} />
       {limit > 0 ? (
-        <p className="mt-2 text-sm text-fg/80">{social.playerCount} of {limit * each} players · {each} per court · {limit} {limit === 1 ? "court" : "courts"}</p>
+        <div className="mt-2">
+          <p className="text-sm text-fg-muted">{social.playerCount} of {seats} players · {each} per court · {limit} {limit === 1 ? "court" : "courts"}</p>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-inset" role="meter" aria-label="Places taken" aria-valuemin={0} aria-valuemax={seats} aria-valuenow={taken}>
+            <div className={`h-full rounded-full ${full ? "bg-amber-400" : "bg-accent"}`} style={{ width: `${seats === 0 ? 0 : Math.round((taken / seats) * 100)}%` }} />
+          </div>
+        </div>
       ) : null}
       <SocialRoster playerCount={social.playerCount} courtCount={social.courtLimit ?? courtCount} playersPerCourt={social.playersPerCourt} courts={social.courts ?? []} />
       <p className="mt-3 text-sm text-fg/75">
@@ -178,7 +190,7 @@ function SessionCard({
   );
 
   return (
-    <article className={`flex h-full flex-col rounded-3xl border p-4 ${pressed ? "border-accent-text/60 bg-accent/10" : full ? "border-accent-text/40 bg-surface/80" : "border-fg/10 bg-surface/80 hover:border-accent-text/40"}`}>
+    <article className={`flex h-full flex-col rounded-2xl border p-4 shadow-card dark:shadow-none ${pressed ? "border-accent-text/60 bg-accent/10" : full ? "border-amber-500/40 bg-surface" : "border-border bg-surface"}`}>
       {canSelect ? (
         <button type="button" className="w-full text-left" aria-pressed={pressed} onClick={onToggle}>
           {details}

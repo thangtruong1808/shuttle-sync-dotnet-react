@@ -3,7 +3,7 @@ import { useSelector } from "react-redux";
 import { Link, useLocation } from "react-router-dom";
 import type { RootState } from "../../app/store";
 import { EmptyState, ErrorState } from "../../components/format";
-import { Button, Skeleton } from "../../components/ui";
+import { Button, PageHeader, Skeleton } from "../../components/ui";
 import { dashboardVenues, type Venue } from "../venues/venueApi";
 import { DashError, saveVenue, uploadDashboardImage } from "./dashboardApi";
 import { slugError, slugify } from "../venues/slug";
@@ -74,17 +74,18 @@ export default function VenuesPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-3xl text-fg">Venues</h1>
-        {role === "admin" ? (
+      <PageHeader
+        title="Venues"
+        description="Open a venue to manage its courts, times, and prices."
+        actions={role === "admin" ? (
           <Button variant="secondary" onClick={() => setCreating((value) => !value)}>
             {creating ? "Close form" : "New venue"}
           </Button>
         ) : null}
-      </div>
+      />
       {creating && role === "admin" ? (
         <form
-          className="mt-4 grid gap-3 rounded-2xl border border-fg/10 p-4 sm:grid-cols-2"
+          className="grid gap-3 rounded-2xl border border-border bg-surface p-4 shadow-card dark:shadow-none sm:grid-cols-2"
           onSubmit={(event) => {
             event.preventDefault();
             setFormError(null);
@@ -205,7 +206,7 @@ export default function VenuesPage() {
         <ul className="mt-6 grid gap-3 sm:grid-cols-2">
           {venues.map((venue) => (
             <li key={venue.id}>
-              <Link to={`/dashboard/venues/${venue.id}`} className="block rounded-2xl border border-fg/10 p-4 hover:bg-fg/5">
+              <Link to={`/dashboard/venues/${venue.id}`} className="block rounded-2xl border border-border bg-surface p-4 shadow-card hover:bg-surface-2 dark:shadow-none">
                 <p className="font-medium text-fg">{venue.name}</p>
                 <p className="text-sm text-fg/65">/{venue.slug}</p>
               </Link>

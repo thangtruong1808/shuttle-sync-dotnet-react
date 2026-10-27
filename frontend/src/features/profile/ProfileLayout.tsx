@@ -60,26 +60,23 @@ export default function ProfileLayout() {
   }
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex min-w-0 items-center rounded-xl text-sm font-medium ${isActive ? "bg-accent/15 text-accent-text" : "text-fg/80 hover:bg-fg/5"} ${open ? "w-full gap-2 px-3 py-2.5" : "h-12 w-full justify-center"}`;
+    `flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-medium ${isActive ? "bg-accent/15 text-accent-text" : "text-fg-muted hover:bg-fg/5 hover:text-fg"} ${open ? "lg:w-full" : "lg:h-12 lg:w-full lg:justify-center lg:px-0"}`;
 
   return (
-    <div className={`grid w-full min-w-0 gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${open ? "lg:grid-cols-[16rem_1fr]" : "lg:grid-cols-[5rem_1fr]"}`}>
-      <aside className={`min-w-0 rounded-3xl border border-fg/10 bg-surface/80 lg:min-h-[32rem] ${open ? "p-4" : "p-3"}`}>
-        <Tip label={open ? "Close sidebar" : "Open sidebar"}>
-          <button
-            type="button"
-            title={open ? "Close sidebar" : "Open sidebar"}
-            className={`flex items-center justify-center rounded-xl border border-fg/10 text-fg hover:bg-fg/5 ${open ? "h-10 w-10" : "h-12 w-full"}`}
-            aria-expanded={open}
-            aria-controls="profile-nav"
-            onClick={() => setOpen((value) => !value)}
-          >
-            {open ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeftOpen className="h-6 w-6" />}
-            <span className="sr-only">{open ? "Close sidebar" : "Open sidebar"}</span>
-          </button>
-        </Tip>
-        {open ? (
-          <div className="mt-4 flex items-center gap-3">
+    <div className={`grid w-full min-w-0 gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${open ? "lg:grid-cols-[16rem_minmax(0,1fr)]" : "lg:grid-cols-[4.5rem_minmax(0,1fr)]"}`}>
+      <aside className={`min-w-0 rounded-2xl border border-border bg-surface shadow-card dark:shadow-none lg:min-h-[32rem] ${open ? "p-3 lg:p-4" : "p-3"}`}>
+        <button
+          type="button"
+          title={open ? "Close sidebar" : "Open sidebar"}
+          className={`hidden items-center justify-center rounded-xl border border-border text-fg hover:bg-fg/5 lg:flex ${open ? "h-10 w-10" : "h-12 w-full"}`}
+          aria-expanded={open}
+          aria-controls="profile-nav"
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeftOpen className="h-6 w-6" />}
+          <span className="sr-only">{open ? "Close sidebar" : "Open sidebar"}</span>
+        </button>
+        <div className={`mt-0 flex items-center gap-3 lg:mt-4 ${open ? "" : "lg:hidden"}`}>
             {user.userAvatar ? (
               <img src={user.userAvatar} alt="" className="h-12 w-12 rounded-full object-cover" />
             ) : (
@@ -91,8 +88,7 @@ export default function ProfileLayout() {
               <p className="text-sm font-semibold text-accent-text">{user.rewardPoints} pts</p>
             </div>
           </div>
-        ) : null}
-        <nav id="profile-nav" className={`mt-4 gap-2 ${open ? "grid grid-cols-1 min-[420px]:grid-cols-2 lg:flex lg:flex-col" : "grid w-full grid-cols-4 sm:grid-cols-8 lg:grid-cols-1"}`} aria-label="Profile">
+        <nav id="profile-nav" className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible" aria-label="Profile">
           {sections.map((section) => {
             const Icon = section.icon;
             const link = (
@@ -101,7 +97,7 @@ export default function ProfileLayout() {
                   <Icon className={open ? "h-4 w-4 shrink-0" : "h-6 w-6 shrink-0"} aria-hidden="true" />
                   {!open && section.to === "/profile/recommendations" && unreadRecommendations > 0 ? <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-accent" /> : null}
                 </span>
-                {open ? section.label : <span className="sr-only">{section.label}</span>}
+                <span className={open ? "" : "lg:sr-only"}>{section.label}</span>
                 {open && section.to === "/profile/recommendations" && unreadRecommendations > 0 ? (
                   <span className="ml-auto rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-accent-fg">{unreadRecommendations}</span>
                 ) : null}
@@ -109,49 +105,28 @@ export default function ProfileLayout() {
             );
             return open ? link : <Tip key={section.to} label={section.label}>{link}</Tip>;
           })}
-          {open ? (
-            <button
-              type="button"
-              title="Log out"
-              disabled={leaving}
-              aria-busy={leaving}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-rose-700 dark:text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={() => {
-                setLeaving(true);
-                void dispatch(logout())
-                  .then(() => navigate("/"))
-                  .finally(() => setLeaving(false));
-              }}
-            >
-              {leaving ? <Spinner className="h-4 w-4" /> : <LogOut className="h-4 w-4" aria-hidden="true" />}
-              Log out
-            </button>
-          ) : (
-            <Tip label="Log out">
-              <button
-                type="button"
-                title="Log out"
-                disabled={leaving}
-                aria-busy={leaving}
-                className="flex h-12 w-full items-center justify-center rounded-xl text-rose-700 dark:text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={() => {
-                  setLeaving(true);
-                  void dispatch(logout())
-                    .then(() => navigate("/"))
-                    .finally(() => setLeaving(false));
-                }}
-              >
-                {leaving ? <Spinner className="h-6 w-6" /> : <LogOut className="h-6 w-6" aria-hidden="true" />}
-                <span className="sr-only">Log out</span>
-              </button>
-            </Tip>
-          )}
+          <button
+            type="button"
+            title="Log out"
+            disabled={leaving}
+            aria-busy={leaving}
+            className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2.5 text-left text-sm font-medium text-rose-700 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-200 ${open ? "lg:w-full" : "lg:h-12 lg:w-full lg:justify-center lg:px-0"}`}
+            onClick={() => {
+              setLeaving(true);
+              void dispatch(logout())
+                .then(() => navigate("/"))
+                .finally(() => setLeaving(false));
+            }}
+          >
+            {leaving ? <Spinner className="h-4 w-4" /> : <LogOut className={open ? "h-4 w-4" : "h-4 w-4 lg:h-6 lg:w-6"} aria-hidden="true" />}
+            <span className={open ? "" : "lg:sr-only"}>Log out</span>
+          </button>
         </nav>
       </aside>
-      <section className="min-w-0">
+      <main className="min-w-0">
         <PaymentNotice />
         <Outlet />
-      </section>
+      </main>
     </div>
   );
 }

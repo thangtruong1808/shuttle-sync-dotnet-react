@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Button } from "../../components/ui";
+import { Alert, Badge, Button } from "../../components/ui";
 
 export const control =
-  "w-full rounded-xl border border-fg/10 bg-inset px-3 py-2.5 text-sm text-fg disabled:cursor-not-allowed disabled:opacity-60";
+  "w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm text-fg shadow-sm outline-none transition-colors focus:border-accent-text focus:ring-2 focus:ring-accent-text/20 disabled:cursor-not-allowed disabled:opacity-60";
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -16,20 +16,12 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 
 export function Notice({ message }: { message: string | null }) {
   if (!message) return null;
-  return (
-    <p className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-800 dark:text-rose-100" role="alert">
-      {message}
-    </p>
-  );
+  return <Alert tone="danger">{message}</Alert>;
 }
 
 export function Success({ message }: { message: string | null }) {
   if (!message) return null;
-  return (
-    <p className="rounded-xl border border-accent-text/40 bg-accent/10 px-3 py-2 text-sm text-accent-text" role="status">
-      {message}
-    </p>
-  );
+  return <Alert tone="success">{message}</Alert>;
 }
 
 export function useBusy() {
@@ -154,7 +146,7 @@ export function PageSummary({
   const to = Math.min(total, page * size);
   const moving = pendingSize !== null || locked;
   return (
-    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-fg/10 bg-fg/[0.03] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-border bg-inset px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm font-medium text-fg" aria-live="polite">
         View {from}–{to} of {total}
       </p>
@@ -181,7 +173,11 @@ export function PageSummary({
 export { DataTable } from "../../components/ui";
 
 export function Tag({ value }: { value: string }) {
-  return <span className="inline-flex rounded-full border border-fg/10 bg-fg/5 px-2 py-0.5 text-xs capitalize text-fg">{value.replace(/_/g, " ")}</span>;
+  const tone = value === "confirmed" || value === "active" || value === "succeeded" || value === "paid" ? "success"
+    : value === "pending" || value === "processing" ? "warning"
+    : value === "cancelled" || value === "canceled" || value === "failed" || value === "no_show" || value === "expired" ? "danger"
+    : "neutral";
+  return <Badge tone={tone} className="capitalize">{value.replace(/_/g, " ")}</Badge>;
 }
 
 export function Check({

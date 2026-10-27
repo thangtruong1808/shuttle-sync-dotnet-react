@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { ChevronDown, ChevronsUpDown, Clock, CreditCard, Gift, MapPin, Pencil, Save, ShieldCheck, TriangleAlert, Undo2, Users, X } from "lucide-react";
 import { useDispatch } from "react-redux";
 import type { AppDispatch } from "../../app/store";
-import { Button, Skeleton, Spinner } from "../../components/ui";
+import { useVenues } from "../../components/layout/SiteLayout";
+import { Button, PageHeader, Skeleton, Spinner, buttonClass } from "../../components/ui";
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange, initials } from "../../components/format";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
@@ -76,6 +78,8 @@ const emptyCopy: Record<Tab, { title: string; body: string }> = {
 
 export function FriendSpotsSection() {
   const dispatch = useDispatch<AppDispatch>();
+  const { venues, defaultSlug } = useVenues();
+  const venueSlug = defaultSlug ?? venues?.[0]?.slug ?? null;
   const [tab, setTab] = useState<Tab>("upcoming");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
@@ -167,11 +171,8 @@ export function FriendSpotsSection() {
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-fg">Friend spots</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg/70">
-        Places you hold for friends on a public social. They stay on the court even when you cancel your own registration.
-      </p>
-      <div className="mt-4 flex gap-2 overflow-auto" role="tablist" aria-label="Friend spot status">
+      <PageHeader title="Friend spots" description="Places you hold for friends on a public social. They stay on the court even when you cancel your own registration." />
+      <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-xl border border-border bg-surface-2 p-1" role="tablist" aria-label="Friend spot status">
         {tabs.map((item) => (
           <button
             key={item.id}
@@ -180,7 +181,7 @@ export function FriendSpotsSection() {
             aria-selected={tab === item.id}
             aria-busy={loading && pageMove === null && tab === item.id}
             disabled={loading}
-            className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${tab === item.id ? "bg-accent text-accent-fg" : "border border-fg/10 text-fg"}`}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60 ${tab === item.id ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
             onClick={() => {
               if (item.id === tab) {
                 return;
@@ -296,7 +297,7 @@ export function FriendSpotsSection() {
                 {open ? (
                 <ul id={`friends-${session.socialId}`} className="space-y-2 px-4 pb-4 sm:px-5 sm:pb-5">
                   {spots.map((spot) => (
-                    <li key={spot.id} className="rounded-2xl border border-fg/10 bg-surface/50 px-3 py-3">
+                    <li key={spot.id} className="rounded-2xl border border-border bg-surface px-3 py-3 shadow-card dark:shadow-none">
                       {editingId === spot.id ? (
                         <form
                           className="flex flex-col gap-2 sm:flex-row sm:items-end"
@@ -311,7 +312,7 @@ export function FriendSpotsSection() {
                               value={draftName}
                               maxLength={80}
                               disabled={savingId === spot.id}
-                              className="mt-1 w-full rounded-2xl border border-fg/15 bg-inset px-3 py-2 text-fg outline-none focus:border-accent-text disabled:opacity-60"
+                              className="mt-1 w-full rounded-2xl border border-fg/15 bg-inset px-3 py-2 text-fg outline-none focus:border-accent-text focus-visible:ring-2 focus-visible:ring-accent-text/30 disabled:opacity-60"
                               onChange={(event) => setDraftName(event.target.value)}
                             />
                           </label>
@@ -350,7 +351,13 @@ export function FriendSpotsSection() {
         </ul>
         </>
       ) : (
-        <div className="mt-4"><EmptyState title={emptyCopy[tab].title} body={emptyCopy[tab].body} /></div>
+        <div className="mt-4">
+          <EmptyState
+            title={emptyCopy[tab].title}
+            body={emptyCopy[tab].body}
+            action={tab === "upcoming" && venueSlug ? <Link to={`/${venueSlug}/social`} className={buttonClass("primary", "sm")}>Register for public social</Link> : undefined}
+          />
+        </div>
       )}
       {data && !error && data.total > 0 ? (
         <ListPager
