@@ -1,16 +1,25 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import type { AppDispatch } from "../../app/store";
-import { CalendarDays, ChevronRight, Mic, Send, SlidersHorizontal, Tag, Users, X } from "lucide-react";
-import type { RootState } from "../../app/store";
-import { Button, PickerInput, Skeleton } from "../../components/ui";
-import { CourtImage, EmptyState, ErrorState, Money, addDays, formatVenueDateTime, venueToday } from "../../components/format";
-import { BookedTime, DayChart, IncentiveNote, SessionClock, SocialTimes, upcomingBookings, useNow } from "../courts/CourtSchedule";
+import { CalendarDays, SlidersHorizontal, Users, X } from "lucide-react";
+import type { AppDispatch, RootState } from "../../app/store";
+import { Button, Card, controlClass, Field, PickerInput, Skeleton } from "../../components/ui";
+import { CourtImage, EmptyState, addDays, formatVenueRange, venueToday } from "../../components/format";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
-import { apiFetch, AuthRequestError } from "../auth/authApi";
+import { useNow } from "../courts/CourtSchedule";
 import { loadCurrentUser } from "../auth/authSlice";
 import { openSocials, rememberVenueSlug, venueAvailability, venuePromotions, type Availability, type Promotion } from "../venues/venueApi";
+import { HomeCourts } from "./HomeCourts";
+import { HomeHero } from "./HomeHero";
+import { HomePromos } from "./HomePromos";
+import { SupportChat } from "./SupportChat";
+
+function openHours(availability: Availability | null): string {
+  if (!availability) return "—";
+  const span = new Date(availability.windowEnd).getTime() - new Date(availability.windowStart).getTime();
+  if (span >= 23 * 60 * 60 * 1000) return "Open all day";
+  return formatVenueRange(availability.windowStart, availability.windowEnd, availability.venue.timeZone);
+}
 
 export default function HomePage() {
   const { slug = "" } = useParams();
@@ -112,40 +121,45 @@ export default function HomePage() {
   const nextDay = applied.date ? addDays(applied.date, 1) : "";
   const today = venue ? venueToday(venue.timeZone) : "";
   const filtered = Boolean(applied.from || applied.to || (today && applied.date && applied.date !== today));
+  const hours = openHours(availability);
+  const cancelPercent = venue ? String(Number(venue.lateCancelFeePercent.toFixed(2))) : "0";
 
   return (
     <main>
       <PageSection>
-        <section className="rounded-3xl border border-white/10 bg-pine/90 p-6 sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-line">Badminton booking</p>
-          <h1 className="mt-3 max-w-4xl font-display text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Find a court at {venue?.name ?? "your venue"}.
-          </h1>
-          <p className="mt-3 max-w-4xl text-mist/75">Choose a day to find a free court. A court with no bookings is available. Booked times are shown on that court.</p>
-          {(venues?.length ?? 0) > 1 && venue ? (
-            <label className="mt-4 flex max-w-4xl items-start gap-2 text-sm text-mist">
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4 shrink-0 accent-line"
-                checked={defaultSlug === venue.slug}
-                onChange={(event) => setDefaultVenue(event.target.checked ? venue.slug : null)}
-              />
-              <span>Use {venue.name} as my default venue. Home, My bookings, and the other pages keep this venue.</span>
-            </label>
-          ) : null}
-          <form className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onSubmit={onFilter}>
-            <label className="text-sm">
-              <span className="mb-1 block text-mist/70">Date</span>
-              <PickerInput type="date" required value={draft.date} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, date: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-mist/70">From</span>
-              <PickerInput type="time" value={draft.from} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, from: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-mist/70">To</span>
-              <PickerInput type="time" value={draft.to} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, to: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist" />
-            </label>
+        {venue ? (
+          <HomeHero
+            venue={venue}
+            slug={slug}
+            hasSocials={hasSocials}
+            showDefault={(venues?.length ?? 0) > 1}
+            isDefault={defaultSlug === venue.slug}
+            onDefault={(checked) => setDefaultVenue(checked ? venue.slug : null)}
+            hours={hours}
+            courts={availability ? String(availability.courts.length) : "—"}
+            cancelPercent={cancelPercent}
+          />
+        ) : (
+          <Skeleton className="h-80 rounded-3xl" />
+        )}
+
+        <Card className="mt-8" title="Find a court" description="Choose a day to find a free court. A court with no bookings is available. Booked times are shown on that court.">
+          <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onSubmit={onFilter}>
+            <Field label="Date" required>
+              {({ id }) => (
+                <PickerInput id={id} type="date" required value={draft.date} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, date: event.target.value })} className={controlClass} />
+              )}
+            </Field>
+            <Field label="From">
+              {({ id }) => (
+                <PickerInput id={id} type="time" value={draft.from} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, from: event.target.value })} className={controlClass} />
+              )}
+            </Field>
+            <Field label="To">
+              {({ id }) => (
+                <PickerInput id={id} type="time" value={draft.to} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, to: event.target.value })} className={controlClass} />
+              )}
+            </Field>
             <div className="flex flex-wrap items-center gap-2 sm:col-span-2 lg:col-span-3">
               <Button type="submit" className="w-full sm:w-auto" icon={<SlidersHorizontal className="h-4 w-4" aria-hidden="true" />} loading={busy === "filter"} disabled={!draft.date || (busy !== null && busy !== "filter")}>Filter</Button>
               <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<CalendarDays className="h-4 w-4" aria-hidden="true" />} onClick={() => navigate(`/${slug}/book`)}>Book a court</Button>
@@ -155,111 +169,40 @@ export default function HomePage() {
               ) : null}
             </div>
           </form>
-          <section id="promotions" className="mt-6 border-t border-white/10 pt-5" aria-labelledby="promotions-heading">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 id="promotions-heading" className="flex items-center gap-2 font-display text-lg text-white">
-                <Tag className="h-4 w-4 text-line" aria-hidden="true" />
-                Promotions
-              </h2>
-            </div>
-            {promotions && promotions.length > 0 ? (
-              <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-                {promotions.map((promotion) => (
-                  <li key={promotion.id} className="flex items-center justify-between gap-3 rounded-2xl border border-line/25 bg-black/25 px-3 py-2.5">
-                    <div className="min-w-0">
-                      <p className="break-all font-semibold tracking-wide text-white">{promotion.code}</p>
-                      <p className="text-sm text-line">
-                        {promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={venue?.currency ?? "AUD"} />}
-                        {promotion.venueId ? "" : " · all venues"}
-                      </p>
-                      {promotion.validFrom && promotion.validTo ? (
-                        <p className="mt-1 text-xs leading-5 text-mist/75">
-                          Valid from {formatVenueDateTime(promotion.validFrom, venue?.timeZone ?? "Australia/Melbourne")} to {formatVenueDateTime(promotion.validTo, venue?.timeZone ?? "Australia/Melbourne")}.
-                        </p>
-                      ) : null}
-                    </div>
-                    <CopyCode code={promotion.code} />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-3 text-sm text-mist/70">No active promotion codes right now.</p>
-            )}
-          </section>
-        </section>
+        </Card>
 
-        <section className="mt-10" aria-labelledby="available-courts">
-          {venueError ? <div className="mt-4"><ErrorState message={venueError} onRetry={reload} /></div> : null}
-          {loading ? (
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
-              <span className="sr-only">Loading courts</span>
-              <Skeleton className="h-64" />
-              <Skeleton className="h-64" />
-              <Skeleton className="h-64" />
-            </div>
-          ) : error ? (
-            <div className="mt-4"><ErrorState message={error} loading={retrying} onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }} /></div>
-          ) : availability && availability.courts.length > 0 ? (
-            <>
-              <DayChart schedule={availability} now={now} compact collapsible />
-              {(availability.incentives ?? []).length > 0 ? (
-                <div className="mt-4">
-                  {(availability.incentives ?? []).map((incentive) => (
-                    <IncentiveNote key={incentive.id} points={incentive.points} startsOn={incentive.startsOn} endsOn={incentive.endsOn} />
-                  ))}
-                </div>
-              ) : null}
-              <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {availability.courts.map((court) => {
-                  const bookings = upcomingBookings(court.bookings, now);
-                  return (
-                    <li key={court.id} className="rounded-3xl border border-white/10 bg-pine/70 p-4">
-                      <CourtImage src={court.imageUrl} alt={`${court.courtName} court`} />
-                      <h3 className="mt-4 font-display text-xl text-white">{court.courtName}</h3>
-                      <p className="text-sm text-mist/65">Court {court.courtNumber}{court.surfaceType ? ` · ${court.surfaceType}` : ""}</p>
-                      {bookings.length === 0 ? null : (
-                        <ul className="mt-3 grid grid-cols-2 gap-2">
-                          {bookings.map((booking) => (
-                            <li key={booking.id} className={`min-w-0 rounded-2xl px-3 py-2 ${booking.status === "pending" ? "border border-amber-300/40 bg-amber-400/10" : "border border-white/15"}`}>
-                              <BookedTime start={booking.startTime} end={booking.endTime} timeZone={availability.venue.timeZone} unpaid={booking.status === "pending"} />
-                              <SessionClock start={booking.startTime} end={booking.endTime} />
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      <SocialTimes times={court.socials ?? []} timeZone={availability.venue.timeZone} now={now} slug={availability.venue.slug} courtNumber={court.courtNumber} />
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          ) : (
-            <div className="mt-4 space-y-3">
-              <EmptyState title="No courts on this day" body="Try the next day or look at another venue." />
-              {nextDay ? (
-                <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={busy === "next"} disabled={busy !== null && busy !== "next"} onClick={() => {
-                  setDraft((current) => ({ ...current, date: nextDay }));
-                  setBusy("next");
-                  setApplied((current) => ({ ...current, date: nextDay }));
-                  setAttempt((value) => value + 1);
-                }}>See {nextDay}</Button>
-              ) : null}
-            </div>
-          )}
-        </section>
+        <HomePromos promotions={promotions} loading={loading} currency={venue?.currency ?? "AUD"} timeZone={venue?.timeZone ?? "Australia/Melbourne"} />
 
-        <hr className="my-10 border-white/10" />
+        <HomeCourts
+          availability={availability}
+          loading={loading || !applied.date}
+          error={error}
+          venueError={venueError}
+          onRetryVenue={reload}
+          retrying={retrying}
+          onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }}
+          nextDay={nextDay}
+          nextLoading={busy === "next"}
+          nextDisabled={busy !== null && busy !== "next"}
+          onNext={() => {
+            setDraft((current) => ({ ...current, date: nextDay }));
+            setBusy("next");
+            setApplied((current) => ({ ...current, date: nextDay }));
+            setAttempt((value) => value + 1);
+          }}
+          now={now}
+        />
 
         {others.length > 0 ? (
           <section className="mt-10" aria-labelledby="other-venues">
-            <h2 id="other-venues" className="font-display text-2xl text-white">Other venues</h2>
+            <h2 id="other-venues" className="font-display text-2xl text-fg">Other venues</h2>
             <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {others.map((item) => (
                 <li key={item.id}>
-                  <Link to={`/${item.slug}`} className="block rounded-3xl border border-white/10 bg-pine/70 p-4 hover:border-line/40">
+                  <Link to={`/${item.slug}`} className="block rounded-2xl border border-border bg-surface p-4 shadow-card hover:border-accent-text/40 dark:shadow-none">
                     <CourtImage src={item.imageUrl} alt="" />
-                    <p className="mt-3 font-medium text-white">{item.name}</p>
-                    <p className="text-sm text-mist/65">{item.suburb ?? "View courts"}</p>
+                    <p className="mt-3 font-medium text-fg">{item.name}</p>
+                    <p className="text-sm text-fg-muted">{item.suburb ?? "View courts"}</p>
                   </Link>
                 </li>
               ))}
@@ -269,309 +212,5 @@ export default function HomePage() {
       </PageSection>
       <SupportChat venueName={venue?.name ?? "this venue"} venueSlug={slug} date={applied.date} />
     </main>
-  );
-}
-
-function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueSlug: string; date: string }) {
-  const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<"text" | "voice">("text");
-  const [replyMode, setReplyMode] = useState<"text" | "voice">("text");
-  const replyModeRef = useRef(replyMode);
-  replyModeRef.current = replyMode;
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const sendingRef = useRef(false);
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
-  const threadRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    window.speechSynthesis?.getVoices();
-    const loadVoices = () => window.speechSynthesis?.getVoices();
-    window.speechSynthesis?.addEventListener("voiceschanged", loadVoices);
-    return () => {
-      window.speechSynthesis?.removeEventListener("voiceschanged", loadVoices);
-      stopRecording();
-    };
-  }, []);
-
-  useEffect(() => {
-    const thread = threadRef.current;
-    if (!thread) return;
-    thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" });
-  }, [messages, sending, notice]);
-
-  function stopSpeaking() {
-    window.speechSynthesis?.cancel();
-    setSpeaking(false);
-  }
-
-  function speak(text: string) {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-AU";
-    const voices = window.speechSynthesis.getVoices();
-    const voice = voices.find((item) => item.lang.toLowerCase().startsWith("en-au")) ?? voices.find((item) => item.lang.toLowerCase().startsWith("en"));
-    if (voice) utterance.voice = voice;
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => {
-      setSpeaking(false);
-      setNotice("This browser could not play the voice. The answer is still written above.");
-    };
-    setSpeaking(true);
-    window.speechSynthesis.resume();
-    window.speechSynthesis.speak(utterance);
-  }
-
-  function stopRecording() {
-    const recorder = recorderRef.current;
-    recorderRef.current = null;
-    if (recorder && recorder.state !== "inactive") recorder.stop();
-    recorder?.stream.getTracks().forEach((track) => track.stop());
-    setRecording(false);
-  }
-
-  async function ask(next: { role: "user" | "assistant"; text: string }[], audio?: { audioBase64: string; mimeType: string }) {
-    setNotice(null);
-    sendingRef.current = true;
-    setSending(true);
-    try {
-      const response = await apiFetch("/api/support/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          venueSlug,
-          date,
-          messages: next.slice(-8),
-          audioBase64: audio?.audioBase64,
-          mimeType: audio?.mimeType,
-        }),
-      });
-      const body = (await response.json().catch(() => null)) as { reply?: string; transcript?: string; errors?: { form?: string[] } } | null;
-      if (!response.ok) {
-        setNotice(body?.errors?.form?.[0] ?? "Support chat could not answer just now.");
-        return;
-      }
-      const reply = body?.reply ?? "I could not answer that.";
-      const heard = body?.transcript?.trim();
-      setMessages(audio
-        ? [...messagesRef.current, ...(heard ? [{ role: "user" as const, text: heard }] : []), { role: "assistant" as const, text: reply }]
-        : [...next, { role: "assistant" as const, text: reply }]);
-      if (replyModeRef.current === "voice" && body?.reply) speak(body.reply);
-    } catch (reason) {
-      setNotice(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "Support chat could not answer just now." : "Support chat could not answer just now.");
-    } finally {
-      sendingRef.current = false;
-      setSending(false);
-    }
-  }
-
-  async function onSend(event: FormEvent) {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text || sending) return;
-    const next = [...messages, { role: "user" as const, text }];
-    setMessages(next);
-    setDraft("");
-    stopSpeaking();
-    await ask(next);
-  }
-
-  async function finishRecording() {
-    const recorder = recorderRef.current;
-    if (!recorder || sendingRef.current) return;
-    const mimeType = recorder.mimeType || "audio/webm";
-    const blob = await new Promise<Blob>((resolve) => {
-      recorder.onstop = () => resolve(new Blob(chunksRef.current, { type: mimeType }));
-      stopRecording();
-    });
-    if (blob.size < 800) {
-      setNotice("I could not hear that. Move closer and try again.");
-      return;
-    }
-    const audioBase64 = await blobToBase64(blob);
-    stopSpeaking();
-    await ask(messagesRef.current, { audioBase64, mimeType });
-  }
-
-  async function onVoice() {
-    if (sendingRef.current) return;
-    if (recorderRef.current) {
-      await finishRecording();
-      return;
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setNotice("Voice needs Chrome or Edge so the microphone can be used.");
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4";
-      const recorder = new MediaRecorder(stream, { mimeType });
-      chunksRef.current = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
-      recorderRef.current = recorder;
-      recorder.start();
-      setRecording(true);
-      setNotice(null);
-      window.setTimeout(() => {
-        if (recorderRef.current === recorder) void finishRecording();
-      }, 20000);
-    } catch {
-      setNotice("Allow the microphone for this site, then try again.");
-    }
-  }
-
-  return (
-    <div className="fixed bottom-4 right-4 z-40 flex max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] flex-col items-end gap-3">
-      {open ? (
-        <section className="flex h-[min(40rem,calc(100dvh-6.5rem))] min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-white/10 bg-pine p-4 shadow-2xl shadow-black/40" aria-label="Support chat">
-          <div className="flex items-center gap-3">
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-ink text-line ring-1 ring-line/60">
-              <AssistantMark className="h-6 w-6" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="font-display text-lg leading-tight text-white">Shuttle Sync</p>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-line">AI assistant</p>
-            </div>
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <ChatChoice
-              label="You"
-              value={mode}
-              onText={() => { stopRecording(); setMode("text"); }}
-              onVoice={() => { setMode("voice"); setReplyMode("voice"); }}
-            />
-            <ChatChoice
-              label="Reply"
-              value={replyMode}
-              onText={() => { stopSpeaking(); setReplyMode("text"); }}
-              onVoice={() => setReplyMode("voice")}
-            />
-          </div>
-          <p className="mt-3 text-sm text-mist/70">Help for {venueName}.</p>
-          <div ref={threadRef} className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto" data-chat-thread>
-            {messages.length === 0 ? <p className="text-sm text-mist/75">Ask about booking, cancellations, points, or which courts are free.</p> : null}
-            {messages.map((message, index) => (
-              <div key={index} className={message.role === "user" ? "flex justify-end" : "flex items-end gap-2"}>
-                {message.role === "assistant" ? (
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-ink text-line ring-1 ring-line/50">
-                    <AssistantMark className="h-4 w-4" />
-                  </span>
-                ) : null}
-                <p className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${message.role === "user" ? "bg-line/15 text-white" : "bg-black/25 text-mist"}`}>
-                  {message.text}
-                </p>
-              </div>
-            ))}
-          </div>
-          {notice ? <p className="mt-2 text-sm text-mist" role="alert">{notice}</p> : null}
-          {mode === "text" ? (
-            <form className="mt-3 flex items-end gap-2" onSubmit={onSend}>
-              <textarea
-                rows={3}
-                value={draft}
-                disabled={sending}
-                placeholder="Ask about a court or a time"
-                aria-label="Question"
-                className="min-h-[5.25rem] w-full resize-none rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white disabled:opacity-60"
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                    event.preventDefault();
-                    event.currentTarget.form?.requestSubmit();
-                  }
-                }}
-              />
-              <Button type="submit" className="shrink-0" icon={<Send className="h-4 w-4" aria-hidden="true" />} loading={sending} disabled={sending || draft.trim().length === 0}>Send</Button>
-            </form>
-          ) : (
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Button type="button" className="w-full sm:w-auto" icon={recording ? undefined : <Mic className="h-4 w-4" aria-hidden="true" />} loading={sending} disabled={sending} onClick={() => void onVoice()}>
-                {recording ? "Send voice" : "Tap to talk"}
-              </Button>
-            </div>
-          )}
-          {speaking ? <button type="button" className="mt-2 self-start text-sm font-semibold text-line" onClick={stopSpeaking}>Stop speaking</button> : null}
-          <p className="mt-2 text-xs text-mist/55">{mode === "text" ? "Enter starts a new line." : recording ? "Listening… tap Send voice when you finish. It stops after 20 seconds." : "Tap to talk, then tap again to send."}{replyMode === "voice" ? " Replies are read aloud." : ""}</p>
-        </section>
-      ) : null}
-      <button
-        type="button"
-        className="inline-flex items-center gap-2.5 rounded-full bg-line py-2 pl-2 pr-4 text-sm font-semibold text-ink shadow-lg shadow-black/30"
-        aria-expanded={open}
-        onClick={() => {
-          if (open) {
-            stopRecording();
-            stopSpeaking();
-          }
-          setOpen((value) => !value);
-        }}
-      >
-        <span className="grid h-9 w-9 place-items-center rounded-full bg-ink text-line">
-          <AssistantMark className="h-5 w-5" />
-        </span>
-        {open ? "Close" : "Support"}
-      </button>
-    </div>
-  );
-}
-
-function ChatChoice({ label, value, onText, onVoice }: { label: string; value: "text" | "voice"; onText: () => void; onVoice: () => void }) {
-  return (
-    <div className="flex items-center justify-between gap-2 rounded-full bg-black/30 p-1 pl-3">
-      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-mist/70">{label}</span>
-      <div className="grid grid-cols-2 rounded-full text-xs font-semibold" role="group" aria-label={label}>
-        <button type="button" className={`rounded-full px-3 py-1.5 ${value === "text" ? "bg-line text-ink" : "text-mist"}`} aria-pressed={value === "text"} onClick={onText}>Text</button>
-        <button type="button" className={`rounded-full px-3 py-1.5 ${value === "voice" ? "bg-line text-ink" : "text-mist"}`} aria-pressed={value === "voice"} onClick={onVoice}>Voice</button>
-      </div>
-    </div>
-  );
-}
-
-function blobToBase64(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-}
-
-function AssistantMark({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
-      <path className="fill-current" d="M8 6.2h12.4a5.4 5.4 0 0 1 5.4 5.4v6.2a5.4 5.4 0 0 1-5.4 5.4H14.8l-4.7 3.5a.85.85 0 0 1-1.35-.68v-2.82H8a5.4 5.4 0 0 1-5.4-5.4v-6.2A5.4 5.4 0 0 1 8 6.2Z" />
-      <path className="fill-ink" d="m16.1 11.1 1.05 3.05 3.05 1.05-3.05 1.05-1.05 3.05-1.05-3.05-3.05-1.05 3.05-1.05 1.05-3.05Z" />
-    </svg>
-  );
-}
-
-function CopyCode({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className="rounded-lg border border-white/15 px-3 py-1.5 text-sm font-semibold text-mist hover:bg-white/10"
-      onClick={() => {
-        void navigator.clipboard.writeText(code).then(() => {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-    >
-      {copied ? "Copied" : "Copy code"}
-    </button>
   );
 }

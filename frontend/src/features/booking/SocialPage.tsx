@@ -81,10 +81,10 @@ export default function SocialPage() {
   return (
     <main>
       <PageSection>
-        <Link to={`/${slug}`} className="text-sm text-line hover:underline">Back to the venue</Link>
-        <h1 className="mt-3 font-display text-3xl text-white sm:text-4xl">Register for public social</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">Choose one or more open times. You register and pay for them together. A court is assigned when you register, filling court 1 first up to the players and courts set for that time.</p>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">{`More than 24 hours before the start, you get a full refund. Within 24 hours, the venue keeps ${Number(fee.toFixed(2))}% and refunds the rest.`}</p>
+        <Link to={`/${slug}`} className="text-sm text-accent-text hover:underline">Back to the venue</Link>
+        <h1 className="mt-3 font-display text-3xl text-fg sm:text-4xl">Register for public social</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-fg/75">Choose one or more open times. You register and pay for them together. A court is assigned when you register, filling court 1 first up to the players and courts set for that time.</p>
+        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-fg/75">{`More than 24 hours before the start, you get a full refund. Within 24 hours, the venue keeps ${Number(fee.toFixed(2))}% and refunds the rest.`}</p>
         <div className="mt-6">
           {error ? (
             <ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} />
@@ -96,7 +96,7 @@ export default function SocialPage() {
               <Skeleton className="h-64" />
             </div>
           ) : open.length === 0 ? (
-            <p className="text-sm text-mist/70">No drop-in social is open yet.</p>
+            <p className="text-sm text-fg/70">No drop-in social is open yet.</p>
           ) : (
             <>
               <div role="group" aria-label="Available drop-in times" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -152,14 +152,14 @@ function SessionCard({
   const waiting = social.waitlistCount ?? 0;
   const details = (
     <>
-      <p className="text-sm font-semibold text-white">{formatVenueDay(social.startTime, timeZone)}</p>
-      <p className="whitespace-nowrap text-sm text-white">{formatVenueRange(social.startTime, social.endTime, timeZone)}</p>
+      <p className="text-sm font-semibold text-fg">{formatVenueDay(social.startTime, timeZone)}</p>
+      <p className="whitespace-nowrap text-sm text-fg">{formatVenueRange(social.startTime, social.endTime, timeZone)}</p>
       <SessionClock start={social.startTime} end={social.endTime} />
       {limit > 0 ? (
-        <p className="mt-2 text-sm text-mist/80">{social.playerCount} of {limit * each} players · {each} per court · {limit} {limit === 1 ? "court" : "courts"}</p>
+        <p className="mt-2 text-sm text-fg/80">{social.playerCount} of {limit * each} players · {each} per court · {limit} {limit === 1 ? "court" : "courts"}</p>
       ) : null}
       <SocialRoster playerCount={social.playerCount} courtCount={social.courtLimit ?? courtCount} playersPerCourt={social.playersPerCourt} courts={social.courts ?? []} />
-      <p className="mt-3 text-sm text-mist/75">
+      <p className="mt-3 text-sm text-fg/75">
         {yours === "confirmed" && social.yourCourtName
           ? `You're on ${social.yourCourtName}.`
           : yours === "waitlist"
@@ -169,16 +169,16 @@ function SessionCard({
               : "Places are still open."}
         {typeof social.price === "number" ? <> · <Money amount={social.price} currency={currency} /></> : null}
       </p>
-      <p className="text-sm text-mist/70">{waiting} {waiting === 1 ? "person" : "people"} on the waitlist.</p>
+      <p className="text-sm text-fg/70">{waiting} {waiting === 1 ? "person" : "people"} on the waitlist.</p>
       {full ? (
-        <p className="mt-2 text-sm leading-relaxed text-line">This social is full. Join the waitlist to register, or add friends if you already have a place. If someone cancels, the first person waiting gets the place.</p>
+        <p className="mt-2 text-sm leading-relaxed text-accent-text">This social is full. Join the waitlist to register, or add friends if you already have a place. If someone cancels, the first person waiting gets the place.</p>
       ) : null}
-      {social.repeatWeekly ? <p className="mt-2 text-sm font-medium text-line">This slot repeats weekly.</p> : null}
+      {social.repeatWeekly ? <p className="mt-2 text-sm font-medium text-accent-text">This slot repeats weekly.</p> : null}
     </>
   );
 
   return (
-    <article className={`flex h-full flex-col rounded-3xl border p-4 ${pressed ? "border-line/60 bg-line/10" : full ? "border-line/40 bg-pine/80" : "border-white/10 bg-pine/80 hover:border-line/40"}`}>
+    <article className={`flex h-full flex-col rounded-3xl border p-4 ${pressed ? "border-accent-text/60 bg-accent/10" : full ? "border-accent-text/40 bg-surface/80" : "border-fg/10 bg-surface/80 hover:border-accent-text/40"}`}>
       {canSelect ? (
         <button type="button" className="w-full text-left" aria-pressed={pressed} onClick={onToggle}>
           {details}

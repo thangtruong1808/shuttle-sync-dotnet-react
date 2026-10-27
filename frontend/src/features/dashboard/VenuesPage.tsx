@@ -6,7 +6,9 @@ import { EmptyState, ErrorState } from "../../components/format";
 import { Button, Skeleton } from "../../components/ui";
 import { dashboardVenues, type Venue } from "../venues/venueApi";
 import { DashError, saveVenue, uploadDashboardImage } from "./dashboardApi";
+import { slugError, slugify } from "../venues/slug";
 import { Check, control, Field, Notice, Success, useBusy } from "./dashboardUi";
+import { SlugField } from "./SlugField";
 
 const blank = {
   name: "",
@@ -41,6 +43,7 @@ export default function VenuesPage() {
   const [success, setSuccess] = useState<string | null>(arrived?.success ?? null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(blank);
+  const [slugTouched, setSlugTouched] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const { busy, run } = useBusy();
@@ -72,7 +75,7 @@ export default function VenuesPage() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-3xl text-white">Venues</h1>
+        <h1 className="font-display text-3xl text-fg">Venues</h1>
         {role === "admin" ? (
           <Button variant="secondary" onClick={() => setCreating((value) => !value)}>
             {creating ? "Close form" : "New venue"}
@@ -81,11 +84,17 @@ export default function VenuesPage() {
       </div>
       {creating && role === "admin" ? (
         <form
-          className="mt-4 grid gap-3 rounded-2xl border border-white/10 p-4 sm:grid-cols-2"
+          className="mt-4 grid gap-3 rounded-2xl border border-fg/10 p-4 sm:grid-cols-2"
           onSubmit={(event) => {
             event.preventDefault();
             setFormError(null);
             setSuccess(null);
+            const invalidSlug = slugError(form.slug);
+            if (invalidSlug) {
+              setSlugTouched(true);
+              setFormError(invalidSlug);
+              return;
+            }
             void run("save", async () => {
               try {
                 await saveVenue({
@@ -102,6 +111,7 @@ export default function VenuesPage() {
                   imageUrl: form.imageUrl || null,
                 });
                 setForm(blank);
+                setSlugTouched(false);
                 setCreating(false);
                 setVenues(await dashboardVenues());
                 setSuccess("Venue created.");
@@ -112,11 +122,26 @@ export default function VenuesPage() {
           }}
         >
           <Field label="Name">
-            <input className={control} value={form.name} disabled={busy !== null} onChange={(event) => set("name", event.target.value)} required />
+            <input
+              className={control}
+              value={form.name}
+              disabled={busy !== null}
+              onChange={(event) => {
+                const name = event.target.value;
+                setForm((current) => ({ ...current, name, slug: slugTouched ? current.slug : slugify(name) }));
+              }}
+              required
+            />
           </Field>
-          <Field label="Slug">
-            <input className={control} value={form.slug} disabled={busy !== null} onChange={(event) => set("slug", event.target.value)} required />
-          </Field>
+          <SlugField
+            value={form.slug}
+            touched={slugTouched}
+            disabled={busy !== null}
+            onChange={(slug) => {
+              setSlugTouched(true);
+              set("slug", slug);
+            }}
+          />
           <Field label="Timezone">
             <input className={control} value={form.timeZone} disabled={busy !== null} onChange={(event) => set("timeZone", event.target.value)} />
           </Field>
@@ -126,13 +151,13 @@ export default function VenuesPage() {
           <Field label="Photo URL">
             <input className={control} value={form.imageUrl} disabled={busy !== null} onChange={(event) => set("imageUrl", event.target.value)} />
           </Field>
-          <label className="block text-sm text-mist/80">
+          <label className="block text-sm text-fg/80">
             Upload photo
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
               disabled={busy !== null}
-              className="mt-1 block w-full text-sm text-mist file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-mist"
+              className="mt-1 block w-full text-sm text-fg file:mr-3 file:rounded-lg file:border-0 file:bg-fg/10 file:px-3 file:py-2 file:text-fg"
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 event.target.value = "";
@@ -180,9 +205,9 @@ export default function VenuesPage() {
         <ul className="mt-6 grid gap-3 sm:grid-cols-2">
           {venues.map((venue) => (
             <li key={venue.id}>
-              <Link to={`/dashboard/venues/${venue.id}`} className="block rounded-2xl border border-white/10 p-4 hover:bg-white/5">
-                <p className="font-medium text-white">{venue.name}</p>
-                <p className="text-sm text-mist/65">{venue.slug}</p>
+              <Link to={`/dashboard/venues/${venue.id}`} className="block rounded-2xl border border-fg/10 p-4 hover:bg-fg/5">
+                <p className="font-medium text-fg">{venue.name}</p>
+                <p className="text-sm text-fg/65">/{venue.slug}</p>
               </Link>
             </li>
           ))}

@@ -43,11 +43,11 @@ function groupBySocial(items: FriendSpot[]) {
 }
 
 function spotStatus(status: string, tab: Tab) {
-  if (status === "confirmed") return tab === "past" ? { label: "Played", tone: "bg-line/15 text-line" } : { label: "On court", tone: "bg-line/15 text-line" };
-  if (status === "waitlist") return { label: "Waitlist", tone: "bg-sky-400/15 text-sky-200" };
-  if (status === "pending") return { label: "Waiting for payment", tone: "bg-amber-400/15 text-amber-200" };
-  if (status === "cancelled") return { label: "Cancelled", tone: "bg-rose-500/15 text-rose-200" };
-  return { label: "Expired", tone: "bg-white/10 text-mist" };
+  if (status === "confirmed") return tab === "past" ? { label: "Played", tone: "bg-accent/15 text-accent-text" } : { label: "On court", tone: "bg-accent/15 text-accent-text" };
+  if (status === "waitlist") return { label: "Waitlist", tone: "bg-sky-400/15 text-sky-700 dark:text-sky-200" };
+  if (status === "pending") return { label: "Waiting for payment", tone: "bg-amber-400/15 text-amber-700 dark:text-amber-200" };
+  if (status === "cancelled") return { label: "Cancelled", tone: "bg-rose-500/15 text-rose-700 dark:text-rose-200" };
+  return { label: "Expired", tone: "bg-fg/10 text-fg" };
 }
 
 function startsIn(iso: string) {
@@ -167,8 +167,8 @@ export function FriendSpotsSection() {
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-white">Friend spots</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/70">
+      <h1 className="font-display text-3xl text-fg">Friend spots</h1>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg/70">
         Places you hold for friends on a public social. They stay on the court even when you cancel your own registration.
       </p>
       <div className="mt-4 flex gap-2 overflow-auto" role="tablist" aria-label="Friend spot status">
@@ -180,7 +180,7 @@ export function FriendSpotsSection() {
             aria-selected={tab === item.id}
             aria-busy={loading && pageMove === null && tab === item.id}
             disabled={loading}
-            className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${tab === item.id ? "bg-line text-ink" : "border border-white/10 text-mist"}`}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${tab === item.id ? "bg-accent text-accent-fg" : "border border-fg/10 text-fg"}`}
             onClick={() => {
               if (item.id === tab) {
                 return;
@@ -197,7 +197,7 @@ export function FriendSpotsSection() {
           </button>
         ))}
       </div>
-      {notice ? <p className="mt-4 text-sm text-mist" role="status">{notice}</p> : null}
+      {notice ? <p className="mt-4 text-sm text-fg" role="status">{notice}</p> : null}
       {error ? (
         <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
       ) : loading && pageMove === null ? (
@@ -236,49 +236,49 @@ export function FriendSpotsSection() {
               counts.set(status.label, { ...status, count: (current?.count ?? 0) + 1 });
             }
             return (
-              <li key={session.socialId} className="rounded-3xl border border-white/10 bg-black/20">
+              <li key={session.socialId} className="rounded-3xl border border-fg/10 bg-inset">
                 <div className="flex gap-3 p-4 pb-3 sm:gap-4 sm:p-5 sm:pb-3">
-                  <div className="flex w-14 shrink-0 flex-col items-center justify-center self-start rounded-xl border border-white/10 bg-white/[0.04] py-2 text-center sm:w-16">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-line">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, weekday: "short" }).format(start)}</span>
-                    <span className="font-display text-2xl leading-none text-white">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, day: "numeric" }).format(start)}</span>
-                    <span className="text-[11px] uppercase text-mist/70">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, month: "short" }).format(start)}</span>
+                  <div className="flex w-14 shrink-0 flex-col items-center justify-center self-start rounded-xl border border-fg/10 bg-fg/[0.04] py-2 text-center sm:w-16">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-accent-text">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, weekday: "short" }).format(start)}</span>
+                    <span className="font-display text-2xl leading-none text-fg">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, day: "numeric" }).format(start)}</span>
+                    <span className="text-[11px] uppercase text-fg/70">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, month: "short" }).format(start)}</span>
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-mist">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-fg/10 px-2 py-0.5 text-xs font-medium text-fg">
                         <Users className="h-3.5 w-3.5" aria-hidden="true" />
                         Public social
                       </span>
                       {tab === "upcoming" ? (
                         <>
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${soon ? "bg-amber-400/15 text-amber-200" : "bg-white/5 text-mist/80"}`}>{startsIn(session.startTime)}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${session.youLeft ? "bg-amber-400/15 text-amber-200" : "bg-line/15 text-line"}`}>
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${soon ? "bg-amber-400/15 text-amber-700 dark:text-amber-200" : "bg-fg/5 text-fg/80"}`}>{startsIn(session.startTime)}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${session.youLeft ? "bg-amber-400/15 text-amber-700 dark:text-amber-200" : "bg-accent/15 text-accent-text"}`}>
                             {session.youLeft ? "Your place was cancelled" : "You're registered too"}
                           </span>
                         </>
                       ) : null}
                     </div>
-                    <h2 className="mt-2 truncate font-medium text-white">{session.venueName}</h2>
-                    <p className="flex items-center gap-1.5 text-sm text-mist/80">
-                      <Clock className="h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />
+                    <h2 className="mt-2 truncate font-medium text-fg">{session.venueName}</h2>
+                    <p className="flex items-center gap-1.5 text-sm text-fg/80">
+                      <Clock className="h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" />
                       {formatVenueRange(session.startTime, session.endTime, session.timeZone)}
-                      <span className="text-mist/55">· {duration(session.startTime, session.endTime)}</span>
+                      <span className="text-fg/55">· {duration(session.startTime, session.endTime)}</span>
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-sm">
-                      <span className="inline-flex items-center gap-1 font-medium text-white">
-                        <Users className="h-3.5 w-3.5 text-line" aria-hidden="true" />
+                      <span className="inline-flex items-center gap-1 font-medium text-fg">
+                        <Users className="h-3.5 w-3.5 text-accent-text" aria-hidden="true" />
                         {spots.length} {spots.length === 1 ? "friend" : "friends"}
                       </span>
                       {[...counts.values()].map((item) => (
                         <span key={item.label} className={`rounded-full px-2 py-0.5 text-xs font-semibold ${item.tone}`}>{item.count} {item.label.toLowerCase()}</span>
                       ))}
-                      {live.length > 0 && paidTotal > 0 ? <span className="text-mist/70">· <Money amount={paidTotal} currency={session.currency} /> paid</span> : null}
+                      {live.length > 0 && paidTotal > 0 ? <span className="text-fg/70">· <Money amount={paidTotal} currency={session.currency} /> paid</span> : null}
                     </div>
                     {tab === "upcoming" && canCancelAny ? (
                       freeUntil.getTime() > Date.now() ? (
-                        <p className="mt-1 flex items-center gap-1.5 text-xs text-mist/65"><ShieldCheck className="h-3.5 w-3.5 shrink-0 text-line" aria-hidden="true" />Free cancellation until {formatVenueDateTime(freeUntil.toISOString(), session.timeZone)}</p>
+                        <p className="mt-1 flex items-center gap-1.5 text-xs text-fg/65"><ShieldCheck className="h-3.5 w-3.5 shrink-0 text-accent-text" aria-hidden="true" />Free cancellation until {formatVenueDateTime(freeUntil.toISOString(), session.timeZone)}</p>
                       ) : lateFee > 0 ? (
-                        <p className="mt-1 flex items-center gap-1.5 text-xs text-amber-200/90"><TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Cancelling a paid friend now keeps {lateFee}% of their payment.</p>
+                        <p className="mt-1 flex items-center gap-1.5 text-xs text-amber-700/90 dark:text-amber-200/90"><TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Cancelling a paid friend now keeps {lateFee}% of their payment.</p>
                       ) : null
                     ) : null}
                   </div>
@@ -287,7 +287,7 @@ export function FriendSpotsSection() {
                   type="button"
                   aria-expanded={open}
                   aria-controls={`friends-${session.socialId}`}
-                  className="flex w-full items-center justify-between gap-2 border-t border-white/10 px-4 py-3 text-sm font-medium text-line transition-colors hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-line sm:px-5"
+                  className="flex w-full items-center justify-between gap-2 border-t border-fg/10 px-4 py-3 text-sm font-medium text-accent-text transition-colors hover:bg-fg/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-text sm:px-5"
                   onClick={() => toggle(session.socialId)}
                 >
                   <span>{open ? "Hide friends" : `Show ${spots.length === 1 ? "1 friend" : `all ${spots.length} friends`}`}</span>
@@ -296,7 +296,7 @@ export function FriendSpotsSection() {
                 {open ? (
                 <ul id={`friends-${session.socialId}`} className="space-y-2 px-4 pb-4 sm:px-5 sm:pb-5">
                   {spots.map((spot) => (
-                    <li key={spot.id} className="rounded-2xl border border-white/10 bg-pine/50 px-3 py-3">
+                    <li key={spot.id} className="rounded-2xl border border-fg/10 bg-surface/50 px-3 py-3">
                       {editingId === spot.id ? (
                         <form
                           className="flex flex-col gap-2 sm:flex-row sm:items-end"
@@ -305,13 +305,13 @@ export function FriendSpotsSection() {
                             void onSaveName(spot.id);
                           }}
                         >
-                          <label className="min-w-0 flex-1 text-sm text-mist/80">
+                          <label className="min-w-0 flex-1 text-sm text-fg/80">
                             Friend name
                             <input
                               value={draftName}
                               maxLength={80}
                               disabled={savingId === spot.id}
-                              className="mt-1 w-full rounded-2xl border border-white/15 bg-black/20 px-3 py-2 text-white outline-none focus:border-line disabled:opacity-60"
+                              className="mt-1 w-full rounded-2xl border border-fg/15 bg-inset px-3 py-2 text-fg outline-none focus:border-accent-text disabled:opacity-60"
                               onChange={(event) => setDraftName(event.target.value)}
                             />
                           </label>
@@ -384,24 +384,24 @@ function SpotDetails({ spot, tab }: { spot: FriendSpot; tab: Tab }) {
 
   return (
     <div className="flex min-w-0 items-start gap-3">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-line/15 text-sm font-semibold text-line">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/15 text-sm font-semibold text-accent-text">
         {initials(spot.name, spot.name)}
       </span>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <p className="truncate font-medium text-white">{spot.name}</p>
+          <p className="truncate font-medium text-fg">{spot.name}</p>
           <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${status.tone}`}>{status.label}</span>
         </div>
-        <p className="mt-0.5 flex items-center gap-1.5 text-sm text-mist/75"><MapPin className="h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />{place}</p>
+        <p className="mt-0.5 flex items-center gap-1.5 text-sm text-fg/75"><MapPin className="h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" />{place}</p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm">
-          <span className="font-semibold text-white"><Money amount={spot.amount} currency={spot.currency} /></span>
-          {subtotal > spot.amount ? <span className="text-xs text-mist/55 line-through"><Money amount={subtotal} currency={spot.currency} /></span> : null}
-          {discount > 0 ? <span className="text-xs text-line">Promo −<Money amount={discount} currency={spot.currency} /></span> : null}
-          {pointsUsed > 0 ? <span className="text-xs text-line">{pointsUsed} pts used</span> : null}
+          <span className="font-semibold text-fg"><Money amount={spot.amount} currency={spot.currency} /></span>
+          {subtotal > spot.amount ? <span className="text-xs text-fg/55 line-through"><Money amount={subtotal} currency={spot.currency} /></span> : null}
+          {discount > 0 ? <span className="text-xs text-accent-text">Promo −<Money amount={discount} currency={spot.currency} /></span> : null}
+          {pointsUsed > 0 ? <span className="text-xs text-accent-text">{pointsUsed} pts used</span> : null}
         </p>
-        <div className="mt-1 space-y-0.5 text-xs text-mist/65">
+        <div className="mt-1 space-y-0.5 text-xs text-fg/65">
           {tab === "past" && (spot.pointsEarned ?? 0) > 0 ? (
-            <p className="flex items-center gap-1.5 text-line"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />+{spot.pointsEarned} reward points earned</p>
+            <p className="flex items-center gap-1.5 text-accent-text"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />+{spot.pointsEarned} reward points earned</p>
           ) : null}
           {tab === "cancelled" ? (
             <>
@@ -411,14 +411,14 @@ function SpotDetails({ spot, tab }: { spot: FriendSpot; tab: Tab }) {
                 <p className="flex items-center gap-1.5"><X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Cancelled {formatVenueDateTime(spot.cancelledAt, spot.timeZone)}</p>
               ) : null}
               {spot.status === "cancelled" && spot.wasPaid ? (
-                <p className="flex items-center gap-1.5 text-sky-200"><Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <p className="flex items-center gap-1.5 text-sky-700 dark:text-sky-200"><Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   Refunded <Money amount={refund} currency={spot.currency} />{fee > 0 ? ` · ${fee}% late-cancel fee kept` : " · full refund"}
                 </p>
               ) : spot.status === "cancelled" && spot.wasPaid === false ? (
                 <p className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Not charged</p>
               ) : null}
               {spot.status === "cancelled" && pointsBack > 0 ? (
-                <p className="flex items-center gap-1.5 text-line"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{pointsBack} points returned to your balance</p>
+                <p className="flex items-center gap-1.5 text-accent-text"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{pointsBack} points returned to your balance</p>
               ) : null}
             </>
           ) : null}

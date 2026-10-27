@@ -35,8 +35,8 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-white">Overview</h1>
-      <p className="mt-2 text-sm text-mist/70">Venues and courts you can manage.</p>
+      <h1 className="font-display text-3xl text-fg">Overview</h1>
+      <p className="mt-2 text-sm text-fg/70">Venues and courts you can manage.</p>
       {error ? (
         <div className="mt-6">
           <ErrorState
@@ -56,13 +56,13 @@ export default function DashboardPage() {
       ) : (
         <>
           <dl className="mt-6 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 px-4 py-3">
-              <dt className="text-sm text-mist/65">Venues</dt>
-              <dd className="font-display text-3xl text-white">{counts.venues}</dd>
+            <div className="rounded-2xl border border-fg/10 px-4 py-3">
+              <dt className="text-sm text-fg/65">Venues</dt>
+              <dd className="font-display text-3xl text-fg">{counts.venues}</dd>
             </div>
-            <div className="rounded-2xl border border-white/10 px-4 py-3">
-              <dt className="text-sm text-mist/65">Courts</dt>
-              <dd className="font-display text-3xl text-white">{counts.courts}</dd>
+            <div className="rounded-2xl border border-fg/10 px-4 py-3">
+              <dt className="text-sm text-fg/65">Courts</dt>
+              <dd className="font-display text-3xl text-fg">{counts.courts}</dd>
             </div>
           </dl>
           {venues.length === 0 ? (
@@ -73,9 +73,9 @@ export default function DashboardPage() {
             <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {venues.map((venue) => (
                 <li key={venue.id}>
-                  <Link to={`/dashboard/venues/${venue.id}`} className="block rounded-2xl border border-white/10 p-4 hover:bg-white/5">
-                    <p className="font-medium text-white">{venue.name}</p>
-                    <p className="text-sm text-mist/65">{[venue.suburb, venue.state].filter(Boolean).join(", ") || venue.slug}</p>
+                  <Link to={`/dashboard/venues/${venue.id}`} className="block rounded-2xl border border-fg/10 p-4 hover:bg-fg/5">
+                    <p className="font-medium text-fg">{venue.name}</p>
+                    <p className="text-sm text-fg/65">{[venue.suburb, venue.state].filter(Boolean).join(", ") || venue.slug}</p>
                   </Link>
                 </li>
               ))}

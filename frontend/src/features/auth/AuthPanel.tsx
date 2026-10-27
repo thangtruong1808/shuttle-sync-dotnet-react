@@ -1,10 +1,7 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
-  CircleAlert,
   CircleCheck,
-  Eye,
-  EyeOff,
   LockKeyhole,
   LogIn,
   LogOut,
@@ -14,7 +11,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import type { AppDispatch, RootState } from "../../app/store";
-import { Button, Skeleton } from "../../components/ui";
+import { Alert, Button, Field, Input, PasswordInput, Skeleton } from "../../components/ui";
 import { AuthRequestError, providerStartUrl } from "./authApi";
 import {
   fetchSessions,
@@ -48,7 +45,6 @@ export default function AuthPanel({
   const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formMessage, setFormMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<"error" | "success">("error");
@@ -160,13 +156,13 @@ export default function AuthPanel({
   if (status === "authenticated" && user) {
     return (
       <div className="mt-5 space-y-5">
-        <div className="flex items-start gap-3 rounded-2xl bg-white/5 p-4">
-          <span className="mt-0.5 rounded-full bg-line/15 p-2 text-line">
+        <div className="flex items-start gap-3 rounded-2xl bg-fg/5 p-4">
+          <span className="mt-0.5 rounded-full bg-accent/15 p-2 text-accent-text">
             <CircleCheck className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
-            <p className="text-sm text-mist/70">Signed in</p>
-            <p className="font-medium text-mist">{user.email}</p>
+            <p className="text-sm text-fg/70">Signed in</p>
+            <p className="font-medium text-fg">{user.email}</p>
           </div>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -192,7 +188,7 @@ export default function AuthPanel({
           </Button>
         </div>
         <div>
-          <h3 className="flex items-center gap-2 text-sm font-medium text-mist/70">
+          <h3 className="flex items-center gap-2 text-sm font-medium text-fg/70">
             <MonitorSmartphone className="h-4 w-4" aria-hidden="true" />
             Sessions
           </h3>
@@ -205,9 +201,9 @@ export default function AuthPanel({
           ) : (
             <ul className="mt-3 space-y-3">
               {sessions.map((session) => (
-                <li key={session.id} className="rounded-2xl border border-white/10 px-4 py-3 text-sm">
-                  <p className="font-medium text-mist">{session.isCurrent ? "This device" : "Other device"}</p>
-                  <p className="mt-1 text-mist/60">{session.userAgent ?? "Unknown browser"}</p>
+                <li key={session.id} className="rounded-2xl border border-fg/10 px-4 py-3 text-sm">
+                  <p className="font-medium text-fg">{session.isCurrent ? "This device" : "Other device"}</p>
+                  <p className="mt-1 text-fg/60">{session.userAgent ?? "Unknown browser"}</p>
                   <Button
                     variant="danger"
                     className="mt-3 px-3 py-1.5"
@@ -227,128 +223,85 @@ export default function AuthPanel({
   }
 
   return (
-    <form className="mt-5 space-y-4" onSubmit={onSubmit} noValidate>
-      <div className="grid grid-cols-2 rounded-xl bg-black/20 p-1 text-sm">
-        <button
-          type="button"
-          className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 ${mode === "login" ? "bg-white/10 text-mist" : "text-mist/55"}`}
-          onClick={() => { setMode("login"); setShowPassword(false); }}
-        >
-          <LogIn className="h-4 w-4" aria-hidden="true" />
-          Sign in
-        </button>
-        <button
-          type="button"
-          className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 ${mode === "register" ? "bg-white/10 text-mist" : "text-mist/55"}`}
-          onClick={() => { setMode("register"); setShowPassword(false); }}
-        >
-          <UserPlus className="h-4 w-4" aria-hidden="true" />
-          Create account
-        </button>
+    <form className="space-y-5" onSubmit={onSubmit} noValidate>
+      <div className="grid grid-cols-2 rounded-xl border border-border bg-surface-2 p-1 text-sm">
+        {(["login", "register"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={mode === value}
+            className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-medium transition-colors ${mode === value ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
+            onClick={() => setMode(value)}
+          >
+            {value === "login" ? <LogIn className="h-4 w-4" aria-hidden="true" /> : <UserPlus className="h-4 w-4" aria-hidden="true" />}
+            {value === "login" ? "Sign in" : "Create account"}
+          </button>
+        ))}
       </div>
-      <Field label="Email" icon={<Mail className="h-4 w-4" aria-hidden="true" />} error={fieldErrors.email?.[0]}>
-        <input
-          type="email"
-          autoComplete="email"
-          value={email}
-          disabled={submitting}
-          onChange={(event) => setEmail(event.target.value)}
-          className="w-full bg-transparent py-2.5 pr-3 text-mist outline-none placeholder:text-mist/35"
-          placeholder="you@example.com"
-        />
+      <Field label="Email" error={fieldErrors.email?.[0]}>
+        {({ id, describedBy, invalid }) => (
+          <span className="relative block">
+            <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
+            <Input
+              id={id}
+              type="email"
+              autoComplete="email"
+              value={email}
+              disabled={submitting}
+              aria-invalid={invalid}
+              aria-describedby={describedBy}
+              onChange={(event) => setEmail(event.target.value)}
+              className="pl-10"
+              placeholder="you@example.com"
+            />
+          </span>
+        )}
       </Field>
-      <Field
-        label="Password"
-        icon={<LockKeyhole className="h-4 w-4" aria-hidden="true" />}
-        error={fieldErrors.password?.[0]}
-      >
-        <input
-          type={showPassword ? "text" : "password"}
-          autoComplete={mode === "login" ? "current-password" : "new-password"}
-          value={password}
-          disabled={submitting}
-          onChange={(event) => setPassword(event.target.value)}
-          className="min-w-0 flex-1 bg-transparent py-2.5 text-mist outline-none placeholder:text-mist/35"
-          placeholder="At least 12 characters"
-        />
-        <button
-          type="button"
-          className="shrink-0 rounded-lg p-1 text-mist/70 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label={showPassword ? "Hide password" : "Show password"}
-          aria-pressed={showPassword}
-          disabled={submitting}
-          onClick={() => setShowPassword((visible) => !visible)}
-        >
-          {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
-        </button>
+      <Field label="Password" hint={mode === "register" ? "Use at least 12 characters." : undefined} error={fieldErrors.password?.[0]}>
+        {({ id, describedBy, invalid }) => (
+          <span className="relative block">
+            <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
+            <PasswordInput
+              key={mode}
+              id={id}
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              value={password}
+              disabled={submitting}
+              aria-invalid={invalid}
+              aria-describedby={describedBy}
+              onChange={(event) => setPassword(event.target.value)}
+              className="pl-10"
+              placeholder="At least 12 characters"
+            />
+          </span>
+        )}
       </Field>
-      {formMessage && (
-        <p className={`flex items-start gap-2 text-sm ${messageTone === "success" ? "text-line" : "text-amber-200"}`}>
-          {messageTone === "success" ? (
-            <CircleCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          ) : (
-            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          )}
-          {formMessage}
-        </p>
-      )}
+      {formMessage ? (
+        <Alert tone={messageTone === "success" ? "success" : "warning"}>{formMessage}</Alert>
+      ) : null}
       <Button
         type="submit"
+        size="lg"
         loading={submitting}
         className="w-full"
         icon={mode === "login" ? <LogIn className="h-4 w-4" aria-hidden="true" /> : <UserPlus className="h-4 w-4" aria-hidden="true" />}
       >
         {mode === "login" ? "Sign in" : "Create account"}
       </Button>
+      <div className="flex items-center gap-3 text-xs uppercase tracking-wider text-fg-muted" aria-hidden="true">
+        <span className="h-px flex-1 bg-border" />
+        or continue with
+        <span className="h-px flex-1 bg-border" />
+      </div>
       <div className="grid gap-2 sm:grid-cols-2">
-        <button
-          type="button"
-          disabled={startingProvider !== null}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-sm text-mist transition hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
-          onClick={() => void startProvider("google")}
-        >
-          <GoogleIcon />
+        <Button variant="secondary" loading={startingProvider === "google"} disabled={startingProvider !== null} icon={<GoogleIcon />} onClick={() => void startProvider("google")}>
           Google
-        </button>
-        <button
-          type="button"
-          disabled={startingProvider !== null}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-sm text-mist transition hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
-          onClick={() => void startProvider("github")}
-        >
-          <GitHubIcon />
+        </Button>
+        <Button variant="secondary" loading={startingProvider === "github"} disabled={startingProvider !== null} icon={<GitHubIcon />} onClick={() => void startProvider("github")}>
           GitHub
-        </button>
+        </Button>
       </div>
     </form>
-  );
-}
-
-function Field({
-  label,
-  icon,
-  error,
-  children,
-}: {
-  label: string;
-  icon: ReactNode;
-  error?: string;
-  children: ReactNode;
-}) {
-  return (
-    <label className="block text-sm">
-      <span className="mb-1.5 block font-medium text-mist/80">{label}</span>
-      <span className={`flex items-center gap-2 rounded-xl border bg-black/25 px-3 ${error ? "border-rose-400/70" : "border-white/10 focus-within:border-line"}`}>
-        <span className="text-mist/45">{icon}</span>
-        {children}
-      </span>
-      {error && (
-        <span className="mt-1.5 flex items-center gap-1.5 text-rose-300">
-          <CircleAlert className="h-3.5 w-3.5" aria-hidden="true" />
-          {error}
-        </span>
-      )}
-    </label>
   );
 }
 

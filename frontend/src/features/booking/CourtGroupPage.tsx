@@ -9,7 +9,7 @@ import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { bookingPayment, refreshUnpaidHolds, type BookingPayment } from "../profile/profileApi";
 import { abandonCourtCheckout, bookAgainPath, courtHold, forgetOpenCheckout, readOpenCheckout, rememberOpenCheckout, startGroupCheckout, venuePromotions, type CourtHoldSession, type Promotion, type ReleasedRetry } from "../venues/venueApi";
-import { PaymentResultBanner, paymentOutcomeKind, paymentSettled } from "./PaymentResultBanner";
+import { PaymentResultBanner, paymentOutcomeKind, paymentSettled, useCleanReturnUrl } from "./PaymentResultBanner";
 
 const checkoutKey = "shuttle-sync-checkout";
 const pointPercents = [25, 50, 75, 100] as const;
@@ -185,6 +185,8 @@ export default function CourtGroupPage() {
     };
   }, [dispatch, location.search, status]);
 
+  useCleanReturnUrl(waiting, outcome);
+
   if (status === "anonymous") {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
@@ -261,22 +263,22 @@ export default function CourtGroupPage() {
 
   return (
     <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
-      <Link to={`/${slug}/book`} className="text-sm text-line hover:underline">Back to booking</Link>
-      <h1 className="mt-3 flex items-center gap-2 font-display text-3xl text-white">
-        {waiting || paymentProcessing ? <Spinner className="h-7 w-7 shrink-0 text-line" /> : paymentFailed ? null : paidView ? <CircleCheck className="h-8 w-8 shrink-0 text-line" aria-hidden="true" /> : null}
+      <Link to={`/${slug}/book`} className="text-sm text-accent-text hover:underline">Back to booking</Link>
+      <h1 className="mt-3 flex items-center gap-2 font-display text-3xl text-fg">
+        {waiting || paymentProcessing ? <Spinner className="h-7 w-7 shrink-0 text-accent-text" /> : paymentFailed ? null : paidView ? <CircleCheck className="h-8 w-8 shrink-0 text-accent-text" aria-hidden="true" /> : null}
         <span>{waiting ? "Checking your payment" : paymentFailed ? "Payment not confirmed" : paymentProcessing ? "Waiting for bank confirmation" : paidView ? "This week is paid" : "Pay one week"}</span>
       </h1>
-      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">{intro ?? payIntro}</p>
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-fg/75">{intro ?? payIntro}</p>
       {waiting ? <PaymentResultBanner kind="waiting" subject="courts" className="mt-6 max-w-3xl" /> : null}
       {!waiting && paymentFailed ? <PaymentResultBanner kind={outcomeKind === "cancelled" ? "cancelled" : "failed"} subject="courts" retryTo={`/${slug}/book`} className="mt-6 max-w-3xl" /> : null}
       {!waiting && paymentProcessing ? <PaymentResultBanner kind="processing" subject="courts" className="mt-6 max-w-3xl" /> : null}
       {released ? (
         <section className="mt-6 max-w-3xl rounded-3xl border border-amber-300/40 bg-amber-400/10 p-4 sm:p-5" role="status">
-          <p className="flex items-start gap-2 text-sm leading-relaxed text-amber-50">
-            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" aria-hidden="true" />
+          <p className="flex items-start gap-2 text-sm leading-relaxed text-amber-800 dark:text-amber-50">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-200" aria-hidden="true" />
             <span>{released.message}</span>
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-mist/80">
+          <p className="mt-2 text-sm leading-relaxed text-fg/80">
             {released.retry
               ? "Try again opens the booking form with the same date, time, and courts. Check they are still free, then pay to secure them."
               : "Book the courts again to try another payment."}
@@ -284,12 +286,12 @@ export default function CourtGroupPage() {
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <Link
               to={released.retry ? bookAgainPath(slug, released.retry) : `/${slug}/book`}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto"
             >
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
               Try again
             </Link>
-            <Link to="/profile/bookings" className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-mist hover:bg-white/10 sm:w-auto">
+            <Link to="/profile/bookings" className="inline-flex w-full items-center justify-center rounded-xl border border-fg/15 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg hover:bg-fg/10 sm:w-auto">
               My bookings
             </Link>
           </div>
@@ -297,7 +299,7 @@ export default function CourtGroupPage() {
       ) : status === "unknown" || (!sessions && !error) ? (
         <div className="mt-6 space-y-2" aria-busy="true">
           <span className="sr-only">{checkoutState === "cancel" ? "Releasing the cancelled payment" : "Loading court hold"}</span>
-          {checkoutState === "cancel" ? <p className="flex items-center gap-2 text-sm text-mist" role="status"><Spinner className="h-4 w-4" /> Payment was cancelled. Releasing this booking until Stripe confirms it.</p> : null}
+          {checkoutState === "cancel" ? <p className="flex items-center gap-2 text-sm text-fg" role="status"><Spinner className="h-4 w-4" /> Payment was cancelled. Releasing this booking until Stripe confirms it.</p> : null}
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
         </div>
@@ -306,22 +308,22 @@ export default function CourtGroupPage() {
       ) : sessions && preview ? (
         <div className={paidView ? "mt-6 space-y-4" : "mt-6 grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]"}>
           {paidView && !waiting && !paymentProcessing ? (
-            <section className="overflow-hidden rounded-3xl border border-line/30 bg-gradient-to-br from-line/15 via-pine/90 to-pine/80 p-4 sm:p-5" role="status">
+            <section className="overflow-hidden rounded-3xl border border-accent-text/30 bg-gradient-to-br from-accent/15 via-surface/90 to-surface/80 p-4 sm:p-5" role="status">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-2 font-semibold text-line">
+                  <p className="flex items-center gap-2 font-semibold text-accent-text">
                     <ShieldCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
                     {`${securedCount} ${securedCount === 1 ? "court is" : "courts are"} secured`}
                   </p>
-                  <p className="mt-2 text-sm leading-relaxed text-mist/80">
+                  <p className="mt-2 text-sm leading-relaxed text-fg/80">
                     {heldWeekCount === 0
                       ? "Every week in this series is paid."
                       : `${paidWeekCount} ${paidWeekCount === 1 ? "week is" : "weeks are"} paid · ${heldWeekCount} ${heldWeekCount === 1 ? "week is" : "weeks are"} held for you. Pay each held week from My bookings before 24 hours of that session.`}
                   </p>
-                  {heldNote ? <p className="mt-2 text-sm leading-relaxed text-mist/80">{heldNote}</p> : null}
-                  {formError ? <p className="mt-2 text-sm text-mist" role="alert">{formError}</p> : null}
+                  {heldNote ? <p className="mt-2 text-sm leading-relaxed text-fg/80">{heldNote}</p> : null}
+                  {formError ? <p className="mt-2 text-sm text-fg" role="alert">{formError}</p> : null}
                 </div>
-                <Link to="/profile/bookings" className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-lime-300 sm:w-auto">
+                <Link to="/profile/bookings" className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg transition hover:bg-lime-300 sm:w-auto">
                   <CalendarDays className="h-4 w-4" aria-hidden="true" />
                   View my bookings
                 </Link>
@@ -329,28 +331,28 @@ export default function CourtGroupPage() {
             </section>
           ) : null}
           <section className="min-w-0">
-            <h2 className="font-display text-2xl text-white">Sessions</h2>
+            <h2 className="font-display text-2xl text-fg">Sessions</h2>
             <ul className={`mt-3 grid grid-cols-1 gap-3 ${paidView ? "sm:grid-cols-2 xl:grid-cols-3" : ""}`}>
               {weekGroups.map((week) => {
                 const open = openWeeks[week[0].startTime] === true;
                 const securedInWeek = week.filter((session) => session.status === "confirmed").length;
                 const heldInWeek = week.length - securedInWeek;
                 return (
-                  <li key={week[0].startTime} className="rounded-2xl border border-white/10 bg-pine/80 p-3 transition-colors hover:border-line/40 hover:bg-white/5">
+                  <li key={week[0].startTime} className="rounded-2xl border border-fg/10 bg-surface/80 p-3 transition-colors hover:border-accent-text/40 hover:bg-fg/5">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-white">{formatVenueDateTime(week[0].startTime, timeZone)}</p>
-                        <p className="text-xs text-mist/60">until {formatVenueDateTime(week[0].endTime, timeZone)}</p>
-                        <p className="mt-1 text-xs text-mist/75">{week.length} {week.length === 1 ? "court" : "courts"}</p>
+                        <p className="text-sm font-medium text-fg">{formatVenueDateTime(week[0].startTime, timeZone)}</p>
+                        <p className="text-xs text-fg/60">until {formatVenueDateTime(week[0].endTime, timeZone)}</p>
+                        <p className="mt-1 text-xs text-fg/75">{week.length} {week.length === 1 ? "court" : "courts"}</p>
                         <p className="mt-2 flex flex-wrap items-center gap-2">
                           {securedInWeek > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-line/20 px-2 py-0.5 text-xs font-semibold text-line">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-accent/20 px-2 py-0.5 text-xs font-semibold text-accent-text">
                               <CircleCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                               {heldInWeek === 0 ? "Paid" : `${securedInWeek} paid`}
                             </span>
                           ) : null}
                           {heldInWeek > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-xs font-semibold text-mist">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-fg/10 px-2 py-0.5 text-xs font-semibold text-fg">
                               <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                               {securedInWeek === 0 ? "Unpaid" : `${heldInWeek} unpaid`}
                             </span>
@@ -359,7 +361,7 @@ export default function CourtGroupPage() {
                       </div>
                       <button
                         type="button"
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-mist hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-fg hover:bg-fg/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text"
                         aria-expanded={open}
                         onClick={() => setOpenWeeks((current) => ({ ...current, [week[0].startTime]: !open }))}
                       >
@@ -372,14 +374,14 @@ export default function CourtGroupPage() {
                         {week.map((session) => {
                           const secured = session.status === "confirmed";
                           return (
-                            <li key={session.bookingId} className="rounded-xl px-2 py-2 transition-colors hover:bg-line/15">
+                            <li key={session.bookingId} className="rounded-xl px-2 py-2 transition-colors hover:bg-accent/15">
                               <div className="flex items-start justify-between gap-2">
-                                <p className="min-w-0 font-medium text-white">{session.courtName}</p>
-                                <p className="shrink-0 text-sm font-semibold text-white"><Money amount={session.price} currency={currency} /></p>
+                                <p className="min-w-0 font-medium text-fg">{session.courtName}</p>
+                                <p className="shrink-0 text-sm font-semibold text-fg"><Money amount={session.price} currency={currency} /></p>
                               </div>
-                              <p className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${secured ? "bg-line/20 text-line" : "bg-white/10 text-mist"}`}>{courtStatus(session)}</p>
-                              {!paidView && !secured && picked.includes(session.bookingId) ? <p className="mt-1 text-xs font-semibold text-line">In this payment</p> : null}
-                              {session.incentivePoints > 0 && !secured ? <p className="mt-1 text-sm text-line">+{session.incentivePoints} pts after this session ends</p> : null}
+                              <p className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${secured ? "bg-accent/20 text-accent-text" : "bg-fg/10 text-fg"}`}>{courtStatus(session)}</p>
+                              {!paidView && !secured && picked.includes(session.bookingId) ? <p className="mt-1 text-xs font-semibold text-accent-text">In this payment</p> : null}
+                              {session.incentivePoints > 0 && !secured ? <p className="mt-1 text-sm text-accent-text">+{session.incentivePoints} pts after this session ends</p> : null}
                             </li>
                           );
                         })}
@@ -389,22 +391,22 @@ export default function CourtGroupPage() {
                 );
               })}
             </ul>
-            {unpaid.some((session) => session.payNow) ? <p className="mt-3 text-sm text-mist/75">A session starting within 24 hours is only held for 30 minutes. Pay now to keep it.</p> : null}
+            {unpaid.some((session) => session.payNow) ? <p className="mt-3 text-sm text-fg/75">A session starting within 24 hours is only held for 30 minutes. Pay now to keep it.</p> : null}
           </section>
           {paidView ? null : (
-          <section className="rounded-3xl border border-white/10 bg-gradient-to-b from-white/5 to-pine/90 p-4 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.8)] sm:p-5 lg:sticky lg:top-4">
+          <section className="rounded-3xl border border-fg/10 bg-gradient-to-b from-fg/5 to-surface/90 p-4 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.8)] sm:p-5 lg:sticky lg:top-4">
             {checkoutState === "cancel" ? (
-              <p className="text-sm leading-relaxed text-mist" role="status">{formError ?? "Payment was cancelled. Courts due within 24 hours were released. Later weeks stay in My bookings."}</p>
+              <p className="text-sm leading-relaxed text-fg" role="status">{formError ?? "Payment was cancelled. Courts due within 24 hours were released. Later weeks stay in My bookings."}</p>
             ) : (
               <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void onPay(); }}>
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-mist/60">Checkout</p>
-                  <p className="mt-1 text-lg font-semibold text-white">{unpaid.length === 0 ? "Choose courts to pay" : `Pay ${unpaid.length} ${unpaid.length === 1 ? "court" : "courts"}`}</p>
-                  <p className="mt-1 text-sm text-mist/75">{mustPayNow ? "This session starts within 24 hours. Pay now to keep it. It is only held for 30 minutes." : otherWeeks > 0 ? `${otherWeeks} more ${otherWeeks === 1 ? "week stays" : "weeks stay"} held after this payment.` : "Secure this week with Stripe, points, or both."}</p>
+                <div className="rounded-2xl border border-fg/10 bg-inset p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-fg/60">Checkout</p>
+                  <p className="mt-1 text-lg font-semibold text-fg">{unpaid.length === 0 ? "Choose courts to pay" : `Pay ${unpaid.length} ${unpaid.length === 1 ? "court" : "courts"}`}</p>
+                  <p className="mt-1 text-sm text-fg/75">{mustPayNow ? "This session starts within 24 hours. Pay now to keep it. It is only held for 30 minutes." : otherWeeks > 0 ? `${otherWeeks} more ${otherWeeks === 1 ? "week stays" : "weeks stay"} held after this payment.` : "Secure this week with Stripe, points, or both."}</p>
                 </div>
-                {outcome?.status === "confirmed" ? <p className="text-sm font-semibold text-line" role="status">That week is secured. Choose another week when you are ready.</p> : null}
+                {outcome?.status === "confirmed" ? <p className="text-sm font-semibold text-accent-text" role="status">That week is secured. Choose another week when you are ready.</p> : null}
                 <div>
-                  <p className="text-sm text-mist/80">Promotion code</p>
+                  <p className="text-sm text-fg/80">Promotion code</p>
                   {promotions === null ? (
                     <div className="mt-2" aria-busy="true"><span className="sr-only">Loading promotion codes</span><Skeleton className="h-14" /></div>
                   ) : promotions.length > 0 ? (
@@ -412,10 +414,10 @@ export default function CourtGroupPage() {
                       {promotions.map((promotion) => {
                         const selected = appliedCode?.id === promotion.id;
                         return (
-                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 transition-colors sm:flex-row sm:items-center sm:justify-between ${selected ? "border-line/60 bg-line/10 hover:bg-line/20" : "border-white/10 bg-black/20 hover:bg-white/10"}`}>
+                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 transition-colors sm:flex-row sm:items-center sm:justify-between ${selected ? "border-accent-text/60 bg-accent/10 hover:bg-accent/20" : "border-fg/10 bg-inset hover:bg-fg/10"}`}>
                             <div className="min-w-0">
-                              <p className="break-all font-semibold text-white">{promotion.code}</p>
-                              <p className="text-sm text-line">{promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}</p>
+                              <p className="break-all font-semibold text-fg">{promotion.code}</p>
+                              <p className="text-sm text-accent-text">{promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}</p>
                             </div>
                             <Button type="button" variant={selected ? "primary" : "secondary"} className="w-full sm:w-auto" disabled={paying || waiting} onClick={() => { setAppliedCode(selected ? null : promotion); setPromoNote(selected ? null : `${promotion.code} applied.`); }}>
                               {selected ? "Applied" : "Apply"}
@@ -424,32 +426,32 @@ export default function CourtGroupPage() {
                         );
                       })}
                     </ul>
-                  ) : <p className="mt-2 text-sm text-mist/70">No active promotion codes right now.</p>}
-                  {promoNote ? <p className="mt-2 text-sm text-mist" role="status">{promoNote}</p> : null}
+                  ) : <p className="mt-2 text-sm text-fg/70">No active promotion codes right now.</p>}
+                  {promoNote ? <p className="mt-2 text-sm text-fg" role="status">{promoNote}</p> : null}
                 </div>
                 <div>
-                  <p className="text-sm text-mist/80">Reward points</p>
+                  <p className="text-sm text-fg/80">Reward points</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {pointPercents.map((percent) => (
-                      <button key={percent} type="button" disabled={paying || waiting || maxPoints === 0} className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-line text-ink hover:bg-lime-300" : "border border-white/15 text-mist hover:bg-white/10"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
+                      <button key={percent} type="button" disabled={paying || waiting || maxPoints === 0} className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg hover:bg-lime-300" : "border border-fg/15 text-fg hover:bg-fg/10"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
                         {percent}%
                       </button>
                     ))}
                   </div>
-                  <input type="range" min={0} max={Math.max(maxPoints, 1)} step={1} value={Math.min(points, maxPoints)} disabled={paying || waiting || maxPoints === 0} aria-label="Reward points" className="mt-3 w-full accent-line disabled:opacity-60" onChange={(event) => setPoints(Number(event.target.value))} />
-                  <p className="mt-1 text-sm text-mist/70">{Math.min(points, maxPoints)} of {balance} points. {rate} points = {currency} 1.</p>
+                  <input type="range" min={0} max={Math.max(maxPoints, 1)} step={1} value={Math.min(points, maxPoints)} disabled={paying || waiting || maxPoints === 0} aria-label="Reward points" className="mt-3 w-full accent-accent-text disabled:opacity-60" onChange={(event) => setPoints(Number(event.target.value))} />
+                  <p className="mt-1 text-sm text-fg/70">{Math.min(points, maxPoints)} of {balance} points. {rate} points = {currency} 1.</p>
                 </div>
-                <dl className="grid gap-1 text-sm text-mist/80">
+                <dl className="grid gap-1 text-sm text-fg/80">
                   <div className="flex justify-between gap-3"><dt>{unpaid.length} {unpaid.length === 1 ? "session" : "sessions"}</dt><dd><Money amount={subtotal} currency={currency} /></dd></div>
                   {discount > 0 ? <div className="flex justify-between gap-3"><dt>Promotion</dt><dd>-<Money amount={discount} currency={currency} /></dd></div> : null}
                   <div className="flex justify-between gap-3"><dt>Points value</dt><dd><Money amount={preview.value} currency={currency} /></dd></div>
-                  <div className="flex justify-between gap-3 font-semibold text-white"><dt>To pay</dt><dd><Money amount={preview.cash} currency={currency} /></dd></div>
+                  <div className="flex justify-between gap-3 font-semibold text-fg"><dt>To pay</dt><dd><Money amount={preview.cash} currency={currency} /></dd></div>
                 </dl>
-                {incentive > 0 ? <p className="text-sm font-semibold text-line">+{incentive} pts after these sessions end, once they are paid.</p> : null}
-                <p className="text-sm text-mist/70">More than 24 hours before a session, a paid court is refunded in full. Within 24 hours, the venue keeps {Number(fee.toFixed(2))}% of the card payment. Points you used always come back in full.</p>
-                {cashTooSmall ? <p className="text-sm text-mist">Use enough points to cover these courts, or leave at least $0.50 to pay.</p> : null}
-                {formError ? <p className="text-sm text-mist" role="alert">{formError}</p> : null}
-                {waiting ? <p className="text-sm text-mist" role="status">Checking the payment…</p> : null}
+                {incentive > 0 ? <p className="text-sm font-semibold text-accent-text">+{incentive} pts after these sessions end, once they are paid.</p> : null}
+                <p className="text-sm text-fg/70">More than 24 hours before a session, a paid court is refunded in full. Within 24 hours, the venue keeps {Number(fee.toFixed(2))}% of the card payment. Points you used always come back in full.</p>
+                {cashTooSmall ? <p className="text-sm text-fg">Use enough points to cover these courts, or leave at least $0.50 to pay.</p> : null}
+                {formError ? <p className="text-sm text-fg" role="alert">{formError}</p> : null}
+                {waiting ? <p className="text-sm text-fg" role="status">Checking the payment…</p> : null}
                 <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                   <Button type="submit" className="w-full sm:w-auto" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={paying || waiting} disabled={cashTooSmall || unpaid.length === 0}>
                     {preview.cash === 0 ? "Secure with points" : "Pay and secure"}
@@ -460,7 +462,7 @@ export default function CourtGroupPage() {
                     </Button>
                   )}
                 </div>
-                {mustPayNow ? null : <p className="text-sm text-mist/70">Pay later is optional. These courts stay held, and you can pay them from My bookings before 24 hours of the session.</p>}
+                {mustPayNow ? null : <p className="text-sm text-fg/70">Pay later is optional. These courts stay held, and you can pay them from My bookings before 24 hours of the session.</p>}
               </form>
             )}
           </section>

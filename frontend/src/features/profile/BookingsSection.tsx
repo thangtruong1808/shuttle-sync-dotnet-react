@@ -116,7 +116,7 @@ function WeekPayStatus({ courts }: { courts: CourtWeekCourt[] }) {
   const paid = courts.filter((court) => court.status === "confirmed").length;
   if (paid === courts.length) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-line/40 bg-line/15 px-2 py-0.5 text-xs font-semibold text-line">
+      <span className="inline-flex items-center gap-1 rounded-full border border-accent-text/40 bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent-text">
         <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
         Paid
       </span>
@@ -125,7 +125,7 @@ function WeekPayStatus({ courts }: { courts: CourtWeekCourt[] }) {
   const dueAt = new Date(leadCourt(courts).startTime).getTime() - 24 * 60 * 60 * 1000;
   const dueNow = dueAt <= Date.now();
   const Icon = dueNow ? CircleAlert : Clock;
-  const tone = dueNow ? "border-rose-300/50 bg-rose-500/15 text-rose-100" : "border-amber-300/40 bg-amber-400/15 text-amber-100";
+  const tone = dueNow ? "border-rose-300/50 bg-rose-500/15 text-rose-800 dark:text-rose-100" : "border-amber-300/40 bg-amber-400/15 text-amber-800 dark:text-amber-100";
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${tone}`}>
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
@@ -210,27 +210,27 @@ function SeriesCard({ weeks, topUps = [], open, onToggle, openWeek, onOpenWeek, 
   }
 
   return (
-    <li className="rounded-2xl border border-white/10 p-4 transition-colors hover:border-line/30">
+    <li className="rounded-2xl border border-fg/10 p-4 transition-colors hover:border-accent-text/30">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <button type="button" className="min-w-0 flex-1 rounded-xl px-1 py-1 text-left transition-colors hover:bg-white/5" aria-expanded={open} onClick={onToggle}>
+        <button type="button" className="min-w-0 flex-1 rounded-xl px-1 py-1 text-left transition-colors hover:bg-fg/5" aria-expanded={open} onClick={onToggle}>
           <span className="flex items-start gap-2">
-            <ChevronDown className={`mt-1 h-4 w-4 shrink-0 text-mist transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+            <ChevronDown className={`mt-1 h-4 w-4 shrink-0 text-fg transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
             <span className="min-w-0">
-              <span className="block font-medium text-white">{sample.venueName}</span>
-              <span className="mt-1 block text-sm text-mist">{sharedTime ? formatVenueRange(sample.startTime, sample.endTime, sample.timeZone) : <>Next session {formatWeekDate(nextCourt.startTime, nextCourt.timeZone)} · {formatVenueRange(nextCourt.startTime, nextCourt.endTime, nextCourt.timeZone)}</>}</span>
-              <span className="mt-1 block text-sm leading-relaxed text-mist/80">{weekSpan(ordered)}. {ordered.length} {ordered.length === 1 ? "week" : "weeks"}{sharedTime ? " at this time" : ", each court at its current time"}.{sharedTime ? <> Next session {formatWeekDate(nextCourt.startTime, nextCourt.timeZone)}.</> : null}</span>
-              <span className="mt-1 block text-sm text-white">{securedWeeks} {securedWeeks === 1 ? "week" : "weeks"} secured · {heldWeeks} {heldWeeks === 1 ? "week" : "weeks"} held.{due ? dueSoon ? " The next session is inside 24 hours. Pay now to keep it." : ` Pay the next week before ${formatVenueDateTime(due.toISOString(), nextUnpaid ? leadCourt(nextUnpaid).timeZone : sample.timeZone)}.` : ""}</span>
+              <span className="block font-medium text-fg">{sample.venueName}</span>
+              <span className="mt-1 block text-sm text-fg">{sharedTime ? formatVenueRange(sample.startTime, sample.endTime, sample.timeZone) : <>Next session {formatWeekDate(nextCourt.startTime, nextCourt.timeZone)} · {formatVenueRange(nextCourt.startTime, nextCourt.endTime, nextCourt.timeZone)}</>}</span>
+              <span className="mt-1 block text-sm leading-relaxed text-fg/80">{weekSpan(ordered)}. {ordered.length} {ordered.length === 1 ? "week" : "weeks"}{sharedTime ? " at this time" : ", each court at its current time"}.{sharedTime ? <> Next session {formatWeekDate(nextCourt.startTime, nextCourt.timeZone)}.</> : null}</span>
+              <span className="mt-1 block text-sm text-fg">{securedWeeks} {securedWeeks === 1 ? "week" : "weeks"} secured · {heldWeeks} {heldWeeks === 1 ? "week" : "weeks"} held.{due ? dueSoon ? " The next session is inside 24 hours. Pay now to keep it." : ` Pay the next week before ${formatVenueDateTime(due.toISOString(), nextUnpaid ? leadCourt(nextUnpaid).timeZone : sample.timeZone)}.` : ""}</span>
             </span>
           </span>
         </button>
         <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
           {nextUnpaid ? (
-            <Link to={`/${sample.venueSlug}/book/group/${sample.groupId}?bookings=${nextUnpaid.filter((court) => court.status === "pending").map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
+            <Link to={`/${sample.venueSlug}/book/group/${sample.groupId}?bookings=${nextUnpaid.filter((court) => court.status === "pending").map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
               <CreditCard className="h-4 w-4 shrink-0" aria-hidden="true" />
               Pay next week
             </Link>
           ) : (
-            <p className="text-sm font-semibold text-line sm:pt-1">All weeks are paid.</p>
+            <p className="text-sm font-semibold text-accent-text sm:pt-1">All weeks are paid.</p>
           )}
           <Button type="button" variant="danger" className="w-full sm:w-auto" loading={seriesBusy} disabled={seriesBusy || repeatBusy} onClick={() => void removeSeries()}>
             {confirmSeries ? "Confirm delete" : "Delete all weeks"}
@@ -239,43 +239,43 @@ function SeriesCard({ weeks, topUps = [], open, onToggle, openWeek, onOpenWeek, 
       </div>
       {confirmSeries && seriesPreview && !seriesBusy ? (
         <div className="mt-3 rounded-2xl border border-rose-300/40 bg-rose-500/10 p-3 sm:p-4" role="status">
-          <p className="flex items-center gap-2 font-semibold text-rose-100">
+          <p className="flex items-center gap-2 font-semibold text-rose-800 dark:text-rose-100">
             <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
             Delete every week in this booking?
           </p>
-          <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-mist">
+          <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-fg">
             {unpaidCourts > 0 ? (
               <li className="flex items-start gap-2">
-                <Unlock className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" aria-hidden="true" />
+                <Unlock className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-200" aria-hidden="true" />
                 <span>{unpaidCourts} unpaid {unpaidCourts === 1 ? "court is" : "courts are"} released. Nothing is charged.</span>
               </li>
             ) : null}
             {seriesPreview.paidCourts > 0 ? (
               <li className="flex items-start gap-2">
-                <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-line" aria-hidden="true" />
+                <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" aria-hidden="true" />
                 <span>
                   {seriesPreview.paidCourts} paid {seriesPreview.paidCourts === 1 ? "court is" : "courts are"} cancelled. You paid <Money amount={seriesPreview.charged} currency={seriesPreview.currency} />.{" "}
-                  <span className="font-semibold text-white"><Money amount={seriesPreview.refund} currency={seriesPreview.currency} /> is refunded to your card.</span>
+                  <span className="font-semibold text-fg"><Money amount={seriesPreview.refund} currency={seriesPreview.currency} /> is refunded to your card.</span>
                 </span>
               </li>
             ) : null}
             {seriesPreview.fee > 0 ? (
               <li className="flex items-start gap-2">
-                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-rose-200" aria-hidden="true" />
+                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-rose-700 dark:text-rose-200" aria-hidden="true" />
                 <span>
                   {seriesPreview.lateCourts} paid {seriesPreview.lateCourts === 1 ? "court starts" : "courts start"} within 24 hours, so the venue keeps{" "}
-                  <span className="font-semibold text-rose-100"><Money amount={seriesPreview.fee} currency={seriesPreview.currency} /></span> ({Number(seriesPreview.feePercent.toFixed(2))}% late-cancel fee).
+                  <span className="font-semibold text-rose-800 dark:text-rose-100"><Money amount={seriesPreview.fee} currency={seriesPreview.currency} /></span> ({Number(seriesPreview.feePercent.toFixed(2))}% late-cancel fee).
                 </span>
               </li>
             ) : seriesPreview.paidCourts > 0 ? (
               <li className="flex items-start gap-2">
-                <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-line" aria-hidden="true" />
+                <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" aria-hidden="true" />
                 <span>Every paid court is more than 24 hours away, so the refund is in full.</span>
               </li>
             ) : null}
             {seriesPreview.pointsBack > 0 || seriesPreview.pointsKept > 0 ? (
               <li className="flex items-start gap-2">
-                <Gift className="mt-0.5 h-4 w-4 shrink-0 text-line" aria-hidden="true" />
+                <Gift className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" aria-hidden="true" />
                 <span>
                   {seriesPreview.pointsBack > 0 ? `${seriesPreview.pointsBack} points come back to your balance.` : ""}
                   {seriesPreview.pointsBack > 0 && seriesPreview.pointsKept > 0 ? " " : ""}
@@ -284,24 +284,24 @@ function SeriesCard({ weeks, topUps = [], open, onToggle, openWeek, onOpenWeek, 
               </li>
             ) : null}
             <li className="flex items-start gap-2">
-              <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-mist/70" aria-hidden="true" />
+              <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-fg/70" aria-hidden="true" />
               <span>Keep weeks ahead is turned off, so no week is added back.</span>
             </li>
           </ul>
           <Button type="button" variant="secondary" className="mt-3 w-full sm:w-auto" onClick={() => { setConfirmSeries(false); setSeriesPreview(null); }}>Keep all weeks</Button>
         </div>
       ) : null}
-      {seriesError ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-100" role="alert">{seriesError}</p> : null}
+      {seriesError ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-800 dark:text-rose-100" role="alert">{seriesError}</p> : null}
       {open ? (
         <div className="mt-4">
-          <label className="flex items-start gap-2 text-sm text-mist">
-            <input type="checkbox" className="mt-1 accent-line" checked={Boolean(sample.repeatHold)} disabled={repeatBusy} onChange={(event) => void onRepeat(event.target.checked)} />
+          <label className="flex items-start gap-2 text-sm text-fg">
+            <input type="checkbox" className="mt-1 accent-accent-text" checked={Boolean(sample.repeatHold)} disabled={repeatBusy} onChange={(event) => void onRepeat(event.target.checked)} />
             <span>Keep {horizon} {horizon === 1 ? "week" : "weeks"} ahead. When one week starts, the next free week is held for you. You still pay each week before 24 hours of that session.</span>
           </label>
-          {repeatBusy ? <span className="mt-2 inline-flex items-center gap-2 text-sm text-mist" role="status"><Spinner className="h-3.5 w-3.5" /> Saving repeat</span> : null}
-          {note ? <p className="mt-2 text-sm text-mist" role="status">{note}</p> : null}
-          {repeatError && repeatError !== note ? <p className="mt-2 text-sm text-mist" role="alert">{repeatError}</p> : null}
-          <p className="mt-3 text-sm text-mist/75">No deposit. Open one week to change its courts. Pay that week before 24 hours of the session, or those courts are released.</p>
+          {repeatBusy ? <span className="mt-2 inline-flex items-center gap-2 text-sm text-fg" role="status"><Spinner className="h-3.5 w-3.5" /> Saving repeat</span> : null}
+          {note ? <p className="mt-2 text-sm text-fg" role="status">{note}</p> : null}
+          {repeatError && repeatError !== note ? <p className="mt-2 text-sm text-fg" role="alert">{repeatError}</p> : null}
+          <p className="mt-3 text-sm text-fg/75">No deposit. Open one week to change its courts. Pay that week before 24 hours of the session, or those courts are released.</p>
           <ul className="mt-3 space-y-2">
             {ordered.map((courts) => {
               const yearWeek = weekOfYear(courts[0].startTime, courts[0].timeZone);
@@ -312,24 +312,24 @@ function SeriesCard({ weeks, topUps = [], open, onToggle, openWeek, onOpenWeek, 
               const payNote = weekPayNote(courts);
               const allPaid = payNote === null;
               return (
-                <li key={key} className={`rounded-xl border border-l-4 border-white/10 ${allPaid ? "border-l-line/70" : "border-l-amber-300/70"}`}>
-                  <button type="button" className="flex w-full flex-col gap-2 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-line/10 sm:flex-row sm:items-center sm:justify-between" aria-expanded={opened} onClick={() => onOpenWeek(opened ? null : key)}>
+                <li key={key} className={`rounded-xl border border-l-4 border-fg/10 ${allPaid ? "border-l-line/70" : "border-l-amber-300/70"}`}>
+                  <button type="button" className="flex w-full flex-col gap-2 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-accent/10 sm:flex-row sm:items-center sm:justify-between" aria-expanded={opened} onClick={() => onOpenWeek(opened ? null : key)}>
                     <span className="min-w-0">
                       <span className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium text-white">Week {yearWeek.week} of {yearWeek.year}</span>
+                        <span className="font-medium text-fg">Week {yearWeek.week} of {yearWeek.year}</span>
                         <WeekPayStatus courts={courts} />
                       </span>
                       {slots.map((slot) => (
-                        <span key={`${slot[0].startTime}|${slot[0].endTime}`} className="mt-1 flex items-start gap-1.5 text-sm text-mist/75">
-                          <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />
+                        <span key={`${slot[0].startTime}|${slot[0].endTime}`} className="mt-1 flex items-start gap-1.5 text-sm text-fg/75">
+                          <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" />
                           <span>{slots.length > 1 ? `${slot.map((court) => court.courtName).join(", ")} · ` : ""}{formatWeekDate(slot[0].startTime, slot[0].timeZone)} · {formatVenueRange(slot[0].startTime, slot[0].endTime, slot[0].timeZone)} · {slot.length} {slot.length === 1 ? "court" : "courts"}</span>
                         </span>
                       ))}
-                      {payNote ? <span className="block text-sm text-amber-100/90">{payNote}</span> : null}
+                      {payNote ? <span className="block text-sm text-amber-800/90 dark:text-amber-100/90">{payNote}</span> : null}
                     </span>
                     <span className="inline-flex shrink-0 items-center gap-2">
-                      <span className="text-sm font-semibold text-white"><Money amount={amount} currency={courts[0].currency} /></span>
-                      <span className="inline-flex items-center gap-1 text-sm font-semibold text-mist">
+                      <span className="text-sm font-semibold text-fg"><Money amount={amount} currency={courts[0].currency} /></span>
+                      <span className="inline-flex items-center gap-1 text-sm font-semibold text-fg">
                         {opened ? "Hide courts" : "Show courts"}
                         <ChevronDown className={`h-4 w-4 transition-transform ${opened ? "rotate-180" : ""}`} aria-hidden="true" />
                       </span>
@@ -376,7 +376,7 @@ export function BookingsSection() {
   if (venues === null) {
     return (
       <div>
-        <h1 className="font-display text-3xl text-white">My bookings</h1>
+        <h1 className="font-display text-3xl text-fg">My bookings</h1>
         <RecommendationBanner />
         <div className="mt-4 space-y-3" aria-busy="true">
           <span className="sr-only">Loading bookings</span>
@@ -490,9 +490,9 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-white">My bookings</h1>
-      {weekSaved ? <p className="mt-3 rounded-xl border border-line/40 bg-line/10 px-3 py-2 text-sm text-line" role="status">This week was updated. New courts stay on this card.</p> : null}
-      {venueName ? <p className="mt-1 text-sm leading-relaxed text-mist/75">Showing bookings at <span className="font-semibold text-white">{venueName}</span>. Choose another venue in the menu above to see its bookings.</p> : null}
+      <h1 className="font-display text-3xl text-fg">My bookings</h1>
+      {weekSaved ? <p className="mt-3 rounded-xl border border-accent-text/40 bg-accent/10 px-3 py-2 text-sm text-accent-text" role="status">This week was updated. New courts stay on this card.</p> : null}
+      {venueName ? <p className="mt-1 text-sm leading-relaxed text-fg/75">Showing bookings at <span className="font-semibold text-fg">{venueName}</span>. Choose another venue in the menu above to see its bookings.</p> : null}
       <RecommendationBanner />
       <div className="mt-4 flex gap-2" role="tablist" aria-label="Booking status">
         {tabs.map((item) => (
@@ -503,7 +503,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
             aria-selected={tab === item.id}
             aria-busy={loading && pageMove === null && tab === item.id}
             disabled={loading}
-            className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${tab === item.id ? "bg-line text-ink" : "border border-white/10 text-mist"}`}
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${tab === item.id ? "bg-accent text-accent-fg" : "border border-fg/10 text-fg"}`}
             onClick={() => {
               if (item.id === tab) {
                 return;
@@ -520,7 +520,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
           </button>
         ))}
       </div>
-      {notice ? <p className="mt-4 text-sm text-mist" role="status">{notice}</p> : null}
+      {notice ? <p className="mt-4 text-sm text-fg" role="status">{notice}</p> : null}
       {error ? (
         <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
       ) : loading && pageMove === null ? (
@@ -533,7 +533,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
         <>
       {tab === "upcoming" && weeks && weeks.length > 0 ? (
         <>
-          <h2 className="mt-6 font-display text-2xl text-white">Court bookings</h2>
+          <h2 className="mt-6 font-display text-2xl text-fg">Court bookings</h2>
           <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label="Court hold view">
             {holdFilters.map((item) => (
               <button
@@ -541,7 +541,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
                 type="button"
                 role="tab"
                 aria-selected={holdFilter === item.id}
-                className={`rounded-full px-3 py-1.5 text-sm transition-colors ${holdFilter === item.id ? "bg-line text-ink" : "border border-white/10 text-mist hover:bg-white/10"}`}
+                className={`rounded-full px-3 py-1.5 text-sm transition-colors ${holdFilter === item.id ? "bg-accent text-accent-fg" : "border border-fg/10 text-fg hover:bg-fg/10"}`}
                 onClick={() => { setHoldFilter(item.id); setSeriesPage(1); }}
               >
                 {item.label}
@@ -549,7 +549,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
             ))}
           </div>
           {series.length === 0 ? (
-            <p className="mt-4 text-sm text-mist">No court holds match this view.</p>
+            <p className="mt-4 text-sm text-fg">No court holds match this view.</p>
           ) : (
             <>
             <ul className="mt-4 space-y-3">
@@ -582,7 +582,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
       {data && data.items.length > 0 ? (
         <>
         {tab === "upcoming" && weeks && weeks.length > 0 ? (
-          <h2 className="mt-8 font-display text-2xl text-white">{data.items.every((item) => item.socialId) ? "Public socials" : "Other bookings"}</h2>
+          <h2 className="mt-8 font-display text-2xl text-fg">{data.items.every((item) => item.socialId) ? "Public socials" : "Other bookings"}</h2>
         ) : null}
         <ul className="mt-4 space-y-3">
           {(tab === "upcoming" ? data.items.map((item) => [item]) : sessionGroups(data.items)).map((group) => {
@@ -605,11 +605,11 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
             }
             const booking = group[0];
             return (
-            <li key={booking.id} className="rounded-2xl border border-white/10 p-4">
+            <li key={booking.id} className="rounded-2xl border border-fg/10 p-4">
               <BookingSummary booking={booking} tab={tab} />
               {booking.socialId && booking.canCancel && booking.status !== "waitlist" ? (
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Link to={`/${booking.venueSlug}/social/${booking.socialId}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
+                  <Link to={`/${booking.venueSlug}/social/${booking.socialId}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
                     <UserPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
                     Add friends
                   </Link>
@@ -640,17 +640,17 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
                     {openId === booking.id ? "Hide registration" : "View registration"}
                   </Button>
                   {openId === booking.id ? (
-                    <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-                      <p className="text-sm font-medium text-white">Your place</p>
-                      <p className="text-sm text-mist/80">{booking.status === "waitlist" ? "Waitlist · waiting for a place" : `${booking.courtName} · Court ${booking.courtNumber}`}</p>
-                      <p className="text-sm text-mist/70">{formatVenueRange(booking.startTime, booking.endTime, booking.timeZone)}</p>
-                      <p className="mt-3 text-sm font-medium text-white">Friends</p>
+                    <div className="mt-3 rounded-2xl border border-fg/10 bg-inset p-3">
+                      <p className="text-sm font-medium text-fg">Your place</p>
+                      <p className="text-sm text-fg/80">{booking.status === "waitlist" ? "Waitlist · waiting for a place" : `${booking.courtName} · Court ${booking.courtNumber}`}</p>
+                      <p className="text-sm text-fg/70">{formatVenueRange(booking.startTime, booking.endTime, booking.timeZone)}</p>
+                      <p className="mt-3 text-sm font-medium text-fg">Friends</p>
                       {(booking.friends ?? []).length === 0 ? (
-                        <p className="text-sm text-mist/70">No friends on this social.</p>
+                        <p className="text-sm text-fg/70">No friends on this social.</p>
                       ) : (
                         <ul className="mt-1">
                           {(booking.friends ?? []).map((friend) => (
-                            <li key={friend.id} className="text-sm text-mist/80">{friend.name} · {friend.courtName || "Waitlist"} · {friend.status}</li>
+                            <li key={friend.id} className="text-sm text-fg/80">{friend.name} · {friend.courtName || "Waitlist"} · {friend.status}</li>
                           ))}
                         </ul>
                       )}
@@ -702,19 +702,19 @@ const emptyCopy: Record<(typeof tabs)[number]["id"], { title: string; body: (ven
 function bookingStatus(booking: BookingRow, tab: (typeof tabs)[number]["id"]) {
   switch (booking.status) {
     case "pending":
-      return { label: "Awaiting payment", tone: "bg-amber-400/15 text-amber-200" };
+      return { label: "Awaiting payment", tone: "bg-amber-400/15 text-amber-700 dark:text-amber-200" };
     case "waitlist":
-      return { label: "Waitlist", tone: "bg-sky-400/15 text-sky-200" };
+      return { label: "Waitlist", tone: "bg-sky-400/15 text-sky-700 dark:text-sky-200" };
     case "completed":
-      return { label: "Completed", tone: "bg-line/15 text-line" };
+      return { label: "Completed", tone: "bg-accent/15 text-accent-text" };
     case "no_show":
-      return { label: "No-show", tone: "bg-rose-500/15 text-rose-200" };
+      return { label: "No-show", tone: "bg-rose-500/15 text-rose-700 dark:text-rose-200" };
     case "expired":
-      return { label: "Hold expired", tone: "bg-white/10 text-mist" };
+      return { label: "Hold expired", tone: "bg-fg/10 text-fg" };
     case "cancelled":
-      return { label: "Cancelled", tone: "bg-rose-500/15 text-rose-200" };
+      return { label: "Cancelled", tone: "bg-rose-500/15 text-rose-700 dark:text-rose-200" };
     default:
-      return tab === "past" ? { label: "Played", tone: "bg-line/15 text-line" } : { label: "Confirmed", tone: "bg-line/15 text-line" };
+      return tab === "past" ? { label: "Played", tone: "bg-accent/15 text-accent-text" } : { label: "Confirmed", tone: "bg-accent/15 text-accent-text" };
   }
 }
 
@@ -787,18 +787,18 @@ function SessionGroupCard({
   const panelId = `session-${first.id}`;
 
   return (
-    <li className="rounded-2xl border border-white/10">
+    <li className="rounded-2xl border border-fg/10">
       <div className="flex gap-3 p-4 sm:gap-4">
-        <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] py-2 text-center sm:w-16">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-line">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, weekday: "short" }).format(start)}</span>
-          <span className="font-display text-2xl leading-none text-white">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, day: "numeric" }).format(start)}</span>
-          <span className="text-[11px] uppercase text-mist/70">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, month: "short" }).format(start)}</span>
+        <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl border border-fg/10 bg-fg/[0.04] py-2 text-center sm:w-16">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-accent-text">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, weekday: "short" }).format(start)}</span>
+          <span className="font-display text-2xl leading-none text-fg">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, day: "numeric" }).format(start)}</span>
+          <span className="text-[11px] uppercase text-fg/70">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, month: "short" }).format(start)}</span>
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-mist">
+                <span className="inline-flex items-center gap-1 rounded-full bg-fg/10 px-2 py-0.5 text-xs font-medium text-fg">
                   {social ? <Users className="h-3.5 w-3.5" aria-hidden="true" /> : <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />}
                   {social ? "Public social" : "Court booking"} · {bookings.length} {unit}
                 </span>
@@ -806,40 +806,40 @@ function SessionGroupCard({
                   <span key={label} className={`rounded-full px-2 py-0.5 text-xs font-semibold ${value.tone}`}>{value.count} {label}</span>
                 ))}
               </div>
-              <p className="mt-2 font-medium text-white">{first.venueName}</p>
-              <p className="flex items-center gap-1.5 text-sm text-mist/80">
-                <Clock className="h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />
+              <p className="mt-2 font-medium text-fg">{first.venueName}</p>
+              <p className="flex items-center gap-1.5 text-sm text-fg/80">
+                <Clock className="h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" />
                 {formatVenueRange(first.startTime, first.endTime, first.timeZone)}
-                <span className="text-mist/55">· {duration(first.startTime, first.endTime)}</span>
+                <span className="text-fg/55">· {duration(first.startTime, first.endTime)}</span>
               </p>
-              <p className="mt-0.5 flex items-start gap-1.5 text-xs leading-5 text-mist/65">
-                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />
+              <p className="mt-0.5 flex items-start gap-1.5 text-xs leading-5 text-fg/65">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" />
                 {names}
               </p>
             </div>
             <div className="text-right">
-              <p className="font-semibold text-white"><Money amount={total} currency={first.currency} /></p>
-              <p className="text-xs text-mist/55">Total for {bookings.length} {unit}</p>
+              <p className="font-semibold text-fg"><Money amount={total} currency={first.currency} /></p>
+              <p className="text-xs text-fg/55">Total for {bookings.length} {unit}</p>
             </div>
           </div>
-          <div className="mt-2 space-y-1 text-xs text-mist/65">
+          <div className="mt-2 space-y-1 text-xs text-fg/65">
             {tab === "past" && points > 0 ? (
-              <p className="flex items-center gap-1.5 text-line"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />+{points} reward points earned</p>
+              <p className="flex items-center gap-1.5 text-accent-text"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />+{points} reward points earned</p>
             ) : null}
             {tab === "cancelled" ? (
               refunded > 0 ? (
-                <p className="flex items-center gap-1.5 text-sky-200"><Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Refunded <Money amount={refunded} currency={first.currency} /> in total</p>
+                <p className="flex items-center gap-1.5 text-sky-700 dark:text-sky-200"><Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Refunded <Money amount={refunded} currency={first.currency} /> in total</p>
               ) : !charged ? (
                 <p className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Not charged</p>
               ) : null
             ) : null}
             {tab === "cancelled" && pointsBack > 0 && !social ? (
-              <p className="flex items-center gap-1.5 text-line"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{pointsBack} points returned to your balance</p>
+              <p className="flex items-center gap-1.5 text-accent-text"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{pointsBack} points returned to your balance</p>
             ) : null}
           </div>
           <button
             type="button"
-            className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/10"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-fg/10 px-3 py-1.5 text-sm font-medium text-fg hover:bg-fg/10"
             aria-expanded={open}
             aria-controls={panelId}
             onClick={onToggle}
@@ -850,9 +850,9 @@ function SessionGroupCard({
         </div>
       </div>
       {open ? (
-        <ul id={panelId} className="space-y-2 border-t border-white/10 bg-black/20 p-3 sm:p-4">
+        <ul id={panelId} className="space-y-2 border-t border-fg/10 bg-inset p-3 sm:p-4">
           {bookings.map((booking) => (
-            <li key={booking.id} className="rounded-xl border border-white/10 bg-pine/40 p-3">
+            <li key={booking.id} className="rounded-xl border border-fg/10 bg-surface/40 p-3">
               <BookingSummary booking={booking} tab={tab} />
             </li>
           ))}
@@ -879,53 +879,53 @@ function BookingSummary({ booking, tab }: { booking: BookingRow; tab: (typeof ta
 
   return (
     <div className="flex gap-3 sm:gap-4">
-      <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] py-2 text-center sm:w-16">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-line">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, weekday: "short" }).format(start)}</span>
-        <span className="font-display text-2xl leading-none text-white">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, day: "numeric" }).format(start)}</span>
-        <span className="text-[11px] uppercase text-mist/70">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, month: "short" }).format(start)}</span>
+      <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl border border-fg/10 bg-fg/[0.04] py-2 text-center sm:w-16">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-accent-text">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, weekday: "short" }).format(start)}</span>
+        <span className="font-display text-2xl leading-none text-fg">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, day: "numeric" }).format(start)}</span>
+        <span className="text-[11px] uppercase text-fg/70">{new Intl.DateTimeFormat("en-AU", { timeZone: zone, month: "short" }).format(start)}</span>
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-mist">
+              <span className="inline-flex items-center gap-1 rounded-full bg-fg/10 px-2 py-0.5 text-xs font-medium text-fg">
                 {social ? <Users className="h-3.5 w-3.5" aria-hidden="true" /> : <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />}
                 {social ? "Public social" : "Court booking"}
               </span>
               <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${status.tone}`}>{status.label}</span>
               {tab === "upcoming" ? (
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${soon ? "bg-amber-400/15 text-amber-200" : "bg-white/5 text-mist/80"}`}>{startsIn(booking.startTime)}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${soon ? "bg-amber-400/15 text-amber-700 dark:text-amber-200" : "bg-fg/5 text-fg/80"}`}>{startsIn(booking.startTime)}</span>
               ) : null}
             </div>
-            <p className="mt-2 font-medium text-white">{booking.venueName}</p>
-            <p className="flex items-center gap-1.5 text-sm text-mist/80"><MapPin className="h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />{place}</p>
-            <p className="flex items-center gap-1.5 text-sm text-mist/80">
-              <Clock className="h-3.5 w-3.5 shrink-0 text-mist/60" aria-hidden="true" />
+            <p className="mt-2 font-medium text-fg">{booking.venueName}</p>
+            <p className="flex items-center gap-1.5 text-sm text-fg/80"><MapPin className="h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" />{place}</p>
+            <p className="flex items-center gap-1.5 text-sm text-fg/80">
+              <Clock className="h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" />
               {formatVenueRange(booking.startTime, booking.endTime, booking.timeZone)}
-              <span className="text-mist/55">· {duration(booking.startTime, booking.endTime)}</span>
+              <span className="text-fg/55">· {duration(booking.startTime, booking.endTime)}</span>
             </p>
           </div>
           <div className="text-right">
-            <p className="font-semibold text-white"><Money amount={booking.totalAmount} currency={booking.currency} /></p>
+            <p className="font-semibold text-fg"><Money amount={booking.totalAmount} currency={booking.currency} /></p>
             {discount > 0 || pointsUsed > 0 ? (
               <>
-                {subtotal > booking.totalAmount ? <p className="text-xs text-mist/55 line-through"><Money amount={subtotal} currency={booking.currency} /></p> : null}
-                {discount > 0 ? <p className="text-xs text-line">Promo −<Money amount={discount} currency={booking.currency} /></p> : null}
-                {pointsUsed > 0 ? <p className="text-xs text-line">{pointsUsed} pts used</p> : null}
+                {subtotal > booking.totalAmount ? <p className="text-xs text-fg/55 line-through"><Money amount={subtotal} currency={booking.currency} /></p> : null}
+                {discount > 0 ? <p className="text-xs text-accent-text">Promo −<Money amount={discount} currency={booking.currency} /></p> : null}
+                {pointsUsed > 0 ? <p className="text-xs text-accent-text">{pointsUsed} pts used</p> : null}
               </>
             ) : null}
           </div>
         </div>
-        <div className="mt-2 space-y-1 text-xs text-mist/65">
+        <div className="mt-2 space-y-1 text-xs text-fg/65">
           {tab === "upcoming" && booking.canCancel && booking.status !== "waitlist" ? (
             freeUntil.getTime() > Date.now() ? (
-              <p className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 shrink-0 text-line" aria-hidden="true" />Free cancellation until {formatVenueDateTime(freeUntil.toISOString(), booking.timeZone)}</p>
+              <p className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 shrink-0 text-accent-text" aria-hidden="true" />Free cancellation until {formatVenueDateTime(freeUntil.toISOString(), booking.timeZone)}</p>
             ) : booking.wasPaid && lateFee > 0 ? (
-              <p className="flex items-center gap-1.5 text-amber-200/90"><TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Cancelling now keeps {lateFee}% of the card payment{social ? "" : ". Points you used come back in full"}.</p>
+              <p className="flex items-center gap-1.5 text-amber-700/90 dark:text-amber-200/90"><TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Cancelling now keeps {lateFee}% of the card payment{social ? "" : ". Points you used come back in full"}.</p>
             ) : null
           ) : null}
           {tab === "past" && (booking.pointsEarned ?? 0) > 0 ? (
-            <p className="flex items-center gap-1.5 text-line"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />+{booking.pointsEarned} reward points earned</p>
+            <p className="flex items-center gap-1.5 text-accent-text"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />+{booking.pointsEarned} reward points earned</p>
           ) : null}
           {tab === "cancelled" ? (
             <>
@@ -936,7 +936,7 @@ function BookingSummary({ booking, tab }: { booking: BookingRow; tab: (typeof ta
               ) : null}
               {booking.status === "cancelled" ? (
                 booking.wasPaid ? (
-                  <p className="flex items-center gap-1.5 text-sky-200"><Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <p className="flex items-center gap-1.5 text-sky-700 dark:text-sky-200"><Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     Refunded <Money amount={refund} currency={booking.currency} />{fee > 0 ? ` · ${fee}% late-cancel fee kept` : " · full refund"}
                   </p>
                 ) : booking.wasPaid === false ? (
@@ -944,7 +944,7 @@ function BookingSummary({ booking, tab }: { booking: BookingRow; tab: (typeof ta
                 ) : null
               ) : null}
               {pointsUsed > 0 && (!social || fee === 0) ? (
-                <p className="flex items-center gap-1.5 text-line"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{pointsUsed} points returned to your balance</p>
+                <p className="flex items-center gap-1.5 text-accent-text"><Gift className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{pointsUsed} points returned to your balance</p>
               ) : null}
             </>
           ) : null}

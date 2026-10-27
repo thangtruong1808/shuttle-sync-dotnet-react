@@ -3,11 +3,11 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "../../components/ui";
 
 export const control =
-  "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-mist disabled:cursor-not-allowed disabled:opacity-60";
+  "w-full rounded-xl border border-fg/10 bg-inset px-3 py-2.5 text-sm text-fg disabled:cursor-not-allowed disabled:opacity-60";
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="block text-sm text-mist/80">
+    <label className="block text-sm text-fg/80">
       {label}
       <div className="mt-1">{children}</div>
     </label>
@@ -17,7 +17,7 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 export function Notice({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100" role="alert">
+    <p className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-800 dark:text-rose-100" role="alert">
       {message}
     </p>
   );
@@ -26,7 +26,7 @@ export function Notice({ message }: { message: string | null }) {
 export function Success({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p className="rounded-xl border border-line/40 bg-line/10 px-3 py-2 text-sm text-line" role="status">
+    <p className="rounded-xl border border-accent-text/40 bg-accent/10 px-3 py-2 text-sm text-accent-text" role="status">
       {message}
     </p>
   );
@@ -86,7 +86,7 @@ export function Pager({
         <Button variant="secondary" icon={<ChevronLeft className="h-4 w-4" aria-hidden="true" />} loading={busy === "prev"} disabled={page <= 1 || busy !== null} onClick={() => onPage(page - 1, "prev")}>
           Previous
         </Button>
-        <span className="text-sm text-mist/70">
+        <span className="text-sm text-fg/70">
           {page} / {pages}
         </span>
         <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={busy === "next"} disabled={page >= pages || busy !== null} onClick={() => onPage(page + 1, "next")}>
@@ -99,7 +99,7 @@ export function Pager({
   const moving = pending !== null || locked;
   return (
     <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm text-mist/70" aria-live="polite">
+      <p className="text-sm text-fg/70" aria-live="polite">
         Page {page} of {pages}
       </p>
       <div className="flex flex-wrap items-center gap-1.5">
@@ -108,7 +108,7 @@ export function Pager({
         </Button>
         {pageWindow(page, pages).map((item, index) =>
           item === "gap" ? (
-            <span key={`gap-${index}`} className="px-1 text-mist/40" aria-hidden="true">…</span>
+            <span key={`gap-${index}`} className="px-1 text-fg/40" aria-hidden="true">…</span>
           ) : (
             <Button
               key={item}
@@ -154,8 +154,8 @@ export function PageSummary({
   const to = Math.min(total, page * size);
   const moving = pendingSize !== null || locked;
   return (
-    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm font-medium text-white" aria-live="polite">
+    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-fg/10 bg-fg/[0.03] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm font-medium text-fg" aria-live="polite">
         View {from}–{to} of {total}
       </p>
       <div className="flex flex-wrap items-center gap-1.5">
@@ -172,53 +172,16 @@ export function PageSummary({
             {option}
           </Button>
         ))}
-        <span className="text-sm text-mist/80">per page</span>
+        <span className="text-sm text-fg/80">per page</span>
       </div>
     </div>
   );
 }
 
-export function DataTable<T>({
-  columns,
-  rows,
-  rowKey,
-  busy = false,
-}: {
-  columns: { label: string; className?: string; cell: (row: T) => ReactNode }[];
-  rows: T[];
-  rowKey: (row: T) => string;
-  busy?: boolean;
-}) {
-  return (
-    <div className={`mt-6 overflow-x-auto rounded-2xl border border-white/10 ${busy ? "opacity-70" : ""}`} aria-busy={busy || undefined}>
-      <table className="w-full min-w-[720px] border-collapse text-left text-sm">
-        <thead>
-          <tr className="border-b border-white/10 bg-white/[0.04] text-xs uppercase tracking-wide text-mist/55">
-            {columns.map((column, index) => (
-              <th key={`${column.label}-${index}`} scope="col" className={`whitespace-nowrap px-3 py-3 font-medium ${column.className ?? ""}`}>
-                {column.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={rowKey(row)} className="border-b border-white/5 last:border-0 hover:bg-white/[0.03]">
-              {columns.map((column, index) => (
-                <td key={`${column.label}-${index}`} className={`px-3 py-3 align-middle text-mist ${column.className ?? ""}`}>
-                  {column.cell(row)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+export { DataTable } from "../../components/ui";
 
 export function Tag({ value }: { value: string }) {
-  return <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs capitalize text-mist">{value.replace(/_/g, " ")}</span>;
+  return <span className="inline-flex rounded-full border border-fg/10 bg-fg/5 px-2 py-0.5 text-xs capitalize text-fg">{value.replace(/_/g, " ")}</span>;
 }
 
 export function Check({
@@ -233,7 +196,7 @@ export function Check({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-mist">
+    <label className="flex items-center gap-2 text-sm text-fg">
       <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
       {label}
     </label>

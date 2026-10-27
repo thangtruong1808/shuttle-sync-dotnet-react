@@ -1,6 +1,8 @@
 import { Link, useLocation, useParams } from "react-router-dom";
-import { CircleHelp, ExternalLink, Gift, MapPin, Phone, Scale, Shield, Ticket, type LucideIcon } from "lucide-react";
+import { CircleHelp, ExternalLink, Gift, Mail, MapPin, Phone, Scale, Shield, Ticket, type LucideIcon } from "lucide-react";
 import { venueForPage } from "../../features/venues/venueApi";
+import { ThemeToggle } from "../theme/ThemeToggle";
+import { BrandMark, Wordmark } from "./BrandMark";
 import { useVenues } from "./SiteLayout";
 
 const columns: { title: string; links: { label: string; href: (slug: string) => string; icon: LucideIcon }[] }[] = [
@@ -28,19 +30,7 @@ const columns: { title: string; links: { label: string; href: (slug: string) => 
   },
 ];
 
-function Mark() {
-  return (
-    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-line text-ink" aria-hidden="true">
-      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
-        <path d="M7.1 13.2C7.4 8.6 8.8 4.4 9.8 2.6c.4-.7 1.5-.3 1.3.5-.6 2.6-1.8 6.4-1.9 9.1 0 .6-.5 1-1.1 1h-.1c-.5 0-.9-.4-.9-1Z" />
-        <path d="M11.1 13.6c.1-4.8.9-9.2 1.5-11 .2-.6 1.1-.6 1.3 0 .6 1.8 1.4 6.2 1.4 11 0 .6-.5 1.1-1.1 1.1h-.6c-.6 0-1.1-.5-1.1-1.1Z" />
-        <path d="M16.9 13.2c-.1-2.7-1.3-6.5-1.9-9.1-.2-.8.9-1.2 1.3-.5 1 1.8 2.4 6 2.7 10.6 0 .6-.4 1-.9 1h-.1c-.6 0-1.1-.4-1.1-1Z" />
-        <path d="M8.2 14.8h7.6l-1.05 2.15a1.55 1.55 0 0 1-1.4.8h-2.7a1.55 1.55 0 0 1-1.4-.8L8.2 14.8Z" />
-        <circle cx="12" cy="19.7" r="2.05" />
-      </svg>
-    </span>
-  );
-}
+const focusRing = "rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text";
 
 export function Footer() {
   const { slug } = useParams();
@@ -54,33 +44,34 @@ export function Footer() {
   const activeSlug = venue?.slug ?? "";
 
   return (
-    <footer className="mt-auto border-t border-white/10 bg-pine/80">
-      <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 sm:px-6 md:grid-cols-[1.3fr_1fr] lg:px-8">
+    <footer className="mt-auto border-t border-border bg-surface">
+      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_2fr] lg:px-8">
         <div>
-          <Link
-            to={activeSlug ? `/${activeSlug}` : "/"}
-            {...(venue?.name ? {} : { "aria-label": "Home" })}
-            className="inline-flex max-w-full items-center gap-3 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line"
-          >
-            <Mark />
-            {venue?.name ? <span className="font-display text-lg font-semibold leading-tight text-white">{venue.name}</span> : null}
+          <Link to={activeSlug ? `/${activeSlug}` : "/"} aria-label="Home" className={`inline-flex items-center gap-2.5 ${focusRing}`}>
+            <BrandMark />
+            <Wordmark />
           </Link>
-          <address className="mt-3 space-y-1 text-sm not-italic text-mist/70">
-            {venue?.address ? <p>{[venue.address, venue.suburb, venue.state, venue.postcode].filter(Boolean).join(", ")}</p> : <p>Select a venue to see its address.</p>}
-            {venue?.phone ? <p><a className="hover:text-white" href={`tel:${venue.phone}`}>{venue.phone}</a></p> : null}
-            {venue?.email ? <p><a className="hover:text-white" href={`mailto:${venue.email}`}>{venue.email}</a></p> : null}
-            {map ? <p><a className="inline-flex items-center gap-1.5 text-line hover:underline" href={map} target="_blank" rel="noreferrer"><MapPin className="h-3.5 w-3.5" aria-hidden="true" />Open map</a></p> : null}
+          {venue?.name ? <p className="mt-4 font-display text-lg font-semibold leading-tight text-fg">{venue.name}</p> : null}
+          <address className="mt-2 space-y-1.5 text-sm not-italic text-fg-muted">
+            {venue?.address ? (
+              <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{[venue.address, venue.suburb, venue.state, venue.postcode].filter(Boolean).join(", ")}</p>
+            ) : (
+              <p>Select a venue to see its address.</p>
+            )}
+            {venue?.phone ? <p><a className={`inline-flex items-center gap-2 hover:text-fg ${focusRing}`} href={`tel:${venue.phone}`}><Phone className="h-4 w-4" aria-hidden="true" />{venue.phone}</a></p> : null}
+            {venue?.email ? <p><a className={`inline-flex items-center gap-2 hover:text-fg ${focusRing}`} href={`mailto:${venue.email}`}><Mail className="h-4 w-4" aria-hidden="true" />{venue.email}</a></p> : null}
+            {map ? <p><a className={`inline-flex items-center gap-1.5 font-medium text-accent-text hover:underline ${focusRing}`} href={map} target="_blank" rel="noreferrer">Open map<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /></a></p> : null}
           </address>
         </div>
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
           {columns.map((column) => (
             <nav key={column.title} aria-label={column.title}>
-              <p className="text-sm font-semibold text-white">{column.title}</p>
-              <ul className="mt-3 space-y-2 text-sm text-mist/70">
+              <p className="text-xs font-semibold uppercase tracking-wider text-fg">{column.title}</p>
+              <ul className="mt-4 space-y-2.5 text-sm text-fg-muted">
                 {column.links.map((link) => (
                   <li key={link.label}>
-                    <Link className="inline-flex items-center gap-1.5 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line" to={link.href(activeSlug)}>
-                      <link.icon className="h-3.5 w-3.5" aria-hidden="true" />
+                    <Link className={`inline-flex items-center gap-2 transition-colors hover:text-fg ${focusRing}`} to={link.href(activeSlug)}>
+                      <link.icon className="h-4 w-4" aria-hidden="true" />
                       {link.label}
                     </Link>
                   </li>
@@ -90,15 +81,16 @@ export function Footer() {
           ))}
         </div>
       </div>
-      <div className="border-t border-white/10">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-4 text-sm text-mist/60 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+      <div className="border-t border-border">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-5 text-sm text-fg-muted sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <p>© {new Date().getFullYear()} Shuttle Sync</p>
-          <div className="flex items-center gap-4">
-            <span className="inline-flex gap-3" aria-label="Social">
-              <a className="inline-flex items-center gap-1.5 hover:text-white" href="https://instagram.com" target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" aria-hidden="true" />Instagram</a>
-              <a className="inline-flex items-center gap-1.5 hover:text-white" href="https://facebook.com" target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" aria-hidden="true" />Facebook</a>
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="inline-flex gap-4" aria-label="Social">
+              <a className={`inline-flex items-center gap-1.5 hover:text-fg ${focusRing}`} href="https://instagram.com" target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" aria-hidden="true" />Instagram</a>
+              <a className={`inline-flex items-center gap-1.5 hover:text-fg ${focusRing}`} href="https://facebook.com" target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" aria-hidden="true" />Facebook</a>
             </span>
-            <span className="rounded-full border border-white/15 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-mist/80">Powered by Stripe</span>
+            <span className="rounded-full border border-border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Powered by Stripe</span>
+            <ThemeToggle />
           </div>
         </div>
       </div>

@@ -225,37 +225,37 @@ export function ChangeHours({
   function slotButton(slot: WeekSlot, held: boolean) {
     const picked = date === slot.date && start === slot.start && end === slot.end;
     return (
-      <Button key={`${held ? "held" : "open"}-${slot.date}-${slot.start}`} type="button" variant="secondary" aria-pressed={picked} className={`w-full ${picked ? "border-line bg-line/15 text-white" : ""}`} disabled={busy} onClick={() => pick(slot)}>
+      <Button key={`${held ? "held" : "open"}-${slot.date}-${slot.start}`} type="button" variant="secondary" aria-pressed={picked} className={`w-full ${picked ? "border-accent-text bg-accent/15 text-fg" : ""}`} disabled={busy} onClick={() => pick(slot)}>
         {slot.label}
       </Button>
     );
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-line/30 bg-line/5 p-3">
-      <p className="text-sm font-semibold text-white">{title}</p>
-      <p className="mt-1 text-xs text-mist/70">
+    <div className="mt-3 rounded-xl border border-accent-text/30 bg-accent/5 p-3">
+      <p className="text-sm font-semibold text-fg">{title}</p>
+      <p className="mt-1 text-xs text-fg/70">
         {week ? "Every court in this week uses the new start and end. Later weeks stay where they are." : "Only this court changes. Later weeks stay where they are."} Currently {lengthLabel(duration)}, {opened.time}–{closed.time}. Recommended times use that length. Nothing is saved until you confirm.
       </p>
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        <label className="text-sm text-mist">
+        <label className="text-sm text-fg">
           <span className="mb-1 block">Date</span>
-          <PickerInput type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
+          <PickerInput type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className="w-full rounded-xl border border-fg/15 bg-fg/5 px-3 py-2 text-fg [color-scheme:dark]" />
         </label>
-        <label className="text-sm text-mist">
+        <label className="text-sm text-fg">
           <span className="mb-1 block">Start</span>
-          <PickerInput type="time" required value={start} disabled={busy} onChange={(event) => { setStart(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
+          <PickerInput type="time" required value={start} disabled={busy} onChange={(event) => { setStart(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className="w-full rounded-xl border border-fg/15 bg-fg/5 px-3 py-2 text-fg [color-scheme:dark]" />
         </label>
-        <label className="text-sm text-mist">
+        <label className="text-sm text-fg">
           <span className="mb-1 block">End</span>
-          <PickerInput type="time" required value={end} disabled={busy} onChange={(event) => { setEnd(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
+          <PickerInput type="time" required value={end} disabled={busy} onChange={(event) => { setEnd(event.target.value); setError(null); setPrompt(null); setReviewing(false); }} className="w-full rounded-xl border border-fg/15 bg-fg/5 px-3 py-2 text-fg [color-scheme:dark]" />
         </label>
       </div>
-      <p className="mt-3 text-xs text-mist/70">Recommended times for {lengthLabel(duration)}. Picking one fills Start and End.</p>
+      <p className="mt-3 text-xs text-fg/70">Recommended times for {lengthLabel(duration)}. Picking one fills Start and End.</p>
       {loadingTimes || times === null ? (
-        <p className="mt-3 flex items-center gap-2 text-sm text-mist" aria-busy="true"><Spinner className="h-4 w-4" /> Loading recommended times</p>
+        <p className="mt-3 flex items-center gap-2 text-sm text-fg" aria-busy="true"><Spinner className="h-4 w-4" /> Loading recommended times</p>
       ) : times.length === 0 ? (
-        <p className="mt-3 text-sm text-mist" role="status">No recommended time of {lengthLabel(duration)} is free on this date. You can still type a start and an end.</p>
+        <p className="mt-3 text-sm text-fg" role="status">No recommended time of {lengthLabel(duration)} is free on this date. You can still type a start and an end.</p>
       ) : (
         <div className="mt-3 grid gap-2 sm:grid-cols-2" role="list">
           {times.map((slot) => slotButton(slot, false))}
@@ -263,17 +263,17 @@ export function ChangeHours({
       )}
       {heldTimes.length > 0 ? (
         <div className="mt-3">
-          <p className="text-sm text-mist">These times are held for a later week. Choosing one fills Start and End, and confirming leaves this booking where it is.</p>
+          <p className="text-sm text-fg">These times are held for a later week. Choosing one fills Start and End, and confirming leaves this booking where it is.</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {heldTimes.map((slot) => slotButton(slot, true))}
           </div>
         </div>
       ) : null}
-      {error ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-100" role="alert">{error}</p> : null}
+      {error ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-800 dark:text-rose-100" role="alert">{error}</p> : null}
       {prompt ? (
         <div className="mt-3 rounded-xl border border-amber-300/50 bg-amber-400/10 p-3" role="status">
-          <p className="text-sm font-semibold text-white">{prompt.code === "PRICE_INCREASE" ? "This time costs more" : "This time costs less"}</p>
-          <p className="mt-2 text-sm text-mist/80">
+          <p className="text-sm font-semibold text-fg">{prompt.code === "PRICE_INCREASE" ? "This time costs more" : "This time costs less"}</p>
+          <p className="mt-2 text-sm text-fg/80">
             The current price is <Money amount={prompt.paid} currency={first.currency} />. The new time is <Money amount={prompt.quote} currency={first.currency} />.
             {prompt.code === "PRICE_INCREASE" ? <> Pay <Money amount={prompt.difference} currency={first.currency} /> more to confirm. The hours stay as they are until that payment is finished. A start within 24 hours must be paid now.</> : prompt.refundAmount > 0 ? <> Refund <Money amount={prompt.refundAmount} currency={first.currency} /> to your card?</> : <> No card refund is due. Change the hours anyway?</>}
           </p>

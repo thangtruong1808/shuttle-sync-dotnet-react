@@ -238,10 +238,6 @@ function FreshCourtBooking() {
     });
   }, [courts, closures, date, form.start, form.end, venue?.timeZone]);
 
-  if (status === "anonymous") {
-    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
-  }
-
   useEffect(() => {
     if (!slug || !date || !form.start || !form.end) {
       setQuoted(null);
@@ -266,6 +262,10 @@ function FreshCourtBooking() {
       });
     return () => controller.abort();
   }, [slug, date, form.start, form.end, form.weeks]);
+
+  if (status === "anonymous") {
+    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+  }
 
   const rate = venue?.hourlyRate ?? 0;
   const currency = venue?.currency ?? "AUD";
@@ -321,11 +321,11 @@ function FreshCourtBooking() {
 
   return (
     <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
-      <Link to={`/${slug}`} className="text-sm text-line hover:underline">Back to the venue</Link>
+      <Link to={`/${slug}`} className="text-sm text-accent-text hover:underline">Back to the venue</Link>
       <div className="mt-3 grid items-start gap-4 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
         <div>
-          <h1 className="font-display text-3xl text-white">Book a court</h1>
-          <p className="mt-2 text-sm leading-relaxed text-mist/75">Choose the courts and the time you want each week. A week that starts in more than 24 hours can be held, and you pay it before that session. A week that starts within 24 hours is not saved unless you pay for it now.</p>
+          <h1 className="font-display text-3xl text-fg">Book a court</h1>
+          <p className="mt-2 text-sm leading-relaxed text-fg/75">Choose the courts and the time you want each week. A week that starts in more than 24 hours can be held, and you pay it before that session. A week that starts within 24 hours is not saved unless you pay for it now.</p>
         </div>
         {status === "unknown" || (!date && !venue) ? (
           <div aria-busy="true">
@@ -333,9 +333,9 @@ function FreshCourtBooking() {
             <Skeleton className="h-28" />
           </div>
         ) : (
-          <form className="grid gap-3 rounded-3xl border border-white/10 bg-pine/80 p-4 sm:grid-cols-2 xl:grid-cols-4" onSubmit={onContinue}>
+          <form className="grid gap-3 rounded-3xl border border-fg/10 bg-surface/80 p-4 sm:grid-cols-2 xl:grid-cols-4" onSubmit={onContinue}>
             <fieldset className="min-w-0 sm:col-span-2 xl:col-span-4">
-              <legend className="mb-2 text-sm text-mist/70">Courts</legend>
+              <legend className="mb-2 text-sm text-fg/70">Courts</legend>
               <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-3">
                 {(courts ?? []).map((court) => {
                   const taken = courtBusyLabel(court, closures, date, form.start, form.end, venue?.timeZone ?? "Australia/Melbourne");
@@ -344,11 +344,11 @@ function FreshCourtBooking() {
                     <label
                       key={court.id}
                       title={taken ? `${court.courtName} is ${taken.toLowerCase()} at this time` : undefined}
-                      className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${taken ? "cursor-not-allowed border-white/5 bg-black/20 text-mist/40" : checked ? "border-line/50 bg-line/10 text-white" : "border-white/10 bg-black/30 text-mist"}`}
+                      className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${taken ? "cursor-not-allowed border-fg/5 bg-inset text-fg/40" : checked ? "border-accent-text/50 bg-accent/10 text-fg" : "border-fg/10 bg-inset text-fg"}`}
                     >
                       <input
                         type="checkbox"
-                        className="accent-line"
+                        className="accent-accent-text"
                         checked={checked}
                         disabled={busy || loading || Boolean(taken)}
                         onChange={() => {
@@ -361,53 +361,53 @@ function FreshCourtBooking() {
                         }}
                       />
                       <span className={`truncate ${taken ? "line-through" : ""}`}>{court.courtName}</span>
-                      {taken ? <span className="ml-auto shrink-0 rounded-full border border-white/10 px-2 py-0.5 text-[11px] font-medium text-mist/60">{taken}</span> : null}
+                      {taken ? <span className="ml-auto shrink-0 rounded-full border border-fg/10 px-2 py-0.5 text-[11px] font-medium text-fg/60">{taken}</span> : null}
                     </label>
                   );
                 })}
               </div>
               {droppedNote ? (
-                <p className="mt-2 flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100" role="status">
+                <p className="mt-2 flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-800 dark:text-amber-100" role="status">
                   <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   {droppedNote}
                 </p>
               ) : null}
             </fieldset>
             <label className="text-sm">
-              <span className="mb-1 flex items-center gap-2 text-mist/70">Date {loading ? <Spinner className="h-3.5 w-3.5" /> : null}</span>
-              <PickerInput type="date" required value={date} disabled={busy || loading} onChange={(event) => { setFormError(null); setDate(event.target.value); }} iconClassName="text-[#102117]" className="w-full rounded-xl border border-[#102117]/15 bg-[#f4fbf6] px-3 py-2.5 text-[#102117] [color-scheme:light]" />
+              <span className="mb-1 flex items-center gap-2 text-fg/70">Date {loading ? <Spinner className="h-3.5 w-3.5" /> : null}</span>
+              <PickerInput type="date" required value={date} disabled={busy || loading} onChange={(event) => { setFormError(null); setDate(event.target.value); }} iconClassName="text-fg" className="w-full rounded-xl border border-fg/15 bg-surface px-3 py-2.5 text-fg" />
             </label>
             <label className="text-sm">
-              <span className="mb-1 block text-mist/70">Start</span>
-              <PickerInput type="time" required value={form.start} disabled={busy} onChange={(event) => { setFormError(null); setForm({ ...form, start: event.target.value }); }} iconClassName="text-[#102117]" className="w-full rounded-xl border border-[#102117]/15 bg-[#f4fbf6] px-3 py-2.5 text-[#102117] [color-scheme:light]" />
+              <span className="mb-1 block text-fg/70">Start</span>
+              <PickerInput type="time" required value={form.start} disabled={busy} onChange={(event) => { setFormError(null); setForm({ ...form, start: event.target.value }); }} iconClassName="text-fg" className="w-full rounded-xl border border-fg/15 bg-surface px-3 py-2.5 text-fg" />
             </label>
             <label className="text-sm">
-              <span className="mb-1 block text-mist/70">End</span>
-              <PickerInput type="time" required value={form.end} disabled={busy} onChange={(event) => { setFormError(null); setForm({ ...form, end: event.target.value }); }} iconClassName="text-[#102117]" className="w-full rounded-xl border border-[#102117]/15 bg-[#f4fbf6] px-3 py-2.5 text-[#102117] [color-scheme:light]" />
+              <span className="mb-1 block text-fg/70">End</span>
+              <PickerInput type="time" required value={form.end} disabled={busy} onChange={(event) => { setFormError(null); setForm({ ...form, end: event.target.value }); }} iconClassName="text-fg" className="w-full rounded-xl border border-fg/15 bg-surface px-3 py-2.5 text-fg" />
             </label>
             <label className="text-sm">
-              <span className="mb-1 block text-mist/70">Weeks</span>
+              <span className="mb-1 block text-fg/70">Weeks</span>
               <select
                 value={form.weeks}
                 disabled={busy}
-                className="w-full rounded-xl border border-[#102117]/15 bg-[#f4fbf6] px-3 py-2.5 text-[#102117] [color-scheme:light] disabled:opacity-60"
+                className="w-full rounded-xl border border-fg/15 bg-surface px-3 py-2.5 text-fg disabled:opacity-60"
                 onChange={(event) => setForm({ ...form, weeks: Number(event.target.value) })}
               >
                 {Array.from({ length: 12 }, (_, index) => index + 1).map((weeks) => (
-                  <option key={weeks} value={weeks} className="bg-[#f4fbf6] text-[#102117]">{weeks === 1 ? "This week only" : `${weeks} weeks`}</option>
+                  <option key={weeks} value={weeks} className="bg-surface text-fg">{weeks === 1 ? "This week only" : `${weeks} weeks`}</option>
                 ))}
               </select>
             </label>
             {formError ? (
-              <p className="flex items-start gap-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-100 sm:col-span-2 xl:col-span-4" role="alert">
-                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-200" aria-hidden="true" />
+              <p className="flex items-start gap-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-800 dark:text-rose-100 sm:col-span-2 xl:col-span-4" role="alert">
+                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-700 dark:text-rose-200" aria-hidden="true" />
                 <span>{formError}</span>
               </p>
             ) : null}
-            <label className="flex items-start gap-2 text-sm text-mist sm:col-span-2 xl:col-span-4">
+            <label className="flex items-start gap-2 text-sm text-fg sm:col-span-2 xl:col-span-4">
               <input
                 type="checkbox"
-                className="mt-1 accent-line"
+                className="mt-1 accent-accent-text"
                 checked={form.repeat}
                 disabled={busy}
                 onChange={(event) => setForm({ ...form, repeat: event.target.checked })}
@@ -415,9 +415,9 @@ function FreshCourtBooking() {
               <span>Keep {form.weeks} {form.weeks === 1 ? "week" : "weeks"} ahead. When one week passes, the next week is held automatically. You still pay each week before 24 hours of that session.</span>
             </label>
             {showPayOptions ? (
-              <div className="grid gap-4 rounded-2xl border border-white/10 bg-black/20 p-3 sm:col-span-2 sm:p-4 lg:grid-cols-2 xl:col-span-4">
+              <div className="grid gap-4 rounded-2xl border border-fg/10 bg-inset p-3 sm:col-span-2 sm:p-4 lg:grid-cols-2 xl:col-span-4">
                 <div className="min-w-0">
-                  <p className="text-sm text-mist/80">Promotion code</p>
+                  <p className="text-sm text-fg/80">Promotion code</p>
                   {promotions === null ? (
                     <div className="mt-2" aria-busy="true"><span className="sr-only">Loading promotion codes</span><Skeleton className="h-14" /></div>
                   ) : promotions.length > 0 ? (
@@ -425,10 +425,10 @@ function FreshCourtBooking() {
                       {promotions.map((promotion) => {
                         const selected = appliedCode?.id === promotion.id;
                         return (
-                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 transition-colors sm:flex-row sm:items-center sm:justify-between ${selected ? "border-line/60 bg-line/10 hover:bg-line/20" : "border-white/10 bg-black/20 hover:bg-white/10"}`}>
+                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 transition-colors sm:flex-row sm:items-center sm:justify-between ${selected ? "border-accent-text/60 bg-accent/10 hover:bg-accent/20" : "border-fg/10 bg-inset hover:bg-fg/10"}`}>
                             <div className="min-w-0">
-                              <p className="break-all font-semibold text-white">{promotion.code}</p>
-                              <p className="text-sm text-line">{promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}</p>
+                              <p className="break-all font-semibold text-fg">{promotion.code}</p>
+                              <p className="text-sm text-accent-text">{promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}</p>
                             </div>
                             <Button type="button" variant={selected ? "primary" : "secondary"} className="w-full sm:w-auto" disabled={busy || releasing} onClick={() => setAppliedCode(selected ? null : promotion)}>
                               {selected ? "Applied" : "Apply"}
@@ -437,43 +437,43 @@ function FreshCourtBooking() {
                         );
                       })}
                     </ul>
-                  ) : <p className="mt-2 text-sm text-mist/70">No active promotion codes right now.</p>}
-                  {appliedCode ? <p className="mt-2 text-sm text-mist" role="status">{appliedCode.code} applied.</p> : null}
+                  ) : <p className="mt-2 text-sm text-fg/70">No active promotion codes right now.</p>}
+                  {appliedCode ? <p className="mt-2 text-sm text-fg" role="status">{appliedCode.code} applied.</p> : null}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm text-mist/80">Reward points</p>
+                  <p className="text-sm text-fg/80">Reward points</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {pointPercents.map((percent) => (
-                      <button key={percent} type="button" disabled={busy || releasing || maxPoints === 0} className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-line text-ink hover:bg-lime-300" : "border border-white/15 text-mist hover:bg-white/10"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
+                      <button key={percent} type="button" disabled={busy || releasing || maxPoints === 0} className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg hover:bg-lime-300" : "border border-fg/15 text-fg hover:bg-fg/10"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
                         {percent}%
                       </button>
                     ))}
                   </div>
-                  <input type="range" min={0} max={Math.max(maxPoints, 1)} step={1} value={Math.min(points, maxPoints)} disabled={busy || releasing || maxPoints === 0} aria-label="Reward points" className="mt-3 w-full accent-line disabled:opacity-60" onChange={(event) => setPoints(Number(event.target.value))} />
-                  <p className="mt-1 text-sm text-mist/70">{Math.min(points, maxPoints)} of {balance} points. {pointsRate} points = {currency} 1.</p>
-                  <dl className="mt-3 grid gap-1 text-sm text-mist/80">
+                  <input type="range" min={0} max={Math.max(maxPoints, 1)} step={1} value={Math.min(points, maxPoints)} disabled={busy || releasing || maxPoints === 0} aria-label="Reward points" className="mt-3 w-full accent-accent-text disabled:opacity-60" onChange={(event) => setPoints(Number(event.target.value))} />
+                  <p className="mt-1 text-sm text-fg/70">{Math.min(points, maxPoints)} of {balance} points. {pointsRate} points = {currency} 1.</p>
+                  <dl className="mt-3 grid gap-1 text-sm text-fg/80">
                     <div className="flex justify-between gap-3"><dt>This week, {form.courtIds.length} {form.courtIds.length === 1 ? "court" : "courts"}</dt><dd><Money amount={weekSubtotal} currency={currency} /></dd></div>
                     {weekDiscount > 0 ? <div className="flex justify-between gap-3"><dt>Promotion</dt><dd>-<Money amount={weekDiscount} currency={currency} /></dd></div> : null}
                     <div className="flex justify-between gap-3"><dt>Points value</dt><dd><Money amount={payPreview.value} currency={currency} /></dd></div>
-                    <div className="flex justify-between gap-3 font-semibold text-white"><dt>{payAtRegistration ? "To pay now" : "To pay for this week"}</dt><dd><Money amount={payPreview.cash} currency={currency} /></dd></div>
+                    <div className="flex justify-between gap-3 font-semibold text-fg"><dt>{payAtRegistration ? "To pay now" : "To pay for this week"}</dt><dd><Money amount={payPreview.cash} currency={currency} /></dd></div>
                   </dl>
-                  {!payAtRegistration ? <p className="mt-2 text-sm text-mist/70">Your code and points carry over to the next step, where you can pay this week now or later from My bookings.</p> : null}
-                  {cashTooSmall ? <p className="mt-2 text-sm text-mist">Use enough points to cover this week, or leave at least $0.50 to pay.</p> : null}
+                  {!payAtRegistration ? <p className="mt-2 text-sm text-fg/70">Your code and points carry over to the next step, where you can pay this week now or later from My bookings.</p> : null}
+                  {cashTooSmall ? <p className="mt-2 text-sm text-fg">Use enough points to cover this week, or leave at least $0.50 to pay.</p> : null}
                 </div>
               </div>
             ) : null}
             <div className="flex flex-col gap-3 sm:col-span-2 xl:col-span-4">
-              <div className="text-sm leading-relaxed text-mist/75">
+              <div className="text-sm leading-relaxed text-fg/75">
                 {each === null || form.courtIds.length === 0 ? (
                   <p>Choose at least 30 minutes and one court. You can hold the same time for up to 12 weeks.</p>
                 ) : (
                   <>
-                    <p className="font-semibold text-white">
+                    <p className="font-semibold text-fg">
                       Total for every selected court and week: <Money amount={totalAfterSavings} currency={currency} />
-                      {weekSavings > 0 ? <span className="ml-2 font-normal text-mist/60 line-through"><Money amount={fullTotal} currency={currency} /></span> : null}
+                      {weekSavings > 0 ? <span className="ml-2 font-normal text-fg/60 line-through"><Money amount={fullTotal} currency={currency} /></span> : null}
                     </p>
                     {weekSavings > 0 ? (
-                      <p className="mt-1 inline-flex items-center gap-1.5 text-line">
+                      <p className="mt-1 inline-flex items-center gap-1.5 text-accent-text">
                         <Tag className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                         <span>You save <Money amount={weekSavings} currency={currency} /> on this week with {weekDiscount > 0 && payPreview.value > 0 ? "your promotion code and points" : weekDiscount > 0 ? "your promotion code" : "your points"}.</span>
                       </p>
@@ -487,7 +487,7 @@ function FreshCourtBooking() {
               </Button>
             </div>
             {releasing ? (
-              <p className="flex items-center gap-2 text-sm text-mist sm:col-span-2 xl:col-span-4" role="status">
+              <p className="flex items-center gap-2 text-sm text-fg sm:col-span-2 xl:col-span-4" role="status">
                 <Spinner className="h-4 w-4" /> You left the Stripe page before paying. Releasing that payment so you can book again.
               </p>
             ) : null}

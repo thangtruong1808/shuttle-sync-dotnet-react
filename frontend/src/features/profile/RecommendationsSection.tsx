@@ -101,8 +101,8 @@ export function RecommendationsSection() {
     <div>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl text-white">Recommendations</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/75">Notes written for you. A new note stays unread until you mark it read.</p>
+          <h1 className="font-display text-3xl text-fg">Recommendations</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg/75">Notes written for you. A new note stays unread until you mark it read.</p>
         </div>
         {unread > 0 ? (
           <Button variant="secondary" loading={markingAll} disabled={busy} onClick={() => void onMarkAll()}>
@@ -110,7 +110,7 @@ export function RecommendationsSection() {
           </Button>
         ) : null}
       </div>
-      {markError ? <p className="mt-3 text-sm text-rose-200" role="alert">{markError}</p> : null}
+      {markError ? <p className="mt-3 text-sm text-rose-700 dark:text-rose-200" role="alert">{markError}</p> : null}
       {error ? (
         <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
       ) : loading && pageMove === null ? (
@@ -123,19 +123,19 @@ export function RecommendationsSection() {
         <>
           <ul className="mt-4 grid gap-3">
             {data.items.map((row) => (
-              <li key={row.id} className="rounded-2xl border border-white/10 bg-pine/80 p-4">
+              <li key={row.id} className="rounded-2xl border border-fg/10 bg-surface/80 p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  {!row.readAt ? <span className="inline-flex rounded-full bg-line px-2 py-0.5 text-xs font-bold text-ink">New</span> : null}
+                  {!row.readAt ? <span className="inline-flex rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-accent-fg">New</span> : null}
                   <Tag value={typeLabel(row.recommendationType)} />
-                  <span className="text-sm text-white">{row.venueName?.trim() || "Any venue"}</span>
+                  <span className="text-sm text-fg">{row.venueName?.trim() || "Any venue"}</span>
                   {!row.readAt ? (
                     <Button className="w-full sm:ml-auto sm:w-auto" variant="secondary" loading={markingId === row.id} disabled={busy} onClick={() => void onMarkOne(row.id)}>
                       Mark as read
                     </Button>
                   ) : null}
                 </div>
-                <p className="mt-2 text-sm text-mist">{payloadRead(row.payload)}</p>
-                <p className="mt-2 text-xs text-mist/55">{formatVenueDateTime(row.createdAt, row.timeZone || "UTC")}</p>
+                <p className="mt-2 text-sm text-fg">{payloadRead(row.payload)}</p>
+                <p className="mt-2 text-xs text-fg/55">{formatVenueDateTime(row.createdAt, row.timeZone || "UTC")}</p>
               </li>
             ))}
           </ul>

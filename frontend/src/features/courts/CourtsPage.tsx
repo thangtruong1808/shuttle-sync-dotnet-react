@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { CourtImage, EmptyState, ErrorState, venueToday } from "../../components/format";
+import { EmptyState, ErrorState, venueToday } from "../../components/format";
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
-import { PickerInput, Skeleton } from "../../components/ui";
+import { controlClass, Field, PageHeader, PickerInput, Skeleton } from "../../components/ui";
 import { venueAvailability, type Availability } from "../venues/venueApi";
 import { BookedTime, DayChart, IncentiveNote, SessionClock, SocialTimes, upcomingBookings, useNow } from "./CourtSchedule";
+import { CourtCard } from "./CourtCard";
 
 export default function CourtsPage() {
   const { slug = "" } = useParams();
@@ -39,31 +40,29 @@ export default function CourtsPage() {
   return (
     <main>
       <PageSection>
-        <h1 className="font-display text-3xl text-white">On the courts</h1>
-        <form className="mt-4 grid gap-3 sm:grid-cols-3" onSubmit={(event) => event.preventDefault()}>
-          <label className="text-sm">
-            <span className="mb-1 block text-mist/70">Date</span>
-            <PickerInput
-              type="date"
-              value={date}
-              onChange={(event) => setParams({ date: event.target.value, from, to })}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-mist/70">From</span>
-            <PickerInput type="time" value={from} onChange={(event) => setParams({ date, from: event.target.value, to })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5" />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-mist/70">To</span>
-            <PickerInput type="time" value={to} onChange={(event) => setParams({ date, from, to: event.target.value })} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5" />
-          </label>
+        <PageHeader title="On the courts" description="A court with no bookings is available. Booked times are shown on that court." />
+        <form className="grid gap-3 sm:grid-cols-3" onSubmit={(event) => event.preventDefault()}>
+          <Field label="Date">
+            {({ id }) => (
+              <PickerInput id={id} type="date" value={date} onChange={(event) => setParams({ date: event.target.value, from, to })} className={controlClass} />
+            )}
+          </Field>
+          <Field label="From">
+            {({ id }) => (
+              <PickerInput id={id} type="time" value={from} onChange={(event) => setParams({ date, from: event.target.value, to })} className={controlClass} />
+            )}
+          </Field>
+          <Field label="To">
+            {({ id }) => (
+              <PickerInput id={id} type="time" value={to} onChange={(event) => setParams({ date, from, to: event.target.value })} className={controlClass} />
+            )}
+          </Field>
         </form>
         {loading ? (
-          <div className="mt-6 space-y-3" aria-busy="true">
+          <div className="mt-6 grid gap-4 sm:grid-cols-2" aria-busy="true">
             <span className="sr-only">Loading courts</span>
-            <Skeleton className="h-40" />
-            <Skeleton className="h-40" />
+            <Skeleton className="h-64" />
+            <Skeleton className="h-64" />
           </div>
         ) : error ? (
           <div className="mt-6"><ErrorState message={error} loading={retrying} onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }} /></div>
@@ -77,28 +76,33 @@ export default function CourtsPage() {
                 ))}
               </div>
             ) : null}
-            <ul className="mt-6 space-y-4">
+            <ul className="mt-6 grid gap-4 sm:grid-cols-2">
               {availability.courts.map((court) => {
                 const bookings = upcomingBookings(court.bookings, now);
                 return (
-                <li key={court.id} className="rounded-3xl border border-white/10 p-4 sm:grid sm:grid-cols-[16rem_1fr] sm:gap-4">
-                  <CourtImage src={court.imageUrl} alt={`${court.courtName} court`} />
-                  <div>
-                    <h2 className="font-display text-2xl text-white">{court.courtName}</h2>
-                    <p className="text-sm text-mist/65">Court {court.courtNumber}{court.surfaceType ? ` · ${court.surfaceType}` : ""}</p>
-                    {bookings.length === 0 ? null : (
-                      <ul className="mt-3 grid gap-2">
-                        {bookings.map((booking) => (
-                          <li key={booking.id} className="rounded-2xl border border-white/10 px-3 py-2">
-                            <BookedTime start={booking.startTime} end={booking.endTime} timeZone={availability.venue.timeZone} />
-                            <SessionClock start={booking.startTime} end={booking.endTime} />
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <SocialTimes times={court.socials ?? []} timeZone={availability.venue.timeZone} now={now} />
-                  </div>
-                </li>
+                  <li key={court.id}>
+                    <CourtCard
+                      name={court.courtName}
+                      number={court.courtNumber}
+                      surface={court.surfaceType}
+                      imageUrl={court.imageUrl}
+                      currency={availability.venue.currency}
+                      hourlyRate={availability.venue.hourlyRate}
+                      heading="h2"
+                    >
+                      {bookings.length === 0 ? null : (
+                        <ul className="mt-3 grid gap-2">
+                          {bookings.map((booking) => (
+                            <li key={booking.id} className="rounded-2xl border border-border bg-surface-2 px-3 py-2">
+                              <BookedTime start={booking.startTime} end={booking.endTime} timeZone={availability.venue.timeZone} />
+                              <SessionClock start={booking.startTime} end={booking.endTime} />
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <SocialTimes times={court.socials ?? []} timeZone={availability.venue.timeZone} now={now} />
+                    </CourtCard>
+                  </li>
                 );
               })}
             </ul>

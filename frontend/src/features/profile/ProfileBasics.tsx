@@ -92,11 +92,11 @@ export function OverviewSection() {
   const name = user.displayName || user.firstName || "there";
   return (
     <div>
-      <h1 className="font-display text-3xl text-white">Hello, {name}</h1>
-      <p className="mt-2 text-mist/70">You have {user.rewardPoints} reward points ready to use.</p>
+      <h1 className="font-display text-3xl text-fg">Hello, {name}</h1>
+      <p className="mt-2 text-fg/70">You have {user.rewardPoints} reward points ready to use.</p>
       {pendingPoints > 0 ? (
-        <p className="mt-1 text-sm text-mist/75">
-          <Link className="font-semibold text-line hover:underline" to="/profile/rewards">{pendingPoints} points</Link>
+        <p className="mt-1 text-sm text-fg/75">
+          <Link className="font-semibold text-accent-text hover:underline" to="/profile/rewards">{pendingPoints} points</Link>
           {" "}are waiting and join your balance after those sessions end.
         </p>
       ) : null}
@@ -106,17 +106,17 @@ export function OverviewSection() {
           <Skeleton className="h-12" />
         </div>
       ) : nextBooking ? (
-        <p className="mt-4 rounded-2xl border border-white/10 px-4 py-3 text-sm text-mist">
+        <p className="mt-4 rounded-2xl border border-fg/10 px-4 py-3 text-sm text-fg">
           Next booking: {nextBooking.venueName}, {nextBooking.place}, {formatVenueDay(nextBooking.startTime, nextBooking.timeZone)}, {formatVenueRange(nextBooking.startTime, nextBooking.endTime, nextBooking.timeZone)}
         </p>
       ) : (
-        <p className="mt-4 text-sm text-mist/70">{venue ? `No upcoming booking at ${venue.name}.` : "No upcoming booking."}</p>
+        <p className="mt-4 text-sm text-fg/70">{venue ? `No upcoming booking at ${venue.name}.` : "No upcoming booking."}</p>
       )}
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Link className="inline-flex items-center gap-2 rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/bookings"><CalendarDays className="h-4 w-4 text-line" aria-hidden="true" />My bookings</Link>
-        <Link className="inline-flex items-center gap-2 rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/friend-spots"><Users className="h-4 w-4 text-line" aria-hidden="true" />Friend spots</Link>
-        <Link className="inline-flex items-center gap-2 rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/rewards"><Gift className="h-4 w-4 text-line" aria-hidden="true" />Reward history</Link>
-        <Link className="inline-flex items-center gap-2 rounded-2xl border border-white/10 p-4 hover:border-line/40" to="/profile/payments"><Wallet className="h-4 w-4 text-line" aria-hidden="true" />Payments</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-fg/10 p-4 hover:border-accent-text/40" to="/profile/bookings"><CalendarDays className="h-4 w-4 text-accent-text" aria-hidden="true" />My bookings</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-fg/10 p-4 hover:border-accent-text/40" to="/profile/friend-spots"><Users className="h-4 w-4 text-accent-text" aria-hidden="true" />Friend spots</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-fg/10 p-4 hover:border-accent-text/40" to="/profile/rewards"><Gift className="h-4 w-4 text-accent-text" aria-hidden="true" />Reward history</Link>
+        <Link className="inline-flex items-center gap-2 rounded-2xl border border-fg/10 p-4 hover:border-accent-text/40" to="/profile/payments"><Wallet className="h-4 w-4 text-accent-text" aria-hidden="true" />Payments</Link>
       </div>
     </div>
   );
@@ -176,11 +176,11 @@ export function DetailsSection() {
 
   return (
     <form className="max-w-xl space-y-4" onSubmit={onSubmit}>
-      <h1 className="font-display text-3xl text-white">Personal info</h1>
+      <h1 className="font-display text-3xl text-fg">Personal info</h1>
       <div className="text-sm">
-        <span className="mb-1 block text-mist/70" id="profile-photo-label">Photo</span>
-        <label className={`group relative inline-flex max-w-full rounded-xl focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-line ${busy ? "cursor-not-allowed" : "cursor-pointer"}`}>
-          <span className={`pointer-events-none inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-mist ${busy ? "opacity-60" : "group-hover:bg-white/10"}`} aria-hidden="true">
+        <span className="mb-1 block text-fg/70" id="profile-photo-label">Photo</span>
+        <label className={`group relative inline-flex max-w-full rounded-xl focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent-text ${busy ? "cursor-not-allowed" : "cursor-pointer"}`}>
+          <span className={`pointer-events-none inline-flex items-center justify-center gap-2 rounded-xl border border-fg/15 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg ${busy ? "opacity-60" : "group-hover:bg-fg/10"}`} aria-hidden="true">
             {uploading ? <Spinner /> : null}
             Upload photo
           </span>
@@ -203,12 +203,12 @@ export function DetailsSection() {
       <Field label="First name" value={firstName} onChange={setFirstName} disabled={busy} />
       <Field label="Last name" value={lastName} onChange={setLastName} disabled={busy} />
       <Field label="Mobile" value={mobile} onChange={setMobile} disabled={busy} />
-      <p className="text-sm text-mist/70">
-        Email <span className="text-white">{user.email}</span>
-        {user.emailVerified ? <span className="ml-2 rounded-full bg-line/15 px-2 py-0.5 text-xs font-semibold text-line">Verified</span> : <span className="ml-2 text-xs text-mist/50">Not verified</span>}
+      <p className="text-sm text-fg/70">
+        Email <span className="text-fg">{user.email}</span>
+        {user.emailVerified ? <span className="ml-2 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent-text">Verified</span> : <span className="ml-2 text-xs text-fg/50">Not verified</span>}
       </p>
       {message ? (
-        <p className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-sm ${message.tone === "ok" ? "border-line/40 bg-line/10 text-line" : "border-rose-400/30 bg-rose-500/10 text-rose-100"}`} role={message.tone === "ok" ? "status" : "alert"}>
+        <p className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-sm ${message.tone === "ok" ? "border-accent-text/40 bg-accent/10 text-accent-text" : "border-rose-400/30 bg-rose-500/10 text-rose-800 dark:text-rose-100"}`} role={message.tone === "ok" ? "status" : "alert"}>
           {message.tone === "ok" ? <CircleCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> : <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
           {message.text}
         </p>
@@ -240,12 +240,12 @@ function Field({
 }) {
   return (
     <label className="block text-sm">
-      <span className="mb-1 block text-mist/70">{label}</span>
+      <span className="mb-1 block text-fg/70">{label}</span>
       <input
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-mist disabled:cursor-not-allowed disabled:opacity-60"
+        className="w-full rounded-xl border border-fg/10 bg-inset px-3 py-2.5 text-fg disabled:cursor-not-allowed disabled:opacity-60"
       />
     </label>
   );
@@ -256,8 +256,8 @@ export function LogoutSection() {
   const [leaving, setLeaving] = useState(false);
   return (
     <div>
-      <h1 className="font-display text-3xl text-white">Log out</h1>
-      <p className="mt-2 text-sm text-mist/70">This signs you out on this device.</p>
+      <h1 className="font-display text-3xl text-fg">Log out</h1>
+      <p className="mt-2 text-sm text-fg/70">This signs you out on this device.</p>
       <Button
         className="mt-4"
         variant="danger"

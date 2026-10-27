@@ -157,7 +157,7 @@ export function Shell<T>({
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-white">{title}</h1>
+      <h1 className="font-display text-3xl text-fg">{title}</h1>
       <div className="mt-4"><Success message={success} /></div>
       {extra}
       {table && data && !error ? (
@@ -241,11 +241,11 @@ export function BookingsPage() {
         </form>
       }
       columns={[
-        { label: "Player", cell: (row) => <span className="text-white">{row.userEmail}</span> },
+        { label: "Player", cell: (row) => <span className="text-fg">{row.userEmail}</span> },
         { label: "Venue", cell: (row) => row.venueName },
         { label: "Type", cell: (row) => <Tag value={row.kind || "Court"} /> },
         { label: "Court", className: "whitespace-nowrap", cell: (row) => row.courtName },
-        { label: "When", cell: (row) => <span className="whitespace-nowrap">{formatVenueDay(row.startTime, row.timeZone)}<span className="mt-0.5 block text-mist/70">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span></span> },
+        { label: "When", cell: (row) => <span className="whitespace-nowrap">{formatVenueDay(row.startTime, row.timeZone)}<span className="mt-0.5 block text-fg/70">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span></span> },
         { label: "Status", cell: (row) => <Tag value={row.status} /> },
         { label: "Amount", className: "whitespace-nowrap", cell: (row) => <Money amount={row.totalAmount} currency={row.currency} /> },
         { label: "Actions", cell: (row, done) => <BookingActions row={row} onChanged={done} /> },
@@ -261,7 +261,7 @@ function BookingActions({ row, onChanged }: { row: DashBooking; onChanged: (mess
   const next = courtBooking && (row.status === "pending" || row.status === "confirmed")
     ? ["cancelled", ...(row.status === "confirmed" ? ["completed", "no_show"] : [])]
     : [];
-  if (next.length === 0) return <span className="text-mist/50">—</span>;
+  if (next.length === 0) return <span className="text-fg/50">—</span>;
   return (
     <div className="min-w-[11rem]">
       <div className="flex flex-wrap gap-2">
@@ -344,7 +344,7 @@ export function PromotionsPage() {
             <Success message={note} />
           </form>
           <form
-            className="grid gap-3 rounded-2xl border border-white/10 p-4 sm:grid-cols-2"
+            className="grid gap-3 rounded-2xl border border-fg/10 p-4 sm:grid-cols-2"
             onSubmit={(event) => {
               event.preventDefault();
               setMessage(null);
@@ -394,11 +394,11 @@ export function PromotionsPage() {
             <Field label="Value"><input className={control} type="number" min={0} step="0.01" value={form.discountValue} disabled={busy !== null} onChange={(event) => setForm({ ...form, discountValue: event.target.value })} /></Field>
             <Field label="Valid from">
               <PickerInput className={control} type="date" value={form.validFrom} disabled={busy !== null} onChange={(event) => setForm({ ...form, validFrom: event.target.value })} required />
-              <span className="mt-1 block text-xs text-mist/60">Starts at 00:01 on this day.</span>
+              <span className="mt-1 block text-xs text-fg/60">Starts at 00:01 on this day.</span>
             </Field>
             <Field label="Valid to">
               <PickerInput className={control} type="date" value={form.validTo} disabled={busy !== null} onChange={(event) => setForm({ ...form, validTo: event.target.value })} required />
-              <span className="mt-1 block text-xs text-mist/60">Ends at 23:59 on this day.</span>
+              <span className="mt-1 block text-xs text-fg/60">Ends at 23:59 on this day.</span>
             </Field>
             <Check label="Active" checked={form.isActive} disabled={busy !== null} onChange={(checked) => setForm({ ...form, isActive: checked })} />
             <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
@@ -434,9 +434,9 @@ function PromoRow({ row, admin, venues, onChanged }: { row: DashPromo; admin: bo
   const venueName = venues.find((venue) => venue.id === row.venueId)?.name ?? (row.venueId ? "One venue" : "All venues");
 
   return (
-    <li className="rounded-2xl border border-white/10 p-3 text-sm text-mist transition-colors hover:bg-white/5">
+    <li className="rounded-2xl border border-fg/10 p-3 text-sm text-fg transition-colors hover:bg-fg/5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium text-white">{row.code}</span>
+        <span className="font-medium text-fg">{row.code}</span>
         <span>{row.discountType} {row.discountValue} · {row.usedCount} used · {row.isActive ? "active" : "inactive"} · {venueName}</span>
         <span>{localDate(row.validFrom)} 00:01 → {localDate(row.validTo)} 23:59</span>
         {admin ? (
@@ -472,7 +472,7 @@ function PromoRow({ row, admin, venues, onChanged }: { row: DashPromo; admin: bo
       </div>
       {editing ? (
         <form
-          className="mt-3 grid gap-3 border-t border-white/10 pt-3 sm:grid-cols-2"
+          className="mt-3 grid gap-3 border-t border-fg/10 pt-3 sm:grid-cols-2"
           onSubmit={(event) => {
             event.preventDefault();
             setMessage(null);
@@ -514,11 +514,11 @@ function PromoRow({ row, admin, venues, onChanged }: { row: DashPromo; admin: bo
           <Field label="Value"><input className={control} type="number" min={0} step="0.01" value={form.discountValue} disabled={busy !== null} onChange={(event) => setForm({ ...form, discountValue: event.target.value })} required /></Field>
           <Field label="Valid from">
             <PickerInput className={control} type="date" value={form.validFrom} disabled={busy !== null} onChange={(event) => setForm({ ...form, validFrom: event.target.value })} required />
-            <span className="mt-1 block text-xs text-mist/60">Starts at 00:01 on this day.</span>
+            <span className="mt-1 block text-xs text-fg/60">Starts at 00:01 on this day.</span>
           </Field>
           <Field label="Valid to">
             <PickerInput className={control} type="date" value={form.validTo} disabled={busy !== null} onChange={(event) => setForm({ ...form, validTo: event.target.value })} required />
-            <span className="mt-1 block text-xs text-mist/60">Ends at 23:59 on this day.</span>
+            <span className="mt-1 block text-xs text-fg/60">Ends at 23:59 on this day.</span>
           </Field>
           <Check label="Active" checked={form.isActive} disabled={busy !== null} onChange={(checked) => setForm({ ...form, isActive: checked })} />
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
@@ -573,7 +573,7 @@ function MoneyList({ title, load, locked = false, onSettled }: { title: string; 
       onSettled={onSettled}
       rowKey={(row) => row.id}
       columns={[
-        { label: "Player", cell: (row) => <span className="text-white">{row.userEmail || "—"}</span> },
+        { label: "Player", cell: (row) => <span className="text-fg">{row.userEmail || "—"}</span> },
         { label: "Venue", cell: (row) => row.venueName },
         { label: "Type", cell: (row) => <Tag value={row.kind || "Court"} /> },
         { label: "Court", cell: (row) => <CourtNames names={row.courtName} /> },
@@ -582,8 +582,8 @@ function MoneyList({ title, load, locked = false, onSettled }: { title: string; 
           cell: (row) => row.startTime ? (
             <span className="whitespace-nowrap">
               {formatVenueDay(row.startTime, row.timeZone)}
-              <span className="mt-0.5 block text-mist/70">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span>
-              {row.sessionCount > 1 ? <span className="mt-0.5 block text-mist/55">{row.sessionCount} sessions paid together</span> : null}
+              <span className="mt-0.5 block text-fg/70">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span>
+              {row.sessionCount > 1 ? <span className="mt-0.5 block text-fg/55">{row.sessionCount} sessions paid together</span> : null}
             </span>
           ) : "—",
         },
@@ -602,8 +602,8 @@ function PaymentStatus({ row }: { row: DashPayment }) {
   const label = row.status === "refunded" ? "Fully refunded" : "Partially refunded";
   return (
     <span className="block whitespace-nowrap">
-      <span className="font-semibold text-amber-200"><Money amount={refunded} currency={row.currency} /> refunded</span>
-      <span className="mt-0.5 block text-xs text-mist/60">
+      <span className="font-semibold text-amber-700 dark:text-amber-200"><Money amount={refunded} currency={row.currency} /> refunded</span>
+      <span className="mt-0.5 block text-xs text-fg/60">
         {label}
         {kept > 0 ? <> · <Money amount={kept} currency={row.currency} /> kept</> : null}
       </span>
@@ -616,10 +616,10 @@ function AwardPoints({ row }: { row: DashAward }) {
   const cancelled = row.cancelledCourts ?? 0;
   return (
     <span className="block min-w-[8rem] max-w-[14rem]">
-      <span className="whitespace-nowrap font-semibold text-white">+{row.points} pts</span>
-      {courts > 1 ? <span className="mt-0.5 block whitespace-nowrap text-xs text-mist/60">Total for {courts} courts</span> : null}
+      <span className="whitespace-nowrap font-semibold text-fg">+{row.points} pts</span>
+      {courts > 1 ? <span className="mt-0.5 block whitespace-nowrap text-xs text-fg/60">Total for {courts} courts</span> : null}
       {cancelled > 0 ? (
-        <span className="mt-0.5 block text-xs leading-5 text-amber-300">
+        <span className="mt-0.5 block text-xs leading-5 text-amber-700 dark:text-amber-300">
           {cancelled} {cancelled === 1 ? "court" : "courts"} cancelled, no points
           {row.cancelledCourtNames ? `: ${row.cancelledCourtNames}` : ""}
         </span>
@@ -634,8 +634,8 @@ function CourtNames({ names }: { names: string }) {
   if (courts.length === 1) return <span className="whitespace-nowrap">{courts[0]}</span>;
   return (
     <span className="block min-w-[8rem] max-w-[14rem]">
-      <span className="whitespace-nowrap text-white">{courts.length} courts</span>
-      <span className="mt-0.5 block text-xs leading-5 text-mist/60">{courts.join(", ")}</span>
+      <span className="whitespace-nowrap text-fg">{courts.length} courts</span>
+      <span className="mt-0.5 block text-xs leading-5 text-fg/60">{courts.join(", ")}</span>
     </span>
   );
 }
@@ -648,7 +648,7 @@ function WebhookList() {
       load={(page, pageSize) => listWebhooks(page, pageSize)}
       rowKey={(row: DashWebhook) => row.id}
       columns={[
-        { label: "Event", cell: (row) => <span className="text-white">{row.eventType}</span> },
+        { label: "Event", cell: (row) => <span className="text-fg">{row.eventType}</span> },
         { label: "Status", cell: (row) => <Tag value={row.status} /> },
         { label: "Received", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.createdAt, "UTC") },
       ]}
@@ -688,19 +688,19 @@ export function RewardsPage() {
           onSettled={() => setFiltering(false)}
           rowKey={(row: DashAward) => row.id}
           columns={[
-            { label: "Player", cell: (row) => <span className="text-white">{row.userEmail}</span> },
+            { label: "Player", cell: (row) => <span className="text-fg">{row.userEmail}</span> },
             { label: "Venue", cell: (row) => row.venueName },
             {
               label: "Source",
               cell: (row) => (
                 <span className="block min-w-[8rem] max-w-[14rem]">
                   {row.source || "Court booking"}
-                  {row.courtNames ? <span className="mt-0.5 block text-xs leading-5 text-mist/60">{row.courtNames}</span> : null}
+                  {row.courtNames ? <span className="mt-0.5 block text-xs leading-5 text-fg/60">{row.courtNames}</span> : null}
                 </span>
               ),
             },
             { label: "Points", cell: (row) => <AwardPoints row={row} /> },
-            { label: "Session", cell: (row) => <span className="whitespace-nowrap">{formatVenueDay(row.startTime, row.timeZone)}<span className="mt-0.5 block text-mist/70">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span></span> },
+            { label: "Session", cell: (row) => <span className="whitespace-nowrap">{formatVenueDay(row.startTime, row.timeZone)}<span className="mt-0.5 block text-fg/70">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span></span> },
             { label: "Awarded", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.awardedAt, row.timeZone) },
           ]}
         />
@@ -714,7 +714,7 @@ export function RewardsPage() {
           onSettled={() => setFiltering(false)}
           rowKey={(row: DashRedemption) => row.id}
           columns={[
-            { label: "Code", cell: (row) => <span className="text-white">{row.code}</span> },
+            { label: "Code", cell: (row) => <span className="text-fg">{row.code}</span> },
             { label: "Player", cell: (row) => row.userEmail },
             { label: "Venue", cell: (row) => row.venueName },
             { label: "Discount", className: "whitespace-nowrap", cell: (row) => row.discountAmount },
@@ -757,14 +757,14 @@ export function ActivityPage() {
           label: "Staff",
           cell: (row) => (
             <div className="min-w-0">
-              <p className="font-medium text-white">{row.displayName || row.userEmail || "Staff"}</p>
-              {row.displayName && row.userEmail ? <p className="text-xs text-mist/60">{row.userEmail}</p> : null}
+              <p className="font-medium text-fg">{row.displayName || row.userEmail || "Staff"}</p>
+              {row.displayName && row.userEmail ? <p className="text-xs text-fg/60">{row.userEmail}</p> : null}
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 {row.role ? <Tag value={row.role} /> : null}
                 {admin && row.userId && (applied.userId !== row.userId || filtering) ? (
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 text-xs font-medium text-line hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-accent-text hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={filtering}
                     onClick={() => { setFiltering(true); setUserId(row.userId!); setApplied({ userId: row.userId!, from, to }); setTick((value) => value + 1); setNote(`Showing ${row.displayName || row.userEmail || "this staff member"} only.`); }}
                   >
@@ -780,13 +780,13 @@ export function ActivityPage() {
           label: "Page",
           cell: (row) => (
             <div className="min-w-0">
-              <p className="text-white">{row.title || activityPage(row.detail)}</p>
-              {activityPath(row) ? <p className="font-mono text-xs text-mist/55">{activityPath(row)}</p> : null}
+              <p className="text-fg">{row.title || activityPage(row.detail)}</p>
+              {activityPath(row) ? <p className="font-mono text-xs text-fg/55">{activityPath(row)}</p> : null}
             </div>
           ),
         },
         { label: "Section", className: "whitespace-nowrap", cell: (row) => <Tag value={activitySection(activityPath(row))} /> },
-        { label: "Venue", className: "whitespace-nowrap", cell: (row) => row.venueName?.trim() ? <span className="text-white">{row.venueName}</span> : <span className="text-mist/50">N/A</span> },
+        { label: "Venue", className: "whitespace-nowrap", cell: (row) => row.venueName?.trim() ? <span className="text-fg">{row.venueName}</span> : <span className="text-fg/50">N/A</span> },
         { label: "Time on page", className: "whitespace-nowrap", cell: (row) => timeOnPage(row.createdAt, row.nextViewAt) },
         { label: "IP address", className: "whitespace-nowrap", cell: (row) => <span className="font-mono text-xs">{row.ipAddress || "—"}</span> },
         {
@@ -795,7 +795,7 @@ export function ActivityPage() {
           cell: (row) => (
             <div>
               <p>{formatVenueDateTime(row.createdAt, localZone)}</p>
-              <p className="text-xs text-mist/55">{timeAgo(row.createdAt)}</p>
+              <p className="text-xs text-fg/55">{timeAgo(row.createdAt)}</p>
             </div>
           ),
         },

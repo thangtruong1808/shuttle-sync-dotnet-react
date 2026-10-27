@@ -75,7 +75,7 @@ export function SiteLayout() {
 
   return (
     <VenueContext.Provider value={{ venues, error, reload: () => setAttempt((value) => value + 1), defaultSlug, setDefaultVenue }}>
-      <div className="flex min-h-screen flex-col bg-ink text-mist">
+      <div className="flex min-h-screen flex-col bg-canvas text-fg">
         <Navbar />
         <div className="flex-1">
           <Outlet />
@@ -87,5 +87,5 @@ export function SiteLayout() {
 }
 
 export function PageSection({ children }: { children: ReactNode }) {
-  return <div className="w-full px-4 py-8 sm:px-6 lg:px-8">{children}</div>;
+  return <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">{children}</div>;
 }

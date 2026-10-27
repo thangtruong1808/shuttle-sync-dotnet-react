@@ -28,7 +28,7 @@ function Tip({ label, children }: { label: string; children: ReactNode }) {
       {children}
       <span
         role="tooltip"
-        className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-white/15 bg-[#10241b] px-2 py-1 text-xs font-medium text-white shadow-lg group-hover/tip:block group-focus-within/tip:block lg:left-full lg:top-1/2 lg:ml-2 lg:mt-0 lg:-translate-y-1/2 lg:translate-x-0"
+        className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-fg/15 bg-surface-2 px-2 py-1 text-xs font-medium text-fg shadow-lg group-hover/tip:block group-focus-within/tip:block lg:left-full lg:top-1/2 lg:ml-2 lg:mt-0 lg:-translate-y-1/2 lg:translate-x-0"
       >
         {label}
       </span>
@@ -60,16 +60,16 @@ export default function ProfileLayout() {
   }
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex min-w-0 items-center rounded-xl text-sm font-medium ${isActive ? "bg-line/15 text-line" : "text-mist/80 hover:bg-white/5"} ${open ? "w-full gap-2 px-3 py-2.5" : "h-12 w-full justify-center"}`;
+    `flex min-w-0 items-center rounded-xl text-sm font-medium ${isActive ? "bg-accent/15 text-accent-text" : "text-fg/80 hover:bg-fg/5"} ${open ? "w-full gap-2 px-3 py-2.5" : "h-12 w-full justify-center"}`;
 
   return (
     <div className={`grid w-full min-w-0 gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${open ? "lg:grid-cols-[16rem_1fr]" : "lg:grid-cols-[5rem_1fr]"}`}>
-      <aside className={`min-w-0 rounded-3xl border border-white/10 bg-pine/80 lg:min-h-[32rem] ${open ? "p-4" : "p-3"}`}>
+      <aside className={`min-w-0 rounded-3xl border border-fg/10 bg-surface/80 lg:min-h-[32rem] ${open ? "p-4" : "p-3"}`}>
         <Tip label={open ? "Close sidebar" : "Open sidebar"}>
           <button
             type="button"
             title={open ? "Close sidebar" : "Open sidebar"}
-            className={`flex items-center justify-center rounded-xl border border-white/10 text-mist hover:bg-white/5 ${open ? "h-10 w-10" : "h-12 w-full"}`}
+            className={`flex items-center justify-center rounded-xl border border-fg/10 text-fg hover:bg-fg/5 ${open ? "h-10 w-10" : "h-12 w-full"}`}
             aria-expanded={open}
             aria-controls="profile-nav"
             onClick={() => setOpen((value) => !value)}
@@ -83,12 +83,12 @@ export default function ProfileLayout() {
             {user.userAvatar ? (
               <img src={user.userAvatar} alt="" className="h-12 w-12 rounded-full object-cover" />
             ) : (
-              <span className="grid h-12 w-12 place-items-center rounded-full bg-white/10 font-semibold text-white">{initials(user.displayName, user.email)}</span>
+              <span className="grid h-12 w-12 place-items-center rounded-full bg-fg/10 font-semibold text-fg">{initials(user.displayName, user.email)}</span>
             )}
             <div className="min-w-0">
-              <p className="truncate font-medium text-white">{user.displayName || "Your account"}</p>
-              <p className="truncate text-sm text-mist/65">{user.email}</p>
-              <p className="text-sm font-semibold text-line">{user.rewardPoints} pts</p>
+              <p className="truncate font-medium text-fg">{user.displayName || "Your account"}</p>
+              <p className="truncate text-sm text-fg/65">{user.email}</p>
+              <p className="text-sm font-semibold text-accent-text">{user.rewardPoints} pts</p>
             </div>
           </div>
         ) : null}
@@ -99,11 +99,11 @@ export default function ProfileLayout() {
               <NavLink key={section.to} to={section.to} end={section.end} title={section.label} className={linkClass}>
                 <span className="relative">
                   <Icon className={open ? "h-4 w-4 shrink-0" : "h-6 w-6 shrink-0"} aria-hidden="true" />
-                  {!open && section.to === "/profile/recommendations" && unreadRecommendations > 0 ? <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-line" /> : null}
+                  {!open && section.to === "/profile/recommendations" && unreadRecommendations > 0 ? <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-accent" /> : null}
                 </span>
                 {open ? section.label : <span className="sr-only">{section.label}</span>}
                 {open && section.to === "/profile/recommendations" && unreadRecommendations > 0 ? (
-                  <span className="ml-auto rounded-full bg-line px-1.5 py-0.5 text-[10px] font-bold text-ink">{unreadRecommendations}</span>
+                  <span className="ml-auto rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-accent-fg">{unreadRecommendations}</span>
                 ) : null}
               </NavLink>
             );
@@ -115,7 +115,7 @@ export default function ProfileLayout() {
               title="Log out"
               disabled={leaving}
               aria-busy={leaving}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-rose-700 dark:text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => {
                 setLeaving(true);
                 void dispatch(logout())
@@ -133,7 +133,7 @@ export default function ProfileLayout() {
                 title="Log out"
                 disabled={leaving}
                 aria-busy={leaving}
-                className="flex h-12 w-full items-center justify-center rounded-xl text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-12 w-full items-center justify-center rounded-xl text-rose-700 dark:text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={() => {
                   setLeaving(true);
                   void dispatch(logout())

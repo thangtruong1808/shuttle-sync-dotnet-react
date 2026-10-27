@@ -2,16 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --canvas: 245 248 244;
+  --surface: 255 255 255;
+  --surface-2: 238 243 238;
+  --inset: 241 245 241;
+  --fg: 11 26 19;
+  --fg-muted: 75 91 82;
+  --border: 220 228 221;
+  --accent: 198 245 78;
+  --accent-fg: 7 20 15;
+  --accent-text: 63 98 18;
+  --shadow: 11 26 19;
+  color-scheme: light;
+}
+
+.dark {
+  --canvas: 7 20 15;
+  --surface: 14 31 23;
+  --surface-2: 20 42 32;
+  --inset: 10 24 18;
+  --fg: 231 246 238;
+  --fg-muted: 167 189 177;
+  --border: 35 58 47;
+  --accent: 198 245 78;
+  --accent-fg: 7 20 15;
+  --accent-text: 198 245 78;
+  --shadow: 0 0 0;
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  background: #07140f;
-  color: #e7f6ee;
+  background: rgb(var(--canvas));
+  color: rgb(var(--fg));
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
 }
 
 :focus-visible {
-  outline: 2px solid #c6f54e;
+  outline: 2px solid rgb(var(--accent-text));
   outline-offset: 2px;
+}
+
+::selection {
+  background: rgb(var(--accent) / 0.45);
+  color: rgb(var(--fg));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .picker-input {
@@ -19,8 +66,8 @@ body {
 }
 
 select option {
-  background-color: #f4fbf6;
-  color: #102117;
+  background-color: rgb(var(--surface));
+  color: rgb(var(--fg));
 }
 
 .picker-input::-webkit-calendar-picker-indicator {

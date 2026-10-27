@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, CalendarDays, CircleAlert, Clock, ShieldCheck } from "lucide-react";
 import { Spinner } from "../../components/ui";
@@ -32,16 +33,16 @@ function subjectLabel(subject: NonNullable<Props["subject"]>) {
 
 export function PaymentResultBanner({ kind, subject = "courts", retryTo, onRetry, retryLabel = "Try again", className = "" }: Props) {
   const labels = subjectLabel(subject);
-  const retryClass = "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto";
+  const retryClass = "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto";
 
   if (kind === "waiting") {
     return (
       <section className={`rounded-3xl border border-sky-300/35 bg-sky-400/10 p-4 sm:p-5 ${className}`} role="status" aria-live="polite">
-        <p className="flex items-start gap-2 font-semibold text-sky-100">
-          <Spinner className="mt-0.5 h-5 w-5 shrink-0 text-sky-200" />
+        <p className="flex items-start gap-2 font-semibold text-sky-800 dark:text-sky-100">
+          <Spinner className="mt-0.5 h-5 w-5 shrink-0 text-sky-700 dark:text-sky-200" />
           Checking your payment with Stripe
         </p>
-        <p className="mt-2 text-sm leading-relaxed text-mist/85">
+        <p className="mt-2 text-sm leading-relaxed text-fg/85">
           Your {labels.place} is not confirmed yet. We only save it after Stripe confirms the payment. Please wait a moment — do not close this page.
         </p>
       </section>
@@ -51,14 +52,14 @@ export function PaymentResultBanner({ kind, subject = "courts", retryTo, onRetry
   if (kind === "processing") {
     return (
       <section className={`rounded-3xl border border-amber-300/40 bg-amber-400/10 p-4 sm:p-5 ${className}`} role="status" aria-live="polite">
-        <p className="flex items-start gap-2 font-semibold text-amber-50">
-          <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber-200" aria-hidden="true" />
+        <p className="flex items-start gap-2 font-semibold text-amber-800 dark:text-amber-50">
+          <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-200" aria-hidden="true" />
           Waiting for the bank to confirm
         </p>
-        <p className="mt-2 text-sm leading-relaxed text-mist/85">
+        <p className="mt-2 text-sm leading-relaxed text-fg/85">
           Stripe received the payment, but it is not confirmed yet. Your {labels.one} stay held until the bank confirms. Direct debit can take a few business days. PayTo can take a few minutes. The {labels.place} is only secured after confirmation.
         </p>
-        <Link to="/profile/bookings" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-line hover:underline">
+        <Link to="/profile/bookings" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
           <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
           View my bookings
         </Link>
@@ -69,17 +70,17 @@ export function PaymentResultBanner({ kind, subject = "courts", retryTo, onRetry
   const cancelled = kind === "cancelled";
   return (
     <section className={`rounded-3xl border border-rose-300/40 bg-rose-500/10 p-4 sm:p-5 ${className}`} role="alert">
-      <p className="flex items-start gap-2 font-semibold text-rose-100">
-        <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-rose-200" aria-hidden="true" />
+      <p className="flex items-start gap-2 font-semibold text-rose-800 dark:text-rose-100">
+        <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-rose-700 dark:text-rose-200" aria-hidden="true" />
         {cancelled ? "Payment was cancelled" : "Payment could not go through"}
       </p>
-      <p className="mt-2 text-sm leading-relaxed text-mist/85">
+      <p className="mt-2 text-sm leading-relaxed text-fg/85">
         {cancelled
           ? `The Stripe checkout was cancelled, so this ${labels.place} was not saved. No card charge was completed.`
           : `Stripe did not confirm this payment, so this ${labels.place} was not saved. Any reward points used for this attempt are back.`}
       </p>
-      <p className="mt-2 flex items-start gap-2 text-sm leading-relaxed text-mist/75">
-        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-mist/50" aria-hidden="true" />
+      <p className="mt-2 flex items-start gap-2 text-sm leading-relaxed text-fg/75">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-fg/50" aria-hidden="true" />
         <span>Courts and places are only booked after Stripe confirms success.</span>
       </p>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -96,7 +97,7 @@ export function PaymentResultBanner({ kind, subject = "courts", retryTo, onRetry
         ) : null}
         <Link
           to="/profile/bookings"
-          className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-mist hover:bg-white/10 sm:w-auto"
+          className="inline-flex w-full items-center justify-center rounded-xl border border-fg/15 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg hover:bg-fg/10 sm:w-auto"
         >
           My bookings
         </Link>
@@ -122,4 +123,23 @@ export function paymentOutcomeKind(row: { status: string; paymentStatus: string 
 export function paymentSettled(row: { status: string; paymentStatus: string | null; cashAmount?: number }) {
   const kind = paymentOutcomeKind(row);
   return kind === "confirmed" || kind === "failed" || kind === "cancelled";
+}
+
+const returnParams = ["checkout", "redirect_status", "payment_intent", "payment_intent_client_secret"];
+
+/**
+ * Drops the Stripe return query from the address bar once the page has a final answer.
+ * Uses `history.replaceState` so the router keeps the original search and the page logic
+ * that reads it is unchanged. A pending result keeps the query so a refresh checks again.
+ */
+export function useCleanReturnUrl(waiting: boolean, outcome: { status: string; paymentStatus: string | null; cashAmount?: number } | null) {
+  const settled = outcome ? paymentSettled(outcome) : false;
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const returned = url.searchParams.get("checkout");
+    if (!returned || returned.startsWith("friends") || waiting) return;
+    if (returned !== "cancel" && !settled) return;
+    returnParams.forEach((name) => url.searchParams.delete(name));
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [waiting, settled]);
 }

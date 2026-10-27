@@ -1,12 +1,9 @@
-import { useEffect } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useNavigate, useSearchParams } from "react-router-dom";
-import { useSelector } from "react-redux";
-import type { RootState } from "./app/store";
+import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from "react-router-dom";
 import { DocumentTitle } from "./components/DocumentTitle";
 import { PageSection, SiteLayout, useVenues } from "./components/layout/SiteLayout";
 import { EmptyState, ErrorState } from "./components/format";
 import { Skeleton } from "./components/ui";
-import AuthPanel from "./features/auth/AuthPanel";
+import AuthPage from "./features/auth/AuthPage";
 import BookingStubPage from "./features/booking/BookingStubPage";
 import BookCourtPage from "./features/booking/BookCourtPage";
 import CourtGroupPage from "./features/booking/CourtGroupPage";
@@ -30,6 +27,7 @@ import { DetailsSection, OverviewSection } from "./features/profile/ProfileBasic
 import { PaymentsSection, RewardsSection, SecuritySection } from "./features/profile/ProfileLists";
 import { RecommendationsSection } from "./features/profile/RecommendationsSection";
 import { venueForPage } from "./features/venues/venueApi";
+import VenueGate from "./features/venues/VenueGate";
 
 function HomeRedirect() {
   const { venues, error, reload, defaultSlug } = useVenues();
@@ -66,32 +64,6 @@ function HomeRedirect() {
   return <Navigate to={`/${slug}`} replace />;
 }
 
-function AuthPage({ mode }: { mode: "login" | "register" }) {
-  const status = useSelector((state: RootState) => state.auth.status);
-  const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const next = params.get("next");
-  const destination = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
-
-  useEffect(() => {
-    if (status === "authenticated" && !params.get("authError")) {
-      navigate(destination ?? "/", { replace: true });
-    }
-  }, [destination, navigate, params, status]);
-
-  return (
-    <main>
-      <PageSection>
-        <div className="mx-auto max-w-md rounded-3xl border border-white/10 bg-pine/90 p-5 sm:p-7">
-          <h1 className="font-display text-2xl font-semibold text-white">Your account</h1>
-          <p className="mt-1 text-sm text-mist/65">Email, Google, or GitHub. Tokens stay in secure cookies.</p>
-          <AuthPanel initialMode={mode} onLoginSuccess={() => navigate(destination ?? "/")} />
-        </div>
-      </PageSection>
-    </main>
-  );
-}
-
 export default function App() {
   return (
     <BrowserRouter>
@@ -113,8 +85,8 @@ export default function App() {
         </Route>
         <Route element={<SiteLayout />}>
           <Route path="/" element={<HomeRedirect />} />
-          <Route path="/login" element={<AuthPage mode="login" />} />
-          <Route path="/register" element={<AuthPage mode="register" />} />
+          <Route path="/login" element={<AuthPage key="login" mode="login" />} />
+          <Route path="/register" element={<AuthPage key="register" mode="register" />} />
           <Route path="/promotions" element={<PublicPromotionsPage />} />
           <Route path="/rewards" element={<RewardsPage />} />
           <Route path="/faq" element={<FaqPage />} />
@@ -132,14 +104,16 @@ export default function App() {
             <Route path="recommendations" element={<RecommendationsSection />} />
             <Route path="security" element={<SecuritySection />} />
           </Route>
-          <Route path="/:slug" element={<HomePage />} />
-          <Route path="/:slug/courts" element={<CourtsPage />} />
-          <Route path="/:slug/book" element={<BookCourtPage />} />
-          <Route path="/:slug/book/group/:groupId" element={<CourtGroupPage />} />
-          <Route path="/:slug/book/:sessionId" element={<BookingStubPage />} />
-          <Route path="/:slug/social" element={<SocialPage />} />
-          <Route path="/:slug/social/checkout" element={<SocialCheckoutPage />} />
-          <Route path="/:slug/social/:socialId" element={<SocialPayPage />} />
+          <Route path="/:slug" element={<VenueGate />}>
+            <Route index element={<HomePage />} />
+            <Route path="courts" element={<CourtsPage />} />
+            <Route path="book" element={<BookCourtPage />} />
+            <Route path="book/group/:groupId" element={<CourtGroupPage />} />
+            <Route path="book/:sessionId" element={<BookingStubPage />} />
+            <Route path="social" element={<SocialPage />} />
+            <Route path="social/checkout" element={<SocialCheckoutPage />} />
+            <Route path="social/:socialId" element={<SocialPayPage />} />
+          </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

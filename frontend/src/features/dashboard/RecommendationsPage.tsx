@@ -121,7 +121,7 @@ export function RecommendationsPage() {
       rowKey={(row: DashRecommendation) => row.id}
       extra={
         <div className="mt-4 grid gap-3">
-          <p className="max-w-2xl text-sm text-mist/75">Write one note for a player who should come back. The same points apply to anyone on this list, up to $10. The same player, venue, and day keeps a single row.</p>
+          <p className="max-w-2xl text-sm text-fg/75">Write one note for a player who should come back. The same points apply to anyone on this list, up to $10. The same player, venue, and day keeps a single row.</p>
           <Success message={note} />
           <Notice message={error} />
           {venues === null ? (
@@ -147,7 +147,7 @@ export function RecommendationsPage() {
               </Field>
               <Field label="Points">
                 <input className={control} type="number" min={1} max={maxPoints} step={1} value={points} disabled={writing} onChange={(event) => setPoints(event.target.value)} required />
-                <span className="mt-1 block text-xs text-mist/60">{Number.isFinite(dollar) ? `$${dollar.toFixed(2)} · max $10` : "Enter a point amount"}</span>
+                <span className="mt-1 block text-xs text-fg/60">{Number.isFinite(dollar) ? `$${dollar.toFixed(2)} · max $10` : "Enter a point amount"}</span>
               </Field>
               <Button type="submit" loading={writing} disabled={!venueId || !userId || playersLoading || !Number.isInteger(pointValue) || pointValue < 1 || pointValue > maxPoints}>Write recommendation</Button>
             </form>
@@ -160,14 +160,14 @@ export function RecommendationsPage() {
           label: "Player",
           cell: (row) => (
             <div className="min-w-0">
-              <p className="text-white">{row.displayName?.trim() || row.userEmail}</p>
-              {row.displayName?.trim() ? <p className="text-xs text-mist/55">{row.userEmail}</p> : null}
+              <p className="text-fg">{row.displayName?.trim() || row.userEmail}</p>
+              {row.displayName?.trim() ? <p className="text-xs text-fg/55">{row.userEmail}</p> : null}
             </div>
           ),
         },
-        { label: "Venue", className: "whitespace-nowrap", cell: (row) => row.venueName?.trim() ? <span className="text-white">{row.venueName}</span> : <span className="text-mist/50">Any venue</span> },
+        { label: "Venue", className: "whitespace-nowrap", cell: (row) => row.venueName?.trim() ? <span className="text-fg">{row.venueName}</span> : <span className="text-fg/50">Any venue</span> },
         { label: "Time", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.createdAt, row.timeZone || "UTC") },
-        { label: "Payload", cell: (row) => <span className="text-mist">{payloadRead(row.payload)}</span> },
+        { label: "Payload", cell: (row) => <span className="text-fg">{payloadRead(row.payload)}</span> },
       ]}
     />
   );

@@ -98,25 +98,25 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
 
   return (
     <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
-      <Link to={`/profile/bookings?venue=${encodeURIComponent(slug)}`} className="text-sm text-line hover:underline">Back to my bookings</Link>
-      <h1 className="mt-3 font-display text-3xl text-white">Add a court</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/75">Courts already on this week stay ticked. Tick another free court, then pick a time that works for every ticked court. This updates the same week.</p>
-      {loadError ? <p className="mt-3 text-sm text-rose-100" role="alert">{loadError}</p> : null}
+      <Link to={`/profile/bookings?venue=${encodeURIComponent(slug)}`} className="text-sm text-accent-text hover:underline">Back to my bookings</Link>
+      <h1 className="mt-3 font-display text-3xl text-fg">Add a court</h1>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg/75">Courts already on this week stay ticked. Tick another free court, then pick a time that works for every ticked court. This updates the same week.</p>
+      {loadError ? <p className="mt-3 text-sm text-rose-800 dark:text-rose-100" role="alert">{loadError}</p> : null}
       {loadingCourts || !courts ? (
-        <p className="mt-4 flex items-center gap-2 text-sm text-mist" aria-busy="true"><Spinner className="h-4 w-4" /> Loading courts</p>
+        <p className="mt-4 flex items-center gap-2 text-sm text-fg" aria-busy="true"><Spinner className="h-4 w-4" /> Loading courts</p>
       ) : (
         <form className="mt-4 grid max-w-3xl gap-4" onSubmit={(event) => { event.preventDefault(); if (picked) void confirm(picked); }}>
           <fieldset>
-            <legend className="mb-2 text-sm text-mist/70">Courts</legend>
+            <legend className="mb-2 text-sm text-fg/70">Courts</legend>
             <div className="grid gap-2 sm:grid-cols-2">
               {courts.map((court) => {
                 const checked = court.yours || extra.includes(court.id);
                 const unavailable = !court.yours && !court.free;
                 return (
-                  <label key={court.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${unavailable ? "cursor-not-allowed border-white/5 text-mist/40" : "border-white/10 text-white"}`}>
+                  <label key={court.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${unavailable ? "cursor-not-allowed border-fg/5 text-fg/40" : "border-fg/10 text-fg"}`}>
                     <input
                       type="checkbox"
-                      className="accent-line"
+                      className="accent-accent-text"
                       checked={checked}
                       disabled={busy || court.yours || unavailable}
                       onChange={() => {
@@ -125,26 +125,26 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
                       }}
                     />
                     <span className={unavailable ? "line-through" : ""}>{court.courtName}</span>
-                    {court.yours ? <span className="ml-auto text-xs text-mist/60">This week</span> : unavailable ? <span className="ml-auto text-xs text-mist/50">Booked</span> : null}
+                    {court.yours ? <span className="ml-auto text-xs text-fg/60">This week</span> : unavailable ? <span className="ml-auto text-xs text-fg/50">Booked</span> : null}
                   </label>
                 );
               })}
             </div>
           </fieldset>
-          <label className="text-sm text-mist">
-            <span className="mb-1 block text-mist/70">Date</span>
-            <PickerInput type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setBlock(null); }} className="w-full max-w-xs rounded-xl border border-[#102117]/15 bg-[#f4fbf6] px-3 py-2.5 text-[#102117] [color-scheme:light]" />
+          <label className="text-sm text-fg">
+            <span className="mb-1 block text-fg/70">Date</span>
+            <PickerInput type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setBlock(null); }} className="w-full max-w-xs rounded-xl border border-fg/15 bg-surface px-3 py-2.5 text-fg" />
           </label>
           <div>
-            <p className="text-sm text-mist/70">Times that fit every ticked court</p>
+            <p className="text-sm text-fg/70">Times that fit every ticked court</p>
             {loadingTimes || times === null ? (
-              <p className="mt-2 flex items-center gap-2 text-sm text-mist" aria-busy="true"><Spinner className="h-4 w-4" /> Loading times</p>
+              <p className="mt-2 flex items-center gap-2 text-sm text-fg" aria-busy="true"><Spinner className="h-4 w-4" /> Loading times</p>
             ) : times.length === 0 ? (
-              <p className="mt-2 text-sm text-mist" role="status">{held ? "That time is held for a later week because you keep weeks ahead. Choose another date, or cancel that held week and book again." : "No open time on this date fits every court you ticked. Untick a court or pick another date."}</p>
+              <p className="mt-2 text-sm text-fg" role="status">{held ? "That time is held for a later week because you keep weeks ahead. Choose another date, or cancel that held week and book again." : "No open time on this date fits every court you ticked. Untick a court or pick another date."}</p>
             ) : (
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {times.map((slot) => (
-                  <button key={`${slot.date}-${slot.start}`} type="button" aria-pressed={picked?.start === slot.start && picked.date === slot.date} disabled={busy} className={`rounded-xl border px-3 py-2 text-left text-sm disabled:opacity-60 ${picked?.start === slot.start && picked.date === slot.date ? "border-line bg-line/15 text-white" : "border-white/10 text-mist"}`} onClick={() => { setPicked(slot); setBlock(null); }}>
+                  <button key={`${slot.date}-${slot.start}`} type="button" aria-pressed={picked?.start === slot.start && picked.date === slot.date} disabled={busy} className={`rounded-xl border px-3 py-2 text-left text-sm disabled:opacity-60 ${picked?.start === slot.start && picked.date === slot.date ? "border-accent-text bg-accent/15 text-fg" : "border-fg/10 text-fg"}`} onClick={() => { setPicked(slot); setBlock(null); }}>
                     {slot.label}
                   </button>
                 ))}

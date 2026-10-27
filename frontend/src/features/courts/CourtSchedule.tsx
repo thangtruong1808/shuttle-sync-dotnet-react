@@ -25,17 +25,17 @@ export function useNow(): number {
 
 export function RegistrationNames({ courts }: { courts: SocialRosterCourt[] }) {
   if (courts.length === 0) {
-    return <p className="mt-2 text-sm text-mist/70">No one is registered yet.</p>;
+    return <p className="mt-2 text-sm text-fg/70">No one is registered yet.</p>;
   }
 
   return (
     <ul className="mt-2 space-y-2">
       {courts.map((court) => (
         <li key={court.courtNumber}>
-          <p className="text-sm font-medium text-white">{court.courtName}: {court.players.length} {court.players.length === 1 ? "player" : "players"}</p>
+          <p className="text-sm font-medium text-fg">{court.courtName}: {court.players.length} {court.players.length === 1 ? "player" : "players"}</p>
           <ul className="mt-1">
             {court.players.map((name, index) => (
-              <li key={`${court.courtNumber}-${index}`} className="text-sm text-mist/80">{name}</li>
+              <li key={`${court.courtNumber}-${index}`} className="text-sm text-fg/80">{name}</li>
             ))}
           </ul>
         </li>
@@ -77,7 +77,7 @@ export function CourtRoster({ slug, socialId, courtNumber }: { slug: string; soc
       <Button type="button" variant="secondary" className="w-full" icon={<Eye className="h-4 w-4" aria-hidden="true" />} loading={loading} onClick={() => void toggle()}>
         {open ? "Hide registration" : "View registration"}
       </Button>
-      {error ? <p className="mt-2 text-sm text-mist" role="alert">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-fg" role="alert">{error}</p> : null}
       {open && courts ? <RegistrationNames courts={courts} /> : null}
     </div>
   );
@@ -91,7 +91,7 @@ export function SocialTimes({ times, timeZone, now, slug, courtNumber }: { times
 
   return (
     <div className="mt-3">
-      <p className="text-sm font-semibold text-white">Drop-in social</p>
+      <p className="text-sm font-semibold text-fg">Drop-in social</p>
       <ul className="mt-2 grid gap-2">
         {open.map((time) => {
           const each = time.playersPerCourt ?? 8;
@@ -102,12 +102,12 @@ export function SocialTimes({ times, timeZone, now, slug, courtNumber }: { times
             time.totalPlayers >= allowed
           );
           return (
-          <li key={time.id} className="rounded-2xl border border-line/40 px-3 py-2">
-            <p className="text-sm font-semibold text-white">{formatVenueDay(time.startTime, timeZone)}</p>
-            <p className="whitespace-nowrap text-sm text-white">{formatVenueRange(time.startTime, time.endTime, timeZone)}</p>
-            <p className="text-sm text-mist/80">{time.players === 0 ? "No one on this court yet" : `${time.players} of ${each} on this court`}</p>
+          <li key={time.id} className="rounded-2xl border border-accent-text/40 px-3 py-2">
+            <p className="text-sm font-semibold text-fg">{formatVenueDay(time.startTime, timeZone)}</p>
+            <p className="whitespace-nowrap text-sm text-fg">{formatVenueRange(time.startTime, time.endTime, timeZone)}</p>
+            <p className="text-sm text-fg/80">{time.players === 0 ? "No one on this court yet" : `${time.players} of ${each} on this court`}</p>
             {typeof time.totalPlayers === "number" && allowed > 0 ? (
-              <p className="text-sm text-mist/70">
+              <p className="text-sm text-fg/70">
                 {time.totalPlayers} of {allowed} players
                 {" · "}
                 {each} per court
@@ -115,7 +115,7 @@ export function SocialTimes({ times, timeZone, now, slug, courtNumber }: { times
                 {time.courtLimit} {time.courtLimit === 1 ? "court" : "courts"}
               </p>
             ) : typeof time.totalPlayers === "number" ? (
-              <p className="text-sm text-mist/70">
+              <p className="text-sm text-fg/70">
                 {time.totalPlayers} registered
                 {" · "}
                 {typeof time.courtLimit === "number" ? `${time.courtsUsed ?? 0} of ${time.courtLimit} courts` : `${time.courtsUsed ?? 0} courts`}
@@ -123,13 +123,13 @@ export function SocialTimes({ times, timeZone, now, slug, courtNumber }: { times
                 {each} players each
               </p>
             ) : (
-              <p className="text-sm text-mist/70">Each court holds {each} players.</p>
+              <p className="text-sm text-fg/70">Each court holds {each} players.</p>
             )}
             {full ? (
-              <p className="mt-1 text-sm text-line">This social is full. Join the waitlist from Register for public social. If someone cancels, the first person waiting gets the place.</p>
+              <p className="mt-1 text-sm text-accent-text">This social is full. Join the waitlist from Register for public social. If someone cancels, the first person waiting gets the place.</p>
             ) : null}
             {typeof time.waitlistCount === "number" && (full || time.waitlistCount > 0) ? (
-              <p className="text-sm text-mist/70">{time.waitlistCount} {time.waitlistCount === 1 ? "person" : "people"} on the waitlist.</p>
+              <p className="text-sm text-fg/70">{time.waitlistCount} {time.waitlistCount === 1 ? "person" : "people"} on the waitlist.</p>
             ) : null}
             <SessionClock start={time.startTime} end={time.endTime} />
             {slug ? <CourtRoster slug={slug} socialId={time.id} courtNumber={courtNumber} /> : null}
@@ -149,9 +149,9 @@ export function upcomingBookings<T extends { startTime: string; endTime: string 
 
 export function BookedTime({ start, end, timeZone, unpaid = false }: { start: string; end: string; timeZone: string; unpaid?: boolean }) {
   return (
-    <p className={`text-sm ${unpaid ? "text-amber-100" : "text-white"}`}>
-      <span className={`font-semibold ${unpaid ? "text-amber-200" : ""}`}>{unpaid ? "Held" : "Booked"}</span>
-      <span className="text-mist/45"> · </span>
+    <p className={`text-sm ${unpaid ? "text-amber-800 dark:text-amber-100" : "text-fg"}`}>
+      <span className={`font-semibold ${unpaid ? "text-amber-700 dark:text-amber-200" : ""}`}>{unpaid ? "Held" : "Booked"}</span>
+      <span className="text-fg/45"> · </span>
       <span className="whitespace-nowrap">{formatVenueRange(start, end, timeZone)}</span>
     </p>
   );
@@ -166,9 +166,9 @@ function prettyDate(iso: string): string {
 
 export function IncentiveNote({ points, startsOn, endsOn }: { points: number; startsOn: string; endsOn: string }) {
   return (
-    <p className="mt-2 text-sm leading-snug text-line">
+    <p className="mt-2 text-sm leading-snug text-accent-text">
       <span className="font-semibold">+{points} pts</span>
-      <span className="mt-0.5 block font-normal text-mist/80">
+      <span className="mt-0.5 block font-normal text-fg/80">
         Book a court or join a public social from {prettyDate(startsOn)} to {prettyDate(endsOn)}. These points are added after that session ends.
       </span>
     </p>
@@ -192,28 +192,28 @@ export function SocialRoster({
   const used = [...courts].sort((left, right) => left.courtNumber - right.courtNumber);
   const courtsUsed = used.length;
   return (
-    <div className="mt-2 rounded-2xl border border-white/10 bg-black/25 p-3">
-      <p className="text-sm font-semibold text-white">
+    <div className="mt-2 rounded-2xl border border-fg/10 bg-inset p-3">
+      <p className="text-sm font-semibold text-fg">
         {playerCount} player{playerCount === 1 ? "" : "s"} registered
-        <span className="font-normal text-mist/70">
+        <span className="font-normal text-fg/70">
           {" · "}
           {courtCount > 0 ? `${courtsUsed} of ${courtCount} courts in use` : `${courtsUsed} court${courtsUsed === 1 ? "" : "s"} in use`}
         </span>
       </p>
       {compact ? null : (
-        <p className="mt-1 text-sm leading-snug text-mist/75">Each court holds {each} players. The next player uses another court only after the earlier court is full{courtCount > 0 ? `, up to ${courtCount} courts` : ""}. If someone leaves, the next player moves up.</p>
+        <p className="mt-1 text-sm leading-snug text-fg/75">Each court holds {each} players. The next player uses another court only after the earlier court is full{courtCount > 0 ? `, up to ${courtCount} courts` : ""}. If someone leaves, the next player moves up.</p>
       )}
       {used.length > 0 ? (
         <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {used.map((court) => (
-            <li key={court.courtNumber} className="rounded-xl border border-white/10 px-2.5 py-2">
-              <p className="truncate text-xs text-mist/60">{court.courtName}</p>
-              <p className="text-sm font-semibold text-white">{court.players} / {each}</p>
+            <li key={court.courtNumber} className="rounded-xl border border-fg/10 px-2.5 py-2">
+              <p className="truncate text-xs text-fg/60">{court.courtName}</p>
+              <p className="text-sm font-semibold text-fg">{court.players} / {each}</p>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="mt-2 text-sm text-mist/70">No one has joined this time yet.</p>
+        <p className="mt-2 text-sm text-fg/70">No one has joined this time yet.</p>
       )}
     </div>
   );
@@ -224,12 +224,12 @@ export function SessionClock({ start, end }: { start: string; end: string }) {
   const startMs = new Date(start).getTime();
   const endMs = new Date(end).getTime();
   if (now >= endMs) {
-    return <p className="text-sm text-mist/65">This session has ended.</p>;
+    return <p className="text-sm text-fg/65">This session has ended.</p>;
   }
   if (now < startMs) {
-    return <p className="text-sm text-mist">Starts in {clock(startMs - now)}</p>;
+    return <p className="text-sm text-fg">Starts in {clock(startMs - now)}</p>;
   }
-  return <p className="text-sm font-medium text-line">Ends in {clock(endMs - now)}</p>;
+  return <p className="text-sm font-medium text-accent-text">Ends in {clock(endMs - now)}</p>;
 }
 
 function band(startIso: string, endIso: string, windowStart: number, span: number) {
@@ -295,6 +295,29 @@ export function compactSlotLabel(startIso: string, endIso: string, timeZone: str
   return `${startSide}–${endSide}`;
 }
 
+const freeTrack = "bg-inset";
+const closedBand = "bg-surface-2 bg-[repeating-linear-gradient(-45deg,rgb(var(--fg)/0.28)_0_3px,transparent_3px_7px)]";
+const chartColumns = "grid-cols-[7.5rem_minmax(28rem,1fr)]";
+
+function ChartLegend() {
+  const items = [
+    { label: "Free", className: freeTrack },
+    { label: "Taken", className: "bg-accent" },
+    { label: "Held", className: "bg-amber-400" },
+    { label: "Closed", className: closedBand },
+  ];
+  return (
+    <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-fg-muted">
+      {items.map((item) => (
+        <li key={item.label} className="inline-flex items-center gap-1.5">
+          <span className={`h-3 w-5 rounded-sm border border-border ${item.className}`} aria-hidden="true" />
+          {item.label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function axisMarks(windowStart: number, windowEnd: number, timeZone: string) {
   const time = new Intl.DateTimeFormat("en-AU", {
     timeZone: timeZone || "Australia/Melbourne",
@@ -324,24 +347,27 @@ export function DayChart({ schedule, now, compact = false, collapsible = false }
       {collapsible ? (
         <button
           type="button"
-          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 px-4 py-3 text-left hover:bg-white/5"
+          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-3 text-left shadow-card hover:bg-surface-2 dark:shadow-none"
           aria-expanded={open}
           aria-controls="day-chart-panel"
           onClick={() => setOpen((value) => !value)}
         >
-          <span id="day-chart" className="font-display text-2xl font-semibold text-white">Day at a glance</span>
-          <span className="shrink-0 text-sm font-semibold text-line">{open ? "Hide chart" : "Show chart"}</span>
+          <span id="day-chart" className="font-display text-2xl font-semibold text-fg">Day at a glance</span>
+          <span className="shrink-0 text-sm font-semibold text-accent-text">{open ? "Hide chart" : "Show chart"}</span>
         </button>
       ) : (
-        <h2 id="day-chart" className="font-display text-2xl font-semibold text-white">Day at a glance</h2>
+        <h2 id="day-chart" className="font-display text-2xl font-semibold text-fg">Day at a glance</h2>
       )}
       {collapsible && !open ? (
-        <p className="mt-2 text-sm text-mist/70">Show the chart to see which times are booked and which are still open.</p>
+        <p className="mt-2 text-sm text-fg/70">Show the chart to see which times are booked and which are still open.</p>
       ) : (
       <div id={collapsible ? "day-chart-panel" : undefined}>
-      <p className="mt-1 text-sm text-mist/70">Each booking shows its time above the lime block. The pale track is still open. Amber is closed.</p>
-      <div className="mt-4 grid text-[11px] text-mist/55 sm:grid-cols-[9rem_1fr]">
-        <span className="hidden sm:block" />
+      <p className="mt-1 text-sm text-fg-muted">Each booking shows its time above its block.</p>
+      <ChartLegend />
+      <div className="mt-4 overflow-x-auto">
+      <div className="min-w-[36rem]">
+      <div className={`grid text-[11px] tabular-nums text-fg-muted ${chartColumns}`}>
+        <span className="sticky left-0 z-20 bg-canvas" />
         <div className="relative h-4">
           {marks.map((mark) => (
             <span
@@ -376,16 +402,16 @@ export function DayChart({ schedule, now, compact = false, collapsible = false }
           const lanes = Math.max(1, ...placed.map((item) => item.lane + 1), 1);
           const rowHeight = compact ? 2.05 + lanes * 1.05 : 2.25 + lanes * 1.35;
           return (
-            <li key={court.id} className="grid items-end gap-2 sm:grid-cols-[9rem_1fr] sm:gap-3">
-              <span className="pb-1.5 text-sm font-medium text-white">{court.courtName}</span>
+            <li key={court.id} className={`grid items-end gap-3 ${chartColumns}`}>
+              <span className="sticky left-0 z-20 truncate bg-canvas pb-1.5 pr-2 text-sm font-medium text-fg shadow-[4px_0_8px_-6px_rgb(var(--shadow)/0.45)]">{court.courtName}</span>
               <div className="relative" style={{ height: `${rowHeight}rem` }}>
-                <div className="absolute inset-x-0 bottom-0 h-8 overflow-visible rounded-lg bg-white/10">
+                <div className={`absolute inset-x-0 bottom-0 h-8 overflow-visible rounded-lg ${freeTrack}`}>
                   {closures.map((closure) => {
                     const place = band(closure.startTime, closure.endTime, windowStart, span);
                     return (
                       <span
                         key={closure.id}
-                        className="absolute inset-y-0 bg-amber-400/80"
+                        className={`absolute inset-y-0 ${closedBand}`}
                         style={{ left: `${place.left}%`, width: `${place.width}%` }}
                       />
                     );
@@ -399,17 +425,17 @@ export function DayChart({ schedule, now, compact = false, collapsible = false }
                       <button
                         key={item.booking.id}
                         type="button"
-                        className={`group absolute inset-y-0 border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${item.booking.status === "pending" ? "border-amber-100/40 bg-amber-400 focus-visible:outline-amber-200" : "border-white/30 bg-line focus-visible:outline-line"}`}
+                        className={`group absolute inset-y-0 border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${item.booking.status === "pending" ? "border-amber-100/40 bg-amber-400 focus-visible:outline-amber-700 dark:focus-visible:outline-amber-200" : "border-fg/30 bg-accent focus-visible:outline-accent-text"}`}
                         style={{ left: `${item.left}%`, width: `${item.width}%` }}
                         aria-label={tip}
                       >
                         <span
-                          className={`pointer-events-none absolute z-10 w-max whitespace-nowrap rounded bg-ink/90 px-1 text-[11px] font-medium leading-4 text-white ${item.left > 82 ? "right-0" : item.left < 8 ? "left-0" : "left-1/2 -translate-x-1/2 text-center"}`}
+                          className={`pointer-events-none absolute z-10 w-max whitespace-nowrap rounded bg-canvas/90 px-1 text-[11px] font-medium leading-4 text-fg ${item.left > 82 ? "right-0" : item.left < 8 ? "left-0" : "left-1/2 -translate-x-1/2 text-center"}`}
                           style={{ bottom: `calc(100% + ${compact ? 0.15 + item.lane * 0.95 : 0.25 + item.lane * 1.25}rem)` }}
                         >
                           {label}
                         </span>
-                        <span className="pointer-events-none absolute bottom-[calc(100%+0.35rem)] left-1/2 z-20 hidden w-max max-w-[16rem] -translate-x-1/2 rounded-lg bg-ink px-2.5 py-1.5 text-left text-xs font-medium leading-snug text-white shadow-lg group-hover:block group-focus-visible:block">
+                        <span className="pointer-events-none absolute bottom-[calc(100%+0.35rem)] left-1/2 z-20 hidden w-max max-w-[16rem] -translate-x-1/2 rounded-lg bg-canvas px-2.5 py-1.5 text-left text-xs font-medium leading-snug text-fg shadow-lg group-hover:block group-focus-visible:block">
                           {tip}
                         </span>
                       </button>
@@ -424,6 +450,8 @@ export function DayChart({ schedule, now, compact = false, collapsible = false }
           );
         })}
       </ul>
+      </div>
+      </div>
       </div>
       )}
     </section>

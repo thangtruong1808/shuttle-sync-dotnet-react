@@ -60,7 +60,7 @@ export function UsersPage() {
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-white">Users</h1>
+      <h1 className="font-display text-3xl text-fg">Users</h1>
       <div className="mt-4"><Success message={success} /></div>
       <form
         className="mt-4 flex flex-wrap gap-2"
@@ -105,13 +105,13 @@ export function UsersPage() {
           rows={rows}
           rowKey={(user) => user.id}
           columns={[
-            { label: "Name", cell: (user) => <Link to={`/dashboard/users/${user.id}`} className="font-medium text-white hover:text-line">{user.displayName || "—"}</Link> },
+            { label: "Name", cell: (user) => <Link to={`/dashboard/users/${user.id}`} className="font-medium text-fg hover:text-accent-text">{user.displayName || "—"}</Link> },
             { label: "Email", cell: (user) => user.email },
             { label: "Mobile", cell: (user) => user.mobile || "—" },
             { label: "Role", cell: (user) => <Tag value={user.role} /> },
             { label: "Points", className: "whitespace-nowrap", cell: (user) => `${user.rewardPoints} pts` },
             { label: "Verified", cell: (user) => (user.emailVerified ? "Yes" : "No") },
-            { label: "Open", cell: (user) => <Link to={`/dashboard/users/${user.id}`} className="font-medium text-line hover:text-lime-200">View</Link> },
+            { label: "Open", cell: (user) => <Link to={`/dashboard/users/${user.id}`} className="font-medium text-accent-text hover:text-lime-700 dark:hover:text-lime-200">View</Link> },
           ]}
         />
       )}
@@ -175,8 +175,8 @@ export function UserDesk() {
   return (
     <div className="grid gap-6">
       <div>
-        <h1 className="font-display text-3xl text-white">{user.displayName || user.email}</h1>
-        <p className="text-sm text-mist/65">{user.email} · {user.rewardPoints} pts</p>
+        <h1 className="font-display text-3xl text-fg">{user.displayName || user.email}</h1>
+        <p className="text-sm text-fg/65">{user.email} · {user.rewardPoints} pts</p>
       </div>
       <form
         key={`${user.displayName ?? ""}:${user.role}:${user.mobile ?? ""}`}
@@ -230,12 +230,12 @@ export function UserDesk() {
         <div className="sm:col-span-2 flex flex-wrap gap-2"><Notice message={message} /><Success message={success} /></div>
       </form>
       <section>
-        <h2 className="font-display text-xl text-white">Assigned venues</h2>
-        {user.role !== "staff" ? <p className="mt-2 text-sm text-mist/65">Change the role to staff before assigning a venue.</p> : null}
+        <h2 className="font-display text-xl text-fg">Assigned venues</h2>
+        {user.role !== "staff" ? <p className="mt-2 text-sm text-fg/65">Change the role to staff before assigning a venue.</p> : null}
         <ul className="mt-3 grid gap-2">
           {detail.venues.map((venue) => (
-            <li key={venue.id} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 px-3 py-2">
-              <span className="text-mist">{venue.name}</span>
+            <li key={venue.id} className="flex items-center justify-between gap-2 rounded-xl border border-fg/10 px-3 py-2">
+              <span className="text-fg">{venue.name}</span>
               <Button variant="secondary" loading={busy === venue.id} disabled={busy !== null && busy !== venue.id} onClick={() => {
                 void run(venue.id, async () => {
                   setMessage(null);
@@ -275,16 +275,16 @@ export function UserDesk() {
         </form>
       </section>
       <section>
-        <h2 className="font-display text-xl text-white">Linked accounts</h2>
-        {detail.logins.length === 0 ? <p className="mt-2 text-sm text-mist/65">No linked accounts.</p> : (
-          <ul className="mt-2 text-sm text-mist">{detail.logins.map((login) => <li key={login.provider}>{login.provider} · {login.emailAtLink || "no email"}</li>)}</ul>
+        <h2 className="font-display text-xl text-fg">Linked accounts</h2>
+        {detail.logins.length === 0 ? <p className="mt-2 text-sm text-fg/65">No linked accounts.</p> : (
+          <ul className="mt-2 text-sm text-fg">{detail.logins.map((login) => <li key={login.provider}>{login.provider} · {login.emailAtLink || "no email"}</li>)}</ul>
         )}
       </section>
       <section>
-        <h2 className="font-display text-xl text-white">Sessions</h2>
+        <h2 className="font-display text-xl text-fg">Sessions</h2>
         <ul className="mt-2 grid gap-2">
           {detail.sessions.map((session) => (
-            <li key={session.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-mist">
+            <li key={session.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-fg/10 px-3 py-2 text-sm text-fg">
               <span>{session.userAgent || "Unknown device"} · {formatVenueDateTime(session.lastUsedAt, "UTC")}</span>
               <Button variant="danger" loading={busy === session.id} disabled={busy !== null && busy !== session.id} onClick={() => {
                 void run(session.id, async () => {

@@ -11,7 +11,7 @@ import { AuthRequestError } from "../auth/authApi";
 import { SocialRoster } from "../courts/CourtSchedule";
 import { cancelBooking, renameFriend } from "../profile/profileApi";
 import { socialFriends, socialOffer, socialRegistration, startFriendCheckout, startSocialCheckout, startWaitlistCheckout, venuePromotions, type Promotion, type SocialFriend, type SocialOffer, type SocialRegistration } from "../venues/venueApi";
-import { PaymentResultBanner, paymentOutcomeKind, paymentSettled } from "./PaymentResultBanner";
+import { PaymentResultBanner, paymentOutcomeKind, paymentSettled, useCleanReturnUrl } from "./PaymentResultBanner";
 
 const checkoutKey = "shuttle-sync-social-checkout";
 const friendKey = "shuttle-sync-friend-group";
@@ -125,6 +125,8 @@ export default function SocialPayPage() {
     };
   }, [dispatch, location.search, slug, status]);
 
+  useCleanReturnUrl(waiting, outcome);
+
   if (status === "anonymous") {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
@@ -207,14 +209,14 @@ export default function SocialPayPage() {
       <div className="w-full px-4 py-4 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <Link to={`/${slug}/social`} className="text-sm text-line hover:underline">Back to drop-in times</Link>
-            <h1 className="mt-1 flex items-center gap-2 font-display text-2xl text-white sm:text-3xl">
-              {waiting || paymentProcessing ? <Spinner className="h-6 w-6 shrink-0 text-line" /> : null}
+            <Link to={`/${slug}/social`} className="text-sm text-accent-text hover:underline">Back to drop-in times</Link>
+            <h1 className="mt-1 flex items-center gap-2 font-display text-2xl text-fg sm:text-3xl">
+              {waiting || paymentProcessing ? <Spinner className="h-6 w-6 shrink-0 text-accent-text" /> : null}
               <span>{title}</span>
             </h1>
-            {waiting ? <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">We are checking with Stripe. Your place is only saved after Stripe confirms the payment — please wait.</p> : null}
-            {paymentFailed ? <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">That payment did not go through. This place was not saved.</p> : null}
-            {paymentProcessing ? <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist/75">Stripe has the payment, but the bank has not confirmed it yet. Your place stays held until confirmation.</p> : null}
+            {waiting ? <p className="mt-2 max-w-3xl text-sm leading-relaxed text-fg/75">We are checking with Stripe. Your place is only saved after Stripe confirms the payment — please wait.</p> : null}
+            {paymentFailed ? <p className="mt-2 max-w-3xl text-sm leading-relaxed text-fg/75">That payment did not go through. This place was not saved.</p> : null}
+            {paymentProcessing ? <p className="mt-2 max-w-3xl text-sm leading-relaxed text-fg/75">Stripe has the payment, but the bank has not confirmed it yet. Your place stays held until confirmation.</p> : null}
           </div>
         </div>
         {waiting ? <PaymentResultBanner kind="waiting" subject="seat" className="mt-4 max-w-3xl" /> : null}
@@ -230,42 +232,42 @@ export default function SocialPayPage() {
           <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
         ) : offer && preview ? (
           <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
-          <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5">
-            <h2 className="font-display text-xl text-white sm:text-2xl">Drop-in social</h2>
-            <p className="mt-1 text-sm text-mist/75">{formatVenueDateTime(offer.startTime, offer.venue.timeZone)} – {formatVenueDateTime(offer.endTime, offer.venue.timeZone)}</p>
+          <section className="rounded-3xl border border-fg/10 bg-surface/80 p-4 sm:p-5">
+            <h2 className="font-display text-xl text-fg sm:text-2xl">Drop-in social</h2>
+            <p className="mt-1 text-sm text-fg/75">{formatVenueDateTime(offer.startTime, offer.venue.timeZone)} – {formatVenueDateTime(offer.endTime, offer.venue.timeZone)}</p>
             <SocialRoster compact playerCount={offer.playerCount} courtCount={offer.courtCount ?? offer.courts?.length ?? 0} playersPerCourt={offer.playersPerCourt} courts={offer.courts ?? []} />
-            <p className="mt-4 text-lg font-semibold text-white">
-              {discount > 0 ? <span className="mr-2 text-base font-normal text-mist/50 line-through"><Money amount={offer.price} currency={offer.venue.currency} /></span> : null}
+            <p className="mt-4 text-lg font-semibold text-fg">
+              {discount > 0 ? <span className="mr-2 text-base font-normal text-fg/50 line-through"><Money amount={offer.price} currency={offer.venue.currency} /></span> : null}
               <Money amount={discount > 0 ? payable : offer.price} currency={offer.venue.currency} />
             </p>
             {offer.incentivePoints ? (
-              <p className="mt-2 text-sm font-semibold text-line">
+              <p className="mt-2 text-sm font-semibold text-accent-text">
                 +{offer.incentivePoints} pts after the session ends{joining ? ", if a place opens and you play" : ""}
               </p>
             ) : null}
             {typeof offer.waitlistCount === "number" ? (
-              <p className="mt-2 text-sm text-mist/70">{offer.waitlistCount} {offer.waitlistCount === 1 ? "person is" : "people are"} on the waitlist.</p>
+              <p className="mt-2 text-sm text-fg/70">{offer.waitlistCount} {offer.waitlistCount === 1 ? "person is" : "people are"} on the waitlist.</p>
             ) : null}
             {joining ? (
-              <p className="mt-2 text-sm text-line">This social is full. Pay to join the waitlist. If someone cancels before the start, the first person waiting gets the place. If the session starts first, you are refunded in full.</p>
+              <p className="mt-2 text-sm text-accent-text">This social is full. Pay to join the waitlist. If someone cancels before the start, the first person waiting gets the place. If the session starts first, you are refunded in full.</p>
             ) : null}
-            <p className="mt-4 text-sm text-mist/75">
+            <p className="mt-4 text-sm text-fg/75">
               More than 24 hours before the start, you get a full refund. Within 24 hours, the venue keeps {percentLabel(fee)}% and refunds the rest. Points you used follow the same rule.
             </p>
             {outcome && (outcome.status === "confirmed" || outcome.status === "waitlist") ? <Outcome row={outcome} /> : null}
           </section>
-          <section className="rounded-3xl border border-white/10 bg-pine/80 p-4 sm:p-5">
+          <section className="rounded-3xl border border-fg/10 bg-surface/80 p-4 sm:p-5">
             {waiting || paymentFailed || paymentProcessing ? (
               <div className="space-y-3" role="status">
-                <p className="text-sm leading-relaxed text-mist/80">
+                <p className="text-sm leading-relaxed text-fg/80">
                   {waiting
                     ? "Checkout is paused until Stripe answers."
                     : paymentFailed
                       ? "You can start a new payment when you are ready."
                       : "Keep this page, or check My bookings while the bank confirms."}
                 </p>
-                {formError ? <p className="text-sm text-mist" role="alert">{formError}</p> : null}
-                {waiting ? <p className="flex items-center gap-2 text-sm text-mist" role="status"><Spinner className="h-4 w-4" /> Checking the payment…</p> : null}
+                {formError ? <p className="text-sm text-fg" role="alert">{formError}</p> : null}
+                {waiting ? <p className="flex items-center gap-2 text-sm text-fg" role="status"><Spinner className="h-4 w-4" /> Checking the payment…</p> : null}
               </div>
             ) : outcome ? null : (
               <form
@@ -276,7 +278,7 @@ export default function SocialPayPage() {
                 }}
               >
                 <div>
-                  <p className="text-sm text-mist/80">Promotion code</p>
+                  <p className="text-sm text-fg/80">Promotion code</p>
                   {promotions === null ? (
                     <div className="mt-2 space-y-2" aria-busy="true">
                       <span className="sr-only">Loading promotion codes</span>
@@ -287,10 +289,10 @@ export default function SocialPayPage() {
                       {promotions.map((promotion) => {
                         const selected = appliedCode?.id === promotion.id;
                         return (
-                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between ${selected ? "border-line/60 bg-line/10" : "border-white/10 bg-black/20"}`}>
+                          <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between ${selected ? "border-accent-text/60 bg-accent/10" : "border-fg/10 bg-inset"}`}>
                             <div className="min-w-0">
-                              <p className="break-all font-semibold tracking-wide text-white">{promotion.code}</p>
-                              <p className="text-sm text-line">
+                              <p className="break-all font-semibold tracking-wide text-fg">{promotion.code}</p>
+                              <p className="text-sm text-accent-text">
                                 {promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={offer.venue.currency} />}
                                 {promotion.venueId ? "" : " · all venues"}
                               </p>
@@ -317,19 +319,19 @@ export default function SocialPayPage() {
                       })}
                     </ul>
                   ) : (
-                    <p className="mt-2 text-sm text-mist/70">No active promotion codes right now.</p>
+                    <p className="mt-2 text-sm text-fg/70">No active promotion codes right now.</p>
                   )}
-                  {promoNote ? <p className="mt-2 text-sm text-mist" role="status">{promoNote}</p> : null}
+                  {promoNote ? <p className="mt-2 text-sm text-fg" role="status">{promoNote}</p> : null}
                 </div>
                 <div>
-                  <p className="text-sm text-mist/80">Reward points</p>
+                  <p className="text-sm text-fg/80">Reward points</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {pointPercents.map((percent) => (
                       <button
                         key={percent}
                         type="button"
                         disabled={paying || waiting || maxPoints === 0}
-                        className={`rounded-full px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-line text-ink" : "border border-white/15 text-mist"}`}
+                        className={`rounded-full px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg" : "border border-fg/15 text-fg"}`}
                         onClick={() => choosePercent(percent)}
                       >
                         {percent}%
@@ -344,19 +346,19 @@ export default function SocialPayPage() {
                     value={Math.min(points, maxPoints)}
                     disabled={paying || waiting || maxPoints === 0}
                     aria-label="Reward points"
-                    className="mt-3 w-full accent-line disabled:opacity-60"
+                    className="mt-3 w-full accent-accent-text disabled:opacity-60"
                     onChange={(event) => setPoints(Number(event.target.value))}
                   />
-                  <p className="mt-1 text-sm text-mist/70">{Math.min(points, maxPoints)} of {balance} points. {rate} points = {offer.venue.currency} 1.</p>
+                  <p className="mt-1 text-sm text-fg/70">{Math.min(points, maxPoints)} of {balance} points. {rate} points = {offer.venue.currency} 1.</p>
                 </div>
-                <dl className="grid gap-1 text-sm text-mist/80">
+                <dl className="grid gap-1 text-sm text-fg/80">
                   {discount > 0 ? <div className="flex justify-between gap-3"><dt>Promotion</dt><dd>-<Money amount={discount} currency={offer.venue.currency} /></dd></div> : null}
                   <div className="flex justify-between gap-3"><dt>Points value</dt><dd><Money amount={preview.value} currency={offer.venue.currency} /></dd></div>
-                  <div className="flex justify-between gap-3 font-semibold text-white"><dt>To pay</dt><dd><Money amount={preview.cash} currency={offer.venue.currency} /></dd></div>
+                  <div className="flex justify-between gap-3 font-semibold text-fg"><dt>To pay</dt><dd><Money amount={preview.cash} currency={offer.venue.currency} /></dd></div>
                 </dl>
-                {cashTooSmall ? <p className="text-sm text-mist">Use enough points to cover the registration, or leave at least $0.50 to pay.</p> : null}
-                {formError ? <p className="text-sm text-mist" role="alert">{formError}</p> : null}
-                {waiting ? <p className="text-sm text-mist" role="status">Checking the payment…</p> : null}
+                {cashTooSmall ? <p className="text-sm text-fg">Use enough points to cover the registration, or leave at least $0.50 to pay.</p> : null}
+                {formError ? <p className="text-sm text-fg" role="alert">{formError}</p> : null}
+                {waiting ? <p className="text-sm text-fg" role="status">Checking the payment…</p> : null}
                 <Button type="submit" className="w-full sm:w-auto" loading={paying || waiting} disabled={cashTooSmall}>
                   {joining ? (preview.cash === 0 ? "Join with points" : "Pay to join the waitlist") : preview.cash === 0 ? "Register with points" : "Continue to Stripe"}
                 </Button>
@@ -377,7 +379,7 @@ export default function SocialPayPage() {
                 returning={new URLSearchParams(location.search).get("checkout")}
               />
             ) : outcome ? (
-              <p className="text-sm text-mist/70">Friends can be added after you are registered and before the social starts.</p>
+              <p className="text-sm text-fg/70">Friends can be added after you are registered and before the social starts.</p>
             ) : null}
           </section>
           </div>
@@ -390,17 +392,17 @@ export default function SocialPayPage() {
 function Outcome({ row }: { row: SocialRegistration }) {
   if (row.status === "confirmed") {
     return (
-      <div className="mt-3 space-y-2 rounded-2xl border border-line/30 bg-line/10 p-3" role="status">
-        <p className="flex items-center gap-2 text-base font-semibold text-line">
+      <div className="mt-3 space-y-2 rounded-2xl border border-accent-text/30 bg-accent/10 p-3" role="status">
+        <p className="flex items-center gap-2 text-base font-semibold text-accent-text">
           <CircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
           You're registered{row.courtName ? ` on ${row.courtName}` : ""}. Have a good game.
         </p>
-        <p className="text-sm text-mist/80">
+        <p className="text-sm text-fg/80">
           {row.pointsRedeemed > 0 ? `${row.pointsRedeemed} points were used. ` : ""}
           {row.cashAmount > 0 ? "Your payment is confirmed. " : "No card payment was needed. "}
           {row.incentivePoints > 0 ? `${row.incentivePoints} points are added after the session ends, and you can use them on a later booking.` : "Reward points from this session can offset a later booking."}
         </p>
-        <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-line hover:underline">
+        <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
           <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
           View my bookings
         </Link>
@@ -409,17 +411,17 @@ function Outcome({ row }: { row: SocialRegistration }) {
   }
   if (row.status === "waitlist" && (row.paymentStatus === "succeeded" || row.cashAmount === 0)) {
     return (
-      <div className="mt-3 space-y-2 rounded-2xl border border-line/30 bg-line/10 p-3" role="status">
-        <p className="flex items-center gap-2 text-base font-semibold text-line">
+      <div className="mt-3 space-y-2 rounded-2xl border border-accent-text/30 bg-accent/10 p-3" role="status">
+        <p className="flex items-center gap-2 text-base font-semibold text-accent-text">
           <CircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
           You're on the waitlist. If someone cancels, you are first in line.
         </p>
-        <p className="text-sm text-mist/80">
+        <p className="text-sm text-fg/80">
           {row.pointsRedeemed > 0 ? `${row.pointsRedeemed} points were used. ` : ""}
           {row.cashAmount > 0 ? "Your payment is confirmed. " : "No card payment was needed. "}
           {row.incentivePoints > 0 ? `${row.incentivePoints} points are added after the session ends only if a place opens and you play.` : "If the session starts before a place opens, this is refunded in full."}
         </p>
-        <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-line hover:underline">
+        <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
           <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
           View my bookings
         </Link>
@@ -628,21 +630,21 @@ function FriendPanel({
 
   return (
     <section id="add-friends">
-      <h3 className="font-display text-2xl text-white">Add friends</h3>
+      <h3 className="font-display text-2xl text-fg">Add friends</h3>
       {!loaded ? (
         <div className="mt-4 space-y-2" aria-busy="true">
           <span className="sr-only">Loading friends</span>
           <Skeleton className="h-14 w-full" />
         </div>
       ) : null}
-      <p className="mt-2 text-sm leading-relaxed text-mist/75">
+      <p className="mt-2 text-sm leading-relaxed text-fg/75">
         Each friend takes a place and is charged the session price. Cancelling one friend refunds only that person. More than 24 hours before the start, that share comes back in full. Within 24 hours, the venue keeps {percentLabel(fee)}% of that friend's share.
       </p>
       {loaded && placesLeft === 0 ? (
-        <p className="mt-2 text-sm leading-relaxed text-line">This social is full. Pay to put these friends on the waitlist. If someone cancels, the first person waiting gets the place. If the session starts first, that friend's payment is refunded in full.</p>
+        <p className="mt-2 text-sm leading-relaxed text-accent-text">This social is full. Pay to put these friends on the waitlist. If someone cancels, the first person waiting gets the place. If the session starts first, that friend's payment is refunded in full.</p>
       ) : null}
       {incentivePoints > 0 ? (
-        <p className="mt-2 text-sm font-semibold text-line">
+        <p className="mt-2 text-sm font-semibold text-accent-text">
           +{incentivePoints} pts for each friend after the session ends{placesLeft === 0 ? ", if a place opens and they play" : ""}
           {filled.length > 0 ? `. These ${filled.length} friend${filled.length === 1 ? "" : "s"} add +${incentivePoints * filled.length} pts.` : "."}
         </p>
@@ -650,7 +652,7 @@ function FriendPanel({
       {friends.length > 0 ? (
         <ul className="mt-3 grid gap-2">
           {friends.map((friend) => (
-            <li key={friend.id} className="rounded-2xl border border-white/10 px-3 py-2.5">
+            <li key={friend.id} className="rounded-2xl border border-fg/10 px-3 py-2.5">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 flex-1">
                   {editingId === friend.id ? (
@@ -661,13 +663,13 @@ function FriendPanel({
                         void onSaveName(friend.id);
                       }}
                     >
-                      <label className="min-w-0 flex-1 text-sm text-mist/80">
+                      <label className="min-w-0 flex-1 text-sm text-fg/80">
                         Friend name
                         <input
                           value={draftName}
                           maxLength={80}
                           disabled={savingId === friend.id}
-                          className="mt-1 w-full rounded-2xl border border-white/15 bg-black/20 px-3 py-2 text-white outline-none focus:border-line disabled:opacity-60"
+                          className="mt-1 w-full rounded-2xl border border-fg/15 bg-inset px-3 py-2 text-fg outline-none focus:border-accent-text disabled:opacity-60"
                           onChange={(event) => setDraftName(event.target.value)}
                         />
                       </label>
@@ -676,8 +678,8 @@ function FriendPanel({
                     </form>
                   ) : (
                     <>
-                      <p className="truncate font-semibold text-white">{friend.name}</p>
-                      <p className="text-sm text-mist/70">
+                      <p className="truncate font-semibold text-fg">{friend.name}</p>
+                      <p className="text-sm text-fg/70">
                         {friend.status === "confirmed" ? friend.courtName : friend.status === "waitlist" ? "Waitlist" : "Waiting for payment"}
                         {friend.status === "confirmed" ? <> · <Money amount={friend.amount} currency={currency} /></> : null}
                       </p>
@@ -704,7 +706,7 @@ function FriendPanel({
           ))}
         </ul>
       ) : null}
-      {pendingFriends ? <p className="mt-3 text-sm text-mist/70">Unpaid friends are replaced when you pay for a new list.</p> : null}
+      {pendingFriends ? <p className="mt-3 text-sm text-fg/70">Unpaid friends are replaced when you pay for a new list.</p> : null}
       {loaded ? (
         <form
           className="mt-4 space-y-4"
@@ -716,13 +718,13 @@ function FriendPanel({
           <div className="space-y-2">
             {names.map((name, index) => (
               <div key={index} className="flex flex-col gap-2 sm:flex-row">
-                <label className="min-w-0 flex-1 text-sm text-mist/80">
+                <label className="min-w-0 flex-1 text-sm text-fg/80">
                   Friend {index + 1}
                   <input
                     value={name}
                     disabled={paying || waiting}
                     maxLength={80}
-                    className="mt-1 w-full rounded-2xl border border-white/15 bg-black/20 px-3 py-2 text-white outline-none focus:border-line disabled:opacity-60"
+                    className="mt-1 w-full rounded-2xl border border-fg/15 bg-inset px-3 py-2 text-fg outline-none focus:border-accent-text disabled:opacity-60"
                     onChange={(event) => setNames((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
                   />
                 </label>
@@ -735,7 +737,7 @@ function FriendPanel({
           <Button type="button" variant="secondary" disabled={paying || waiting || names.length >= friendLimit} onClick={() => setNames((current) => [...current, ""])}>
             Add another friend
           </Button>
-          <p className="text-sm text-mist/70">{placesLeft > 0 ? `${placesLeft} place${placesLeft === 1 ? "" : "s"} left. ` : "These friends join the waitlist. "}{filled.length} friend{filled.length === 1 ? "" : "s"} · <Money amount={subtotal} currency={currency} /></p>
+          <p className="text-sm text-fg/70">{placesLeft > 0 ? `${placesLeft} place${placesLeft === 1 ? "" : "s"} left. ` : "These friends join the waitlist. "}{filled.length} friend{filled.length === 1 ? "" : "s"} · <Money amount={subtotal} currency={currency} /></p>
           {promotions === null ? (
             <div className="space-y-2" aria-busy="true">
               <span className="sr-only">Loading promotion codes</span>
@@ -746,10 +748,10 @@ function FriendPanel({
               {promotions.map((promotion) => {
                 const selected = appliedCode?.id === promotion.id;
                 return (
-                  <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between ${selected ? "border-line/60 bg-line/10" : "border-white/10 bg-black/20"}`}>
+                  <li key={promotion.id} className={`flex flex-col gap-2 rounded-2xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between ${selected ? "border-accent-text/60 bg-accent/10" : "border-fg/10 bg-inset"}`}>
                     <div className="min-w-0">
-                      <p className="break-all font-semibold tracking-wide text-white">{promotion.code}</p>
-                      <p className="text-sm text-line">{promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}</p>
+                      <p className="break-all font-semibold tracking-wide text-fg">{promotion.code}</p>
+                      <p className="text-sm text-accent-text">{promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}</p>
                     </div>
                     <Button type="button" variant={selected ? "primary" : "secondary"} className="w-full shrink-0 sm:w-auto" disabled={paying || waiting || filled.length === 0} title={filled.length === 0 ? "Enter a friend's name before applying a code." : undefined} onClick={() => setAppliedCode(selected ? null : promotion)}>
                       {selected ? "Applied" : "Apply"}
@@ -759,16 +761,16 @@ function FriendPanel({
               })}
             </ul>
           ) : null}
-          {promotions && promotions.length > 0 && filled.length === 0 ? <p className="text-sm text-mist/70">Enter a friend's name before applying a code.</p> : null}
+          {promotions && promotions.length > 0 && filled.length === 0 ? <p className="text-sm text-fg/70">Enter a friend's name before applying a code.</p> : null}
           <div>
-            <p className="text-sm text-mist/80">Reward points</p>
+            <p className="text-sm text-fg/80">Reward points</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {pointPercents.map((percent) => (
                 <button
                   key={percent}
                   type="button"
                   disabled={paying || waiting || maxPoints === 0}
-                  className={`rounded-full px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-line text-ink" : "border border-white/15 text-mist"}`}
+                  className={`rounded-full px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg" : "border border-fg/15 text-fg"}`}
                   onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}
                 >
                   {percent}%
@@ -783,27 +785,27 @@ function FriendPanel({
               value={Math.min(points, maxPoints)}
               disabled={paying || waiting || maxPoints === 0}
               aria-label="Reward points for friends"
-              className="mt-3 w-full accent-line disabled:opacity-60"
+              className="mt-3 w-full accent-accent-text disabled:opacity-60"
               onChange={(event) => setPoints(Number(event.target.value))}
             />
           </div>
           {preview ? (
-            <dl className="grid gap-1 text-sm text-mist/80">
+            <dl className="grid gap-1 text-sm text-fg/80">
               {discount > 0 ? <div className="flex justify-between gap-3"><dt>Promotion</dt><dd>-<Money amount={discount} currency={currency} /></dd></div> : null}
               <div className="flex justify-between gap-3"><dt>Points value</dt><dd><Money amount={preview.value} currency={currency} /></dd></div>
-              <div className="flex justify-between gap-3 font-semibold text-white"><dt>To pay for {filled.length} friend{filled.length === 1 ? "" : "s"}</dt><dd><Money amount={preview.cash} currency={currency} /></dd></div>
+              <div className="flex justify-between gap-3 font-semibold text-fg"><dt>To pay for {filled.length} friend{filled.length === 1 ? "" : "s"}</dt><dd><Money amount={preview.cash} currency={currency} /></dd></div>
             </dl>
           ) : null}
-          {cashTooSmall ? <p className="text-sm text-mist">Use enough points to cover these friends, or leave at least $0.50 to pay.</p> : null}
-          {error ? <p className="text-sm text-mist" role="alert">{error}</p> : null}
-          {notice ? <p className="text-sm text-mist" role="status">{notice}</p> : null}
-          {waiting ? <p className="text-sm text-mist" role="status">Checking the payment…</p> : null}
+          {cashTooSmall ? <p className="text-sm text-fg">Use enough points to cover these friends, or leave at least $0.50 to pay.</p> : null}
+          {error ? <p className="text-sm text-fg" role="alert">{error}</p> : null}
+          {notice ? <p className="text-sm text-fg" role="status">{notice}</p> : null}
+          {waiting ? <p className="text-sm text-fg" role="status">Checking the payment…</p> : null}
           <Button type="submit" loading={paying || waiting} disabled={filled.length === 0 || cashTooSmall}>
             {placesLeft === 0 ? (preview?.cash === 0 ? "Join with points" : "Pay to join the waitlist") : preview?.cash === 0 ? "Add friends with points" : "Pay for friends"}
           </Button>
         </form>
       ) : null}
-      {placesLeft === 0 && error ? <p className="mt-3 text-sm text-mist" role="alert">{error}</p> : null}
+      {placesLeft === 0 && error ? <p className="mt-3 text-sm text-fg" role="alert">{error}</p> : null}
     </section>
   );
 }

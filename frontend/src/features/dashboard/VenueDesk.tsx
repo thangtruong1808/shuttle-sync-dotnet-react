@@ -35,7 +35,9 @@ import {
   type DashVenue,
   type DashVenueIncentive,
 } from "./dashboardApi";
+import { slugError } from "../venues/slug";
 import { Check, control, Field, Notice, Success, useBusy } from "./dashboardUi";
+import { SlugField } from "./SlugField";
 
 const sections = ["details", "courts", "slots", "rates", "closures", "incentives"] as const;
 const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -105,7 +107,7 @@ export default function VenueDesk() {
         </div>
       ) : (
         <>
-          <h1 className="font-display text-3xl text-white">{venue.name}</h1>
+          <h1 className="font-display text-3xl text-fg">{venue.name}</h1>
           <nav className="mt-4 flex gap-2 overflow-auto" aria-label="Venue sections">
             {sections
               .filter((item) => (item !== "incentives" && item !== "rates") || admin)
@@ -114,7 +116,7 @@ export default function VenueDesk() {
                   key={item}
                   to={item === "details" ? `/dashboard/venues/${venueId}` : `/dashboard/venues/${venueId}/${item}`}
                   end={item === "details"}
-                  className={({ isActive }) => `rounded-xl px-3 py-2 text-sm capitalize ${isActive ? "bg-line/15 text-line" : "text-mist/80 hover:bg-white/5"}`}
+                  className={({ isActive }) => `rounded-xl px-3 py-2 text-sm capitalize ${isActive ? "bg-accent/15 text-accent-text" : "text-fg/80 hover:bg-fg/5"}`}
                 >
                   {item}
                 </NavLink>
@@ -157,6 +159,11 @@ function Details({ venue, admin, onSaved }: { venue: DashVenue; admin: boolean; 
         event.preventDefault();
         setMessage(null);
         setSuccess(null);
+        const invalidSlug = slugError(form.slug);
+        if (invalidSlug) {
+          setMessage(invalidSlug);
+          return;
+        }
         void run("save", async () => {
           try {
             const { id, ...body } = form;
@@ -176,9 +183,7 @@ function Details({ venue, admin, onSaved }: { venue: DashVenue; admin: boolean; 
       <Field label="Name">
         <input className={control} value={form.name} disabled={!admin || busy !== null} onChange={(event) => set("name", event.target.value)} />
       </Field>
-      <Field label="Slug">
-        <input className={control} value={form.slug} disabled={!admin || busy !== null} onChange={(event) => set("slug", event.target.value)} />
-      </Field>
+      <SlugField value={form.slug} touched disabled={!admin || busy !== null} onChange={(slug) => set("slug", slug)} />
       <Field label="Description">
         <textarea className={control} value={form.description ?? ""} disabled={busy !== null} onChange={(event) => set("description", event.target.value)} />
       </Field>
@@ -196,7 +201,7 @@ function Details({ venue, admin, onSaved }: { venue: DashVenue; admin: boolean; 
       </Field>
       <Field label="Country">
         <input className={control} value={form.country} disabled={!admin || busy !== null} onChange={(event) => set("country", event.target.value)} />
-        <span className="mt-1 block text-xs text-mist/60">Use a 2-letter code, such as AU.</span>
+        <span className="mt-1 block text-xs text-fg/60">Use a 2-letter code, such as AU.</span>
       </Field>
       <Field label="Phone">
         <input className={control} value={form.phone ?? ""} disabled={busy !== null} onChange={(event) => set("phone", event.target.value)} />
@@ -238,7 +243,7 @@ function Details({ venue, admin, onSaved }: { venue: DashVenue; admin: boolean; 
             if (Number.isFinite(next)) set("hourlyRate", next);
           }}
         />
-        <span className="mt-1 block text-xs text-mist/60">Used when a day and time has no special rate. Peak hours are set under Rates.</span>
+        <span className="mt-1 block text-xs text-fg/60">Used when a day and time has no special rate. Peak hours are set under Rates.</span>
       </Field>
       <Field label="Points per $1">
         <input
@@ -263,7 +268,7 @@ function Details({ venue, admin, onSaved }: { venue: DashVenue; admin: boolean; 
       <Field label="Photo URL">
         <input className={control} value={form.imageUrl ?? ""} disabled={busy !== null} onChange={(event) => set("imageUrl", event.target.value || null)} />
       </Field>
-      <label className="block text-sm text-mist/80">
+      <label className="block text-sm text-fg/80">
         <span className="inline-flex items-center gap-2">
           Upload photo
           {busy === "upload" ? <Spinner className="h-4 w-4" /> : null}
@@ -272,7 +277,7 @@ function Details({ venue, admin, onSaved }: { venue: DashVenue; admin: boolean; 
           type="file"
           accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
           disabled={busy !== null}
-          className="mt-1 block w-full text-sm text-mist file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 disabled:opacity-60"
+          className="mt-1 block w-full text-sm text-fg file:mr-3 file:rounded-lg file:border-0 file:bg-fg/10 file:px-3 file:py-2 disabled:opacity-60"
           onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
@@ -358,7 +363,7 @@ function Courts({ venueId }: { venueId: string }) {
   return (
     <div className="grid gap-4">
       <form
-        className="grid gap-3 rounded-2xl border border-white/10 p-4 sm:grid-cols-2"
+        className="grid gap-3 rounded-2xl border border-fg/10 p-4 sm:grid-cols-2"
         onSubmit={(event) => {
           event.preventDefault();
           setMessage(null);
@@ -397,13 +402,13 @@ function Courts({ venueId }: { venueId: string }) {
         <Field label="Photo URL">
           <input className={control} value={draft.imageUrl} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, imageUrl: event.target.value })} />
         </Field>
-        <label className="text-sm text-mist/80">
+        <label className="text-sm text-fg/80">
           <span className="inline-flex items-center gap-2">Upload photo {busy === "upload" ? <Spinner /> : null}</span>
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
             disabled={busy !== null}
-            className="mt-1 block w-full text-sm text-mist disabled:opacity-60"
+            className="mt-1 block w-full text-sm text-fg disabled:opacity-60"
             onChange={(event) => {
               const file = event.target.files?.[0];
               event.target.value = "";
@@ -459,11 +464,11 @@ function CourtRow({ venueId, court, onChanged }: { venueId: string; court: DashC
   useEffect(() => setName(court.courtName), [court.courtName]);
   const { busy, run } = useBusy();
   return (
-    <li className="grid gap-3 rounded-2xl border border-white/10 p-3">
+    <li className="grid gap-3 rounded-2xl border border-fg/10 p-3">
       <CourtImage src={court.imageUrl} alt={`${court.courtName} court`} />
       <div className="flex flex-wrap items-center gap-2">
       <input className={`${control} max-w-xs`} value={name} disabled={busy !== null} onChange={(event) => setName(event.target.value)} />
-      <span className="text-sm text-mist/65">#{court.courtNumber}</span>
+      <span className="text-sm text-fg/65">#{court.courtNumber}</span>
       <Button
         variant="secondary"
         loading={busy === "save"}
@@ -499,7 +504,7 @@ function CourtRow({ venueId, court, onChanged }: { venueId: string; court: DashC
         Delete
       </Button>
       </div>
-      <label className="text-sm text-mist/80">
+      <label className="text-sm text-fg/80">
         <span className="inline-flex items-center gap-2">
           {court.imageUrl ? "Change photo" : "Upload photo"}
           {busy === "upload" ? <Spinner /> : null}
@@ -508,7 +513,7 @@ function CourtRow({ venueId, court, onChanged }: { venueId: string; court: DashC
           type="file"
           accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
           disabled={busy !== null}
-          className="mt-1 block w-full text-sm text-mist disabled:opacity-60"
+          className="mt-1 block w-full text-sm text-fg disabled:opacity-60"
           onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
@@ -570,7 +575,7 @@ function Slots({ venueId, currency }: { venueId: string; currency: string }) {
   return (
     <div className="grid gap-4">
       <form
-        className="grid gap-3 rounded-2xl border border-white/10 p-4 sm:grid-cols-2 lg:grid-cols-3"
+        className="grid gap-3 rounded-2xl border border-fg/10 p-4 sm:grid-cols-2 lg:grid-cols-3"
         onSubmit={(event) => {
           event.preventDefault();
           setMessage(null);
@@ -615,17 +620,17 @@ function Slots({ venueId, currency }: { venueId: string; currency: string }) {
         <Field label="Court limit">
           <input className={control} type="number" min={1} max={courtTotal ?? 50} step={1} placeholder="All courts" value={draft.courtLimit} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, courtLimit: event.target.value })} />
         </Field>
-        <label className="flex items-start gap-2 text-sm text-mist sm:col-span-2 lg:col-span-3">
+        <label className="flex items-start gap-2 text-sm text-fg sm:col-span-2 lg:col-span-3">
           <input
             type="checkbox"
-            className="mt-0.5 accent-line"
+            className="mt-0.5 accent-accent-text"
             checked={draft.repeatWeekly}
             disabled={busy !== null}
             onChange={(event) => setDraft({ ...draft, repeatWeekly: event.target.checked })}
           />
           <span>Repeat this slot weekly. After this session ends, the same hours and price are added for the next week.</span>
         </label>
-        <p className="text-sm text-mist/70 sm:col-span-2 lg:col-span-3">
+        <p className="text-sm text-fg/70 sm:col-span-2 lg:col-span-3">
           Players pay this session price. Court bookings still use the hourly rate. Court 1 fills first, then the next court, up to the court limit.
           {courtTotal === null ? "" : ` This venue has ${courtTotal} court${courtTotal === 1 ? "" : "s"}. Leave the court limit blank to use all of them.`}
         </p>
@@ -668,13 +673,13 @@ function SocialRow({ venueId, currency, row, onChanged }: { venueId: string; cur
   const [message, setMessage] = useState<string | null>(null);
   const { busy, run } = useBusy();
   return (
-    <li className="grid gap-3 rounded-2xl border border-white/10 p-3 text-sm text-mist">
+    <li className="grid gap-3 rounded-2xl border border-fg/10 p-3 text-sm text-fg">
       <div className="grid gap-1">
-        <p className="font-semibold text-white">{formatVenueDay(row.startTime, row.timeZone)}</p>
+        <p className="font-semibold text-fg">{formatVenueDay(row.startTime, row.timeZone)}</p>
         <div className="flex flex-wrap items-center gap-2">
         <span className="whitespace-nowrap">{formatVenueRange(row.startTime, row.endTime, row.timeZone)}</span>
-        <span className="font-semibold text-white"><Money amount={row.price} currency={currency} /></span>
-        <span className="text-white">{row.playerCount} player{row.playerCount === 1 ? "" : "s"}</span>
+        <span className="font-semibold text-fg"><Money amount={row.price} currency={currency} /></span>
+        <span className="text-fg">{row.playerCount} player{row.playerCount === 1 ? "" : "s"}</span>
         <span>{row.playersPerCourt} per court · {row.maxCourts == null ? "all courts" : `${row.maxCourts} court${row.maxCourts === 1 ? "" : "s"}`}</span>
         <Button variant="secondary" disabled={busy !== null} onClick={() => { setMessage(null); setEditing((open) => !open); }}>Edit</Button>
         <Button variant="danger" loading={busy === "delete"} disabled={busy !== null && busy !== "delete"} onClick={() => {
@@ -688,7 +693,7 @@ function SocialRow({ venueId, currency, row, onChanged }: { venueId: string; cur
           });
         }}>Delete</Button>
         </div>
-        {row.repeatWeekly ? <p className="text-sm font-medium text-line">This slot repeats weekly.</p> : null}
+        {row.repeatWeekly ? <p className="text-sm font-medium text-accent-text">This slot repeats weekly.</p> : null}
       </div>
       {editing ? (
         <div className="grid gap-2 sm:grid-cols-2">
@@ -710,8 +715,8 @@ function SocialRow({ venueId, currency, row, onChanged }: { venueId: string; cur
           <Field label="Court limit">
             <input className={control} type="number" min={1} step={1} placeholder="All courts" value={form.courtLimit} disabled={busy !== null} onChange={(event) => setForm({ ...form, courtLimit: event.target.value })} />
           </Field>
-          <label className="flex items-start gap-2 text-sm text-mist sm:col-span-2">
-            <input type="checkbox" className="mt-0.5 accent-line" checked={form.repeatWeekly} disabled={busy !== null} onChange={(event) => setForm({ ...form, repeatWeekly: event.target.checked })} />
+          <label className="flex items-start gap-2 text-sm text-fg sm:col-span-2">
+            <input type="checkbox" className="mt-0.5 accent-accent-text" checked={form.repeatWeekly} disabled={busy !== null} onChange={(event) => setForm({ ...form, repeatWeekly: event.target.checked })} />
             <span>Repeat this slot weekly</span>
           </label>
           <div className="flex items-end">
@@ -786,11 +791,11 @@ function Rates({ venueId, currency, hourlyRate }: { venueId: string; currency: s
 
   return (
     <div className="grid gap-4">
-      <p className="max-w-3xl text-sm leading-relaxed text-mist/75">
+      <p className="max-w-3xl text-sm leading-relaxed text-fg/75">
         The standard rate is <Money amount={hourlyRate} currency={currency} /> per hour. Add a window for the days and hours that should cost something else. New bookings use these rates, and unpaid court holds are updated. Paid weeks stay at the price already paid. A window stays on the same day, so a late night that passes midnight needs two windows.
       </p>
       <form
-        className="grid gap-3 rounded-2xl border border-white/10 p-4"
+        className="grid gap-3 rounded-2xl border border-fg/10 p-4"
         onSubmit={(event) => {
           event.preventDefault();
           setMessage(null);
@@ -808,10 +813,10 @@ function Rates({ venueId, currency, hourlyRate }: { venueId: string; currency: s
         }}
       >
         <fieldset className="min-w-0">
-          <legend className="text-sm text-mist/80">Days</legend>
+          <legend className="text-sm text-fg/80">Days</legend>
           <div className="mt-2 flex flex-wrap gap-2">
             {weekDays.map((name, index) => (
-              <label key={name} className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm transition-colors ${days[index] ? "border-line/50 bg-line/15 text-white" : "border-white/10 text-mist hover:bg-white/10"} ${busy !== null ? "cursor-not-allowed opacity-60" : ""}`}>
+              <label key={name} className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm transition-colors ${days[index] ? "border-accent-text/50 bg-accent/15 text-fg" : "border-fg/10 text-fg hover:bg-fg/10"} ${busy !== null ? "cursor-not-allowed opacity-60" : ""}`}>
                 <input
                   type="checkbox"
                   className="sr-only"
@@ -851,10 +856,10 @@ function Rates({ venueId, currency, hourlyRate }: { venueId: string; currency: s
       ) : (
         <ul className="grid gap-2">
           {rows.map((row) => (
-            <li key={row.id} className="flex flex-col gap-3 rounded-2xl border border-white/10 px-3 py-3 transition-colors hover:bg-white/5 sm:flex-row sm:items-center sm:justify-between">
+            <li key={row.id} className="flex flex-col gap-3 rounded-2xl border border-fg/10 px-3 py-3 transition-colors hover:bg-fg/5 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <p className="font-medium text-white">{row.days.map((selected, index) => selected ? weekDays[index] : null).filter(Boolean).join(", ")}</p>
-                <p className="text-sm text-mist/75">{row.start}–{row.end} · <Money amount={row.hourlyRate} currency={currency} /> / hour</p>
+                <p className="font-medium text-fg">{row.days.map((selected, index) => selected ? weekDays[index] : null).filter(Boolean).join(", ")}</p>
+                <p className="text-sm text-fg/75">{row.start}–{row.end} · <Money amount={row.hourlyRate} currency={currency} /> / hour</p>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={busy !== null} onClick={() => { setEditing(row.id); setDays(row.days.length === 7 ? row.days : blankDays); setStart(row.start); setEnd(row.end); setRate(String(row.hourlyRate)); setMessage(null); setSuccess(null); }}>Edit</Button>
@@ -923,7 +928,7 @@ function Closures({ venueId }: { venueId: string }) {
   return (
     <div className="grid gap-4">
       <form
-        className="grid gap-3 rounded-2xl border border-white/10 p-4 sm:grid-cols-2"
+        className="grid gap-3 rounded-2xl border border-fg/10 p-4 sm:grid-cols-2"
         onSubmit={(event) => {
           event.preventDefault();
           setMessage(null);
@@ -984,9 +989,9 @@ function ClosureRow({ venueId, courts, row, onChanged }: { venueId: string; cour
   const [message, setMessage] = useState<string | null>(null);
   const { busy, run } = useBusy();
   return (
-    <li className="grid gap-3 rounded-2xl border border-white/10 p-3 text-sm text-mist">
+    <li className="grid gap-3 rounded-2xl border border-fg/10 p-3 text-sm text-fg">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-white">{row.courtName}</span>
+        <span className="text-fg">{row.courtName}</span>
         <span>{formatVenueRange(row.startTime, row.endTime, zone)}</span>
         <span>{row.reason}</span>
         <Button variant="secondary" disabled={busy !== null} onClick={() => { setMessage(null); setEditing((open) => !open); }}>Edit</Button>
@@ -1069,7 +1074,7 @@ function Incentives({ venueId }: { venueId: string }) {
 
   return (
     <div className="grid gap-4">
-      <p className="text-sm text-mist/75">Set the dates and points before anyone books. Every court at this venue uses the same points. A booking whose start date falls in an active range earns those points. Bookings already made keep the points they were given.</p>
+      <p className="text-sm text-fg/75">Set the dates and points before anyone books. Every court at this venue uses the same points. A booking whose start date falls in an active range earns those points. Bookings already made keep the points they were given.</p>
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => {
         event.preventDefault();
         void run("create", async () => {
@@ -1114,9 +1119,9 @@ function IncentiveRow({ venueId, row, onChanged }: { venueId: string; row: DashV
   const [message, setMessage] = useState<string | null>(null);
   const { busy, run } = useBusy();
   return (
-    <li className="grid gap-3 rounded-2xl border border-white/10 p-3 text-sm text-mist">
+    <li className="grid gap-3 rounded-2xl border border-fg/10 p-3 text-sm text-fg">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-white">+{row.points} pts</span>
+        <span className="font-medium text-fg">+{row.points} pts</span>
         <span>{row.startsOn} to {row.endsOn}</span>
         <span>{row.isActive ? "Active" : "Off"}</span>
         <Button variant="secondary" disabled={busy !== null} onClick={() => { setMessage(null); setEditing((open) => !open); }}>Edit</Button>

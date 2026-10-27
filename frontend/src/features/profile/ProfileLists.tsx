@@ -47,8 +47,8 @@ export function RewardsSection() {
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-white">Reward points</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/75">Available points can be used now. Pending points wait for a court, a public social, a friend, or your next completed visit after a comeback note.</p>
+      <h1 className="font-display text-3xl text-fg">Reward points</h1>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg/75">Available points can be used now. Pending points wait for a court, a public social, a friend, or your next completed visit after a comeback note.</p>
       {error ? (
         <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
       ) : loading && pageMove === null ? (
@@ -56,18 +56,18 @@ export function RewardsSection() {
       ) : data ? (
         <>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <article className="rounded-3xl border border-white/10 bg-pine/80 p-4">
-              <p className="text-sm text-mist/70">Available</p>
-              <p className="mt-1 font-display text-4xl text-line">{data.balance}</p>
-              <p className="mt-1 text-sm text-mist/65">Ready to use on a booking.</p>
+            <article className="rounded-3xl border border-fg/10 bg-surface/80 p-4">
+              <p className="text-sm text-fg/70">Available</p>
+              <p className="mt-1 font-display text-4xl text-accent-text">{data.balance}</p>
+              <p className="mt-1 text-sm text-fg/65">Ready to use on a booking.</p>
             </article>
-            <article className="rounded-3xl border border-line/30 bg-line/10 p-4">
-              <p className="text-sm font-medium text-line">Pending</p>
-              <p className="mt-1 font-display text-4xl text-white">{data.pending ?? 0}</p>
-              <p className="mt-1 text-sm text-mist/75">Waiting until the session ends.</p>
+            <article className="rounded-3xl border border-accent-text/30 bg-accent/10 p-4">
+              <p className="text-sm font-medium text-accent-text">Pending</p>
+              <p className="mt-1 font-display text-4xl text-fg">{data.pending ?? 0}</p>
+              <p className="mt-1 text-sm text-fg/75">Waiting until the session ends.</p>
             </article>
           </div>
-          <h2 className="mt-8 flex items-center gap-2 font-display text-2xl text-white"><Clock className="h-5 w-5 text-line" aria-hidden="true" />Pending</h2>
+          <h2 className="mt-8 flex items-center gap-2 font-display text-2xl text-fg"><Clock className="h-5 w-5 text-accent-text" aria-hidden="true" />Pending</h2>
           <RewardTable
             caption="Pending reward points"
             rows={slicePage(data.pendingItems ?? [], pendingPage, pendingPageSize).map((item) => ({
@@ -96,7 +96,7 @@ export function RewardsSection() {
             onPage={(next) => setPendingPage(next)}
             onPageSize={(size) => { setPendingPageSize(size); setPendingPage(1); }}
           />
-          <h2 className="mt-8 flex items-center gap-2 font-display text-2xl text-white"><History className="h-5 w-5 text-line" aria-hidden="true" />History</h2>
+          <h2 className="mt-8 flex items-center gap-2 font-display text-2xl text-fg"><History className="h-5 w-5 text-accent-text" aria-hidden="true" />History</h2>
           <RewardTable
             caption="Reward point history"
             rows={data.items.map((row) => ({
@@ -165,8 +165,8 @@ export function PaymentsSection() {
 
   return (
     <div>
-      <h1 className="font-display text-3xl text-white">Payments and refunds</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mist/75">Every card charge and refund for your courts and public socials. Refunds go back to the card you paid with and can take 5–10 business days to appear.</p>
+      <h1 className="font-display text-3xl text-fg">Payments and refunds</h1>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg/75">Every card charge and refund for your courts and public socials. Refunds go back to the card you paid with and can take 5–10 business days to appear.</p>
       {error ? (
         <div className="mt-4"><ErrorState message={error} loading={loading} onRetry={() => { setLoading(true); setAttempt((value) => value + 1); }} /></div>
       ) : loading && pageMove === null ? (
@@ -205,19 +205,19 @@ function paymentSession(row: PaymentRow) {
 function paymentStatus(row: PaymentRow) {
   const status = row.status.toLowerCase();
   if (status === "succeeded" || status === "paid" || status === "completed") {
-    return { label: row.kind === "refund" ? "Refunded" : "Paid", tone: "bg-line/15 text-line" };
+    return { label: row.kind === "refund" ? "Refunded" : "Paid", tone: "bg-accent/15 text-accent-text" };
   }
   if (status === "pending" || status === "processing" || status === "requires_action") {
-    return { label: "Processing", tone: "bg-amber-400/15 text-amber-200" };
+    return { label: "Processing", tone: "bg-amber-400/15 text-amber-700 dark:text-amber-200" };
   }
   if (status === "failed" || status === "canceled" || status === "cancelled") {
-    return { label: status === "failed" ? "Failed" : "Cancelled", tone: "bg-rose-500/15 text-rose-200" };
+    return { label: status === "failed" ? "Failed" : "Cancelled", tone: "bg-rose-500/15 text-rose-700 dark:text-rose-200" };
   }
   if (status.includes("refund")) {
-    return { label: status.startsWith("partial") ? "Partly refunded" : "Refunded", tone: "bg-sky-400/15 text-sky-200" };
+    return { label: status.startsWith("partial") ? "Partly refunded" : "Refunded", tone: "bg-sky-400/15 text-sky-700 dark:text-sky-200" };
   }
   const label = status.replace(/_/g, " ");
-  return { label: label.charAt(0).toUpperCase() + label.slice(1), tone: "bg-white/10 text-mist" };
+  return { label: label.charAt(0).toUpperCase() + label.slice(1), tone: "bg-fg/10 text-fg" };
 }
 
 function PaymentStatusCell({ row }: { row: PaymentRow }) {
@@ -229,8 +229,8 @@ function PaymentStatusCell({ row }: { row: PaymentRow }) {
   const kept = Math.max(0, row.amount - refunded);
   return (
     <span className="block whitespace-nowrap">
-      <span className="font-semibold text-sky-200">{formatMoney(refunded, row.currency)} refunded</span>
-      <span className="mt-0.5 block text-xs text-mist/60">
+      <span className="font-semibold text-sky-700 dark:text-sky-200">{formatMoney(refunded, row.currency)} refunded</span>
+      <span className="mt-0.5 block text-xs text-fg/60">
         {status.label}
         {kept > 0 ? ` · ${formatMoney(kept, row.currency)} kept` : ""}
       </span>
@@ -245,20 +245,20 @@ function PaymentTable({ rows }: { rows: PaymentRow[] }) {
         {rows.map((row) => {
           const refund = row.kind === "refund";
           return (
-            <li key={`${row.kind}-${row.id}`} className="rounded-2xl border border-white/10 p-4">
+            <li key={`${row.kind}-${row.id}`} className="rounded-2xl border border-fg/10 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${refund ? "text-sky-200" : "text-line"}`}>
+                  <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${refund ? "text-sky-700 dark:text-sky-200" : "text-accent-text"}`}>
                     {refund ? <Undo2 className="h-3.5 w-3.5" aria-hidden="true" /> : <CreditCard className="h-3.5 w-3.5" aria-hidden="true" />}
                     {refund ? "Refund" : "Payment"}{row.source ? ` · ${row.source}` : ""}
                   </p>
-                  <p className="mt-1 font-medium text-white">{row.venueName}</p>
-                  <p className="text-sm text-mist/75">{row.courtNames || "Court to be assigned"}</p>
+                  <p className="mt-1 font-medium text-fg">{row.venueName}</p>
+                  <p className="text-sm text-fg/75">{row.courtNames || "Court to be assigned"}</p>
                 </div>
-                <p className={`shrink-0 font-semibold ${refund ? "text-sky-200" : "text-white"}`}>{refund ? "+" : ""}{formatMoney(row.amount, row.currency)}</p>
+                <p className={`shrink-0 font-semibold ${refund ? "text-sky-700 dark:text-sky-200" : "text-fg"}`}>{refund ? "+" : ""}{formatMoney(row.amount, row.currency)}</p>
               </div>
-              <p className="mt-2 flex items-center gap-1.5 text-sm text-mist/75"><CalendarClock className="h-4 w-4 shrink-0 text-mist/60" aria-hidden="true" />{paymentSession(row)}</p>
-              <p className="text-sm text-mist/60">{refund ? "Refunded" : ["succeeded", "refunded", "partially_refunded"].includes(row.status.toLowerCase()) ? "Charged" : "Started"} {formatVenueDateTime(row.occurredAt, row.timeZone)}</p>
+              <p className="mt-2 flex items-center gap-1.5 text-sm text-fg/75"><CalendarClock className="h-4 w-4 shrink-0 text-fg/60" aria-hidden="true" />{paymentSession(row)}</p>
+              <p className="text-sm text-fg/60">{refund ? "Refunded" : ["succeeded", "refunded", "partially_refunded"].includes(row.status.toLowerCase()) ? "Charged" : "Started"} {formatVenueDateTime(row.occurredAt, row.timeZone)}</p>
               <div className="mt-2">
                 <PaymentStatusCell row={row} />
               </div>
@@ -269,7 +269,7 @@ function PaymentTable({ rows }: { rows: PaymentRow[] }) {
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[44rem] text-left text-sm">
           <caption className="sr-only">Payments and refunds</caption>
-          <thead className="text-mist/60">
+          <thead className="text-fg/60">
             <tr>
               <th className="py-2 pr-3 font-medium">Type</th>
               <th className="py-2 pr-3 font-medium">Date</th>
@@ -283,18 +283,18 @@ function PaymentTable({ rows }: { rows: PaymentRow[] }) {
             {rows.map((row) => {
               const refund = row.kind === "refund";
               return (
-                <tr key={`${row.kind}-${row.id}`} className="border-t border-white/10 align-top">
+                <tr key={`${row.kind}-${row.id}`} className="border-t border-fg/10 align-top">
                   <td className="py-3 pr-3">
-                    <span className={`flex items-center gap-1.5 font-medium ${refund ? "text-sky-200" : "text-white"}`}>
-                      {refund ? <Undo2 className="h-4 w-4" aria-hidden="true" /> : <CreditCard className="h-4 w-4 text-line" aria-hidden="true" />}
+                    <span className={`flex items-center gap-1.5 font-medium ${refund ? "text-sky-700 dark:text-sky-200" : "text-fg"}`}>
+                      {refund ? <Undo2 className="h-4 w-4" aria-hidden="true" /> : <CreditCard className="h-4 w-4 text-accent-text" aria-hidden="true" />}
                       {refund ? "Refund" : "Payment"}
                     </span>
-                    <span className="mt-0.5 block text-xs text-mist/60">{row.source}</span>
+                    <span className="mt-0.5 block text-xs text-fg/60">{row.source}</span>
                   </td>
                   <td className="whitespace-nowrap py-3 pr-3">{formatVenueDateTime(row.occurredAt, row.timeZone)}</td>
                   <td className="py-3 pr-3">
-                    <span className="block text-white">{row.venueName}</span>
-                    <span className="mt-0.5 block text-xs text-mist/70">
+                    <span className="block text-fg">{row.venueName}</span>
+                    <span className="mt-0.5 block text-xs text-fg/70">
                       {row.courtNames || "Court to be assigned"}
                       {row.courtCount > 1 ? ` · ${row.courtCount} courts` : ""}
                     </span>
@@ -303,7 +303,7 @@ function PaymentTable({ rows }: { rows: PaymentRow[] }) {
                   <td className="py-3 pr-3">
                     <PaymentStatusCell row={row} />
                   </td>
-                  <td className={`whitespace-nowrap py-3 text-right font-semibold ${refund ? "text-sky-200" : "text-white"}`}>{refund ? "+" : ""}{formatMoney(row.amount, row.currency)}</td>
+                  <td className={`whitespace-nowrap py-3 text-right font-semibold ${refund ? "text-sky-700 dark:text-sky-200" : "text-fg"}`}>{refund ? "+" : ""}{formatMoney(row.amount, row.currency)}</td>
                 </tr>
               );
             })}
@@ -330,8 +330,8 @@ export function SecuritySection() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="font-display text-3xl text-white">Security</h1>
-        <h2 className="mt-6 text-lg font-semibold text-white">Linked accounts</h2>
+        <h1 className="font-display text-3xl text-fg">Security</h1>
+        <h2 className="mt-6 text-lg font-semibold text-fg">Linked accounts</h2>
         {error ? (
           <div className="mt-3">
             <ErrorState
@@ -352,19 +352,19 @@ export function SecuritySection() {
         ) : logins === null ? (
           <div className="mt-3" aria-busy="true"><span className="sr-only">Loading linked accounts</span><Skeleton className="h-12" /></div>
         ) : null}
-        {logins && logins.length === 0 ? <p className="mt-2 text-sm text-mist/70">No Google or GitHub account is linked.</p> : null}
+        {logins && logins.length === 0 ? <p className="mt-2 text-sm text-fg/70">No Google or GitHub account is linked.</p> : null}
         <ul className="mt-3 space-y-2">
           {(logins ?? []).map((login) => (
-            <li key={login.provider} className="rounded-xl border border-white/10 px-3 py-2 text-sm">
-              <span className="font-medium capitalize text-white">{login.provider}</span>
-              <span className="ml-2 text-mist/65">{login.emailAtLink}</span>
+            <li key={login.provider} className="rounded-xl border border-fg/10 px-3 py-2 text-sm">
+              <span className="font-medium capitalize text-fg">{login.provider}</span>
+              <span className="ml-2 text-fg/65">{login.emailAtLink}</span>
             </li>
           ))}
         </ul>
       </div>
       <div>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-white">Devices</h2>
+          <h2 className="text-lg font-semibold text-fg">Devices</h2>
           <Button
             variant="secondary"
             icon={<LogOut className="h-4 w-4" aria-hidden="true" />}
@@ -385,10 +385,10 @@ export function SecuritySection() {
         ) : (
           <ul className="mt-3 space-y-3">
             {sessions.map((session) => (
-              <li key={session.id} className="rounded-2xl border border-white/10 px-4 py-3 text-sm">
-                <p className="font-medium text-white">{session.isCurrent ? "This device" : "Other device"}</p>
-                <p className="mt-1 text-mist/65">{session.userAgent ?? "Unknown browser"}</p>
-                <p className="text-mist/65">{session.ipAddress ?? "Unknown address"} · {new Date(session.lastUsedAt).toLocaleString()}</p>
+              <li key={session.id} className="rounded-2xl border border-fg/10 px-4 py-3 text-sm">
+                <p className="font-medium text-fg">{session.isCurrent ? "This device" : "Other device"}</p>
+                <p className="mt-1 text-fg/65">{session.userAgent ?? "Unknown browser"}</p>
+                <p className="text-fg/65">{session.ipAddress ?? "Unknown address"} · {new Date(session.lastUsedAt).toLocaleString()}</p>
                 <Button
                   className="mt-3"
                   variant="danger"
@@ -435,11 +435,11 @@ type RewardTableRow = {
 
 function RewardCourts({ row }: { row: RewardTableRow }) {
   const courts = row.courtCount ?? 1;
-  if (courts <= 1) return <p className="text-sm text-mist/75">{row.courtName}</p>;
+  if (courts <= 1) return <p className="text-sm text-fg/75">{row.courtName}</p>;
   return (
     <div className="max-w-[16rem]">
-      <p className="text-sm font-medium text-white">{courts} courts</p>
-      <p className="text-xs leading-5 text-mist/60">{row.courtName}</p>
+      <p className="text-sm font-medium text-fg">{courts} courts</p>
+      <p className="text-xs leading-5 text-fg/60">{row.courtName}</p>
     </div>
   );
 }
@@ -449,10 +449,10 @@ function RewardPoints({ row, align = "left" }: { row: RewardTableRow; align?: "l
   const cancelled = row.cancelledCourts ?? 0;
   return (
     <div className={`max-w-[14rem] ${align === "right" ? "shrink-0 text-right" : ""}`}>
-      <p className="whitespace-nowrap font-semibold text-line">+{row.points}</p>
-      {courts > 1 ? <p className="whitespace-nowrap text-xs text-mist/60">Total for {courts} courts</p> : null}
+      <p className="whitespace-nowrap font-semibold text-accent-text">+{row.points}</p>
+      {courts > 1 ? <p className="whitespace-nowrap text-xs text-fg/60">Total for {courts} courts</p> : null}
       {cancelled > 0 ? (
-        <p className="text-xs leading-5 text-amber-300">
+        <p className="text-xs leading-5 text-amber-700 dark:text-amber-300">
           {cancelled} {cancelled === 1 ? "court" : "courts"} cancelled, no points{row.cancelledCourtNames ? `: ${row.cancelledCourtNames}` : ""}
         </p>
       ) : null}
@@ -478,19 +478,19 @@ function RewardTable({
     <div className="mt-4">
       <ul className="grid gap-3 md:hidden">
         {rows.map((row) => (
-          <li key={row.id} className="rounded-2xl border border-white/10 p-4">
+          <li key={row.id} className="rounded-2xl border border-fg/10 p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-wide text-line">{row.kind}</p>
-                <p className="mt-1 font-medium text-white">{row.venueName}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-accent-text">{row.kind}</p>
+                <p className="mt-1 font-medium text-fg">{row.venueName}</p>
                 <RewardCourts row={row} />
               </div>
               <RewardPoints row={row} align="right" />
             </div>
-            <p className="mt-2 text-sm text-mist/70">{row.session}</p>
-            <p className="text-sm text-mist/60">{row.when}{row.whenNote ? <span className="block text-xs text-mist/50">{row.whenNote}</span> : null}</p>
+            <p className="mt-2 text-sm text-fg/70">{row.session}</p>
+            <p className="text-sm text-fg/60">{row.when}{row.whenNote ? <span className="block text-xs text-fg/50">{row.whenNote}</span> : null}</p>
             <p className="mt-2">
-              <span className={`rounded-full px-2 py-1 text-xs font-semibold ${row.status === "Added" ? "bg-line/15 text-line" : "bg-white/10 text-mist"}`}>{row.status}</span>
+              <span className={`rounded-full px-2 py-1 text-xs font-semibold ${row.status === "Added" ? "bg-accent/15 text-accent-text" : "bg-fg/10 text-fg"}`}>{row.status}</span>
             </p>
           </li>
         ))}
@@ -498,7 +498,7 @@ function RewardTable({
       <div className="hidden overflow-x-auto md:block">
       <table className="w-full min-w-[52rem] text-left text-sm">
         <caption className="sr-only">{caption}</caption>
-        <thead className="text-mist/60">
+        <thead className="text-fg/60">
           <tr>
             <th className="py-2 pr-3 font-medium">Type</th>
             <th className="py-2 pr-3 font-medium">When</th>
@@ -511,13 +511,13 @@ function RewardTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id} className="border-t border-white/10">
-              <td className="py-3 pr-3 text-white">{row.kind}</td>
+            <tr key={row.id} className="border-t border-fg/10">
+              <td className="py-3 pr-3 text-fg">{row.kind}</td>
               <td className="pr-3">
                 {row.whenNote ? (
                   <>
-                    <span className="block whitespace-nowrap text-white">{row.when}</span>
-                    <span className="block text-xs text-mist/55">{row.whenNote}</span>
+                    <span className="block whitespace-nowrap text-fg">{row.when}</span>
+                    <span className="block text-xs text-fg/55">{row.whenNote}</span>
                   </>
                 ) : row.when}
               </td>
@@ -525,7 +525,7 @@ function RewardTable({
               <td className="py-3 pr-3"><RewardCourts row={row} /></td>
               <td className="whitespace-nowrap pr-3">{row.session}</td>
               <td className="pr-3">
-                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${row.status === "Added" ? "bg-line/15 text-line" : "bg-white/10 text-mist"}`}>{row.status}</span>
+                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${row.status === "Added" ? "bg-accent/15 text-accent-text" : "bg-fg/10 text-fg"}`}>{row.status}</span>
               </td>
               <td className="py-3"><RewardPoints row={row} /></td>
             </tr>
@@ -565,9 +565,9 @@ export function ListPager({
   const windowEnd = Math.min(pages, windowStart + 4);
   const numbers = Array.from({ length: windowEnd - windowStart + 1 }, (_, index) => windowStart + index);
   return (
-    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3">
+    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-fg/10 bg-fg/[0.03] px-3 py-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm font-medium text-white" aria-live="polite">View {from}–{to} of {total}{unit ? ` ${unit}` : ""}</p>
+        <p className="text-sm font-medium text-fg" aria-live="polite">View {from}–{to} of {total}{unit ? ` ${unit}` : ""}</p>
         <div className="flex flex-wrap items-center gap-1.5">
           {rewardPageSizes.map((option) => (
             <Button
@@ -582,7 +582,7 @@ export function ListPager({
               {option}
             </Button>
           ))}
-          <span className="text-sm text-mist/80">per page</span>
+          <span className="text-sm text-fg/80">per page</span>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
@@ -602,7 +602,7 @@ export function ListPager({
           </Button>
         ))}
         <Button variant="secondary" icon={<ChevronRight className="h-4 w-4" aria-hidden="true" />} loading={loading && pageMove === "next"} disabled={safePage >= pages || loading} onClick={() => onPage(safePage + 1, "next")}>Next</Button>
-        <span className="text-sm text-mist/70">Page {safePage} of {pages}</span>
+        <span className="text-sm text-fg/70">Page {safePage} of {pages}</span>
       </div>
     </div>
   );

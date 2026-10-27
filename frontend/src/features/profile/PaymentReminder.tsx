@@ -54,10 +54,10 @@ export function PaymentBell() {
       to="/profile/bookings"
       title={label}
       aria-label={label}
-      className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-amber-300/40 text-amber-100 hover:bg-amber-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line"
+      className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-amber-300/40 text-amber-800 dark:text-amber-100 hover:bg-amber-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text"
     >
       <Bell className="h-4 w-4" aria-hidden="true" />
-      <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] font-bold text-ink">
+      <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] font-bold text-accent-fg">
         {items.length}
       </span>
     </NavLink>
@@ -116,11 +116,11 @@ function NoticeRow({ item }: { item: UnpaidHold }) {
     <li className="rounded-xl border border-amber-300/25 px-3 py-2.5 transition-colors hover:bg-amber-400/5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="flex items-start gap-2 leading-relaxed">
-          <Bell className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" aria-hidden="true" />
+          <Bell className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-200" aria-hidden="true" />
           <span>{noticeText(item)}</span>
         </p>
         <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-          <Link className="inline-flex items-center justify-center rounded-xl bg-amber-300 px-3 py-2 text-sm font-semibold text-ink hover:bg-amber-200" to={`/${item.venueSlug}/book/group/${item.groupId}?bookings=${item.bookingIds.join(",")}`}>
+          <Link className="inline-flex items-center justify-center rounded-xl bg-amber-300 px-3 py-2 text-sm font-semibold text-accent-fg hover:bg-amber-200" to={`/${item.venueSlug}/book/group/${item.groupId}?bookings=${item.bookingIds.join(",")}`}>
             {item.checkoutStarted ? "Complete payment" : "Pay this week"}
           </Link>
           {confirm && !busy ? (
@@ -131,8 +131,8 @@ function NoticeRow({ item }: { item: UnpaidHold }) {
           </Button>
         </div>
       </div>
-      {confirm && !busy ? <p className="mt-2 text-sm text-amber-100">{item.courtCount === 1 ? "This releases the unpaid court for this session only." : `This releases the ${item.courtCount} unpaid courts for this session only.`} Paid weeks stay, and Keep weeks ahead is turned off so this week is not added back.</p> : null}
-      {error ? <p className="mt-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-100" role="alert">{error}</p> : null}
+      {confirm && !busy ? <p className="mt-2 text-sm text-amber-800 dark:text-amber-100">{item.courtCount === 1 ? "This releases the unpaid court for this session only." : `This releases the ${item.courtCount} unpaid courts for this session only.`} Paid weeks stay, and Keep weeks ahead is turned off so this week is not added back.</p> : null}
+      {error ? <p className="mt-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-800 dark:text-rose-100" role="alert">{error}</p> : null}
     </li>
   );
 }
@@ -141,9 +141,9 @@ export function PaymentNotice() {
   const items = useUnpaidHolds();
   if (items.length === 0) return null;
   return (
-    <section className="mb-4 rounded-2xl border border-amber-300/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-50" role="status" aria-label="Payments to finish">
-      <p className="font-semibold text-amber-100">{noticeHeading(items)}</p>
-      <p className="mt-1 text-amber-50/80">{noticeHint(items)}</p>
+    <section className="mb-4 rounded-2xl border border-amber-300/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-50" role="status" aria-label="Payments to finish">
+      <p className="font-semibold text-amber-800 dark:text-amber-100">{noticeHeading(items)}</p>
+      <p className="mt-1 text-amber-800/80 dark:text-amber-50/80">{noticeHint(items)}</p>
       <ul className="mt-3 space-y-2">
         {items.map((item) => <NoticeRow key={`${item.groupId}-${item.startTime}`} item={item} />)}
       </ul>

@@ -820,6 +820,7 @@ public static class DashboardEndpoints
         var slug = (body.Slug ?? "").Trim().ToLowerInvariant();
         if (name.Length is 0 or > 150) { error = "Enter a venue name up to 150 characters."; return false; }
         if (slug.Length is 0 or > 100 || !SlugOk(slug)) { error = "Use a slug of lowercase letters, numbers, and hyphens."; return false; }
+        if (ReservedSlugs.Contains(slug)) { error = "That address is used by the app. Pick another slug."; return false; }
         var zone = string.IsNullOrWhiteSpace(body.TimeZone) ? "Australia/Melbourne" : body.TimeZone.Trim();
         try { _ = TimeZoneInfo.FindSystemTimeZoneById(zone); }
         catch (TimeZoneNotFoundException) { error = "Choose a valid timezone."; return false; }
@@ -903,6 +904,12 @@ public static class DashboardEndpoints
         parsed = date.AddDays(exclusiveEnd ? 1 : 0).ToDateTime(TimeOnly.MinValue);
         return true;
     }
+
+    private static readonly HashSet<string> ReservedSlugs = new(StringComparer.Ordinal)
+    {
+        "login", "register", "profile", "dashboard", "rewards", "promotions", "faq", "contact",
+        "cancellation", "terms", "privacy", "api", "assets",
+    };
 
     private static bool SlugOk(string slug) => slug.All(character => char.IsAsciiLetterOrDigit(character) || character == '-') && !slug.StartsWith('-') && !slug.EndsWith('-');
 

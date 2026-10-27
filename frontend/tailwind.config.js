@@ -1,17 +1,39 @@
 /** @type {import('tailwindcss').Config} */
+const token = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       fontFamily: {
-        sans: ["DM Sans", "ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
         display: ["Outfit", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       colors: {
-        ink: "#07140f",
-        pine: "#10261c",
-        line: "#c6f54e",
-        mist: "#e7f6ee",
+        canvas: token("canvas"),
+        surface: token("surface"),
+        "surface-2": token("surface-2"),
+        inset: token("inset"),
+        fg: token("fg"),
+        "fg-muted": token("fg-muted"),
+        border: token("border"),
+        accent: {
+          DEFAULT: token("accent"),
+          fg: token("accent-fg"),
+          text: token("accent-text"),
+        },
+        ink: token("canvas"),
+        pine: token("surface"),
+        line: token("accent"),
+        mist: token("fg"),
+      },
+      fontSize: {
+        display: ["clamp(2.5rem, 5vw, 3.5rem)", { lineHeight: "1.05", letterSpacing: "-0.02em" }],
+      },
+      boxShadow: {
+        card: "0 1px 2px rgb(var(--shadow) / 0.06), 0 4px 16px -4px rgb(var(--shadow) / 0.08)",
+        pop: "0 12px 32px -8px rgb(var(--shadow) / 0.25)",
       },
     },
   },

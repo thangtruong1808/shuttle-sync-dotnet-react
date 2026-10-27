@@ -151,34 +151,34 @@ export function CourtReschedule({
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-line/30 bg-line/5 p-3">
-      <p className="text-sm font-semibold text-white">Reschedule {court.courtName}</p>
-      <p className="mt-1 text-xs text-mist/70">
+    <div className="mt-3 rounded-xl border border-accent-text/30 bg-accent/5 p-3">
+      <p className="text-sm font-semibold text-fg">Reschedule {court.courtName}</p>
+      <p className="mt-1 text-xs text-fg/70">
         Only this court moves. Pick a time, then confirm. {court.status === "confirmed" ? <>You paid <Money amount={court.price} currency={court.currency} /> for {lengthLabel(currentLength)}. A longer time asks you to pay the difference. A shorter time asks before any refund.</> : "This hold is not paid yet, so the price updates to the new time."}
       </p>
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <label className="text-sm text-mist">
+        <label className="text-sm text-fg">
           <span className="mb-1 block">New date</span>
-          <PickerInput type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setError(null); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
+          <PickerInput type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setError(null); }} className="w-full rounded-xl border border-fg/15 bg-fg/5 px-3 py-2 text-fg [color-scheme:dark]" />
         </label>
-        <label className="text-sm text-mist">
+        <label className="text-sm text-fg">
           <span className="mb-1 block">Length</span>
-          <select value={duration} disabled={busy} onChange={(event) => { setDuration(Number(event.target.value)); setError(null); }} className="w-full rounded-xl border border-white/15 bg-[#102117] px-3 py-2 text-white [color-scheme:dark] disabled:opacity-60">
-            {choices.map((minutes) => <option key={minutes} value={minutes} className="bg-[#102117] text-white">{lengthLabel(minutes)}</option>)}
+          <select value={duration} disabled={busy} onChange={(event) => { setDuration(Number(event.target.value)); setError(null); }} className="w-full rounded-xl border border-fg/15 bg-surface px-3 py-2 text-fg [color-scheme:dark] disabled:opacity-60">
+            {choices.map((minutes) => <option key={minutes} value={minutes} className="bg-surface text-fg">{lengthLabel(minutes)}</option>)}
           </select>
         </label>
       </div>
       {loadingTimes || times === null ? (
-        <p className="mt-3 flex items-center gap-2 text-sm text-mist" aria-busy="true"><Spinner className="h-4 w-4" /> Loading open times</p>
+        <p className="mt-3 flex items-center gap-2 text-sm text-fg" aria-busy="true"><Spinner className="h-4 w-4" /> Loading open times</p>
       ) : times.length === 0 ? (
-        <p className="mt-3 text-sm text-mist" role="status">{heldTimes.length > 0 ? "That time is held for a later week because you keep weeks ahead. Choose another date, or cancel that held week and book again." : "No open time on this date for this court and length."}</p>
+        <p className="mt-3 text-sm text-fg" role="status">{heldTimes.length > 0 ? "That time is held for a later week because you keep weeks ahead. Choose another date, or cancel that held week and book again." : "No open time on this date for this court and length."}</p>
       ) : (
         <div className="mt-3 grid gap-2 sm:grid-cols-2" role="list">
           {times.map((slot) => {
             const key = `${slot.date}-${slot.start}`;
             const picked = chosen?.date === slot.date && chosen.start === slot.start;
             return (
-              <Button key={key} type="button" variant="secondary" aria-pressed={picked} className={`w-full ${picked ? "border-line bg-line/15 text-white" : ""}`} disabled={busy} onClick={() => { setChosen(slot); setError(null); setPrompt(null); }}>
+              <Button key={key} type="button" variant="secondary" aria-pressed={picked} className={`w-full ${picked ? "border-accent-text bg-accent/15 text-fg" : ""}`} disabled={busy} onClick={() => { setChosen(slot); setError(null); setPrompt(null); }}>
                 {slot.label}
               </Button>
             );
@@ -187,13 +187,13 @@ export function CourtReschedule({
       )}
       {heldTimes.length > 0 ? (
         <div className="mt-3">
-          <p className="text-sm text-mist">These times are held for a later week.</p>
+          <p className="text-sm text-fg">These times are held for a later week.</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {heldTimes.map((slot) => {
               const key = `held-${slot.date}-${slot.start}`;
               const picked = chosen?.date === slot.date && chosen.start === slot.start;
               return (
-                <Button key={key} type="button" variant="secondary" aria-pressed={picked} className={`w-full ${picked ? "border-line bg-line/15 text-white" : ""}`} disabled={busy} onClick={() => { setChosen(slot); setError(null); setPrompt(null); }}>
+                <Button key={key} type="button" variant="secondary" aria-pressed={picked} className={`w-full ${picked ? "border-accent-text bg-accent/15 text-fg" : ""}`} disabled={busy} onClick={() => { setChosen(slot); setError(null); setPrompt(null); }}>
                   {slot.label}
                 </Button>
               );
@@ -213,10 +213,10 @@ export function CourtReschedule({
       ) : null}
       {prompt ? (
         <div className="mt-3 rounded-xl border border-amber-300/50 bg-amber-400/10 p-3" role="status">
-          <p className="text-sm font-semibold text-white">
+          <p className="text-sm font-semibold text-fg">
             {prompt.code === "PRICE_INCREASE" ? "This time costs more" : "This time costs less"}
           </p>
-          <p className="mt-2 text-sm text-mist/80">
+          <p className="mt-2 text-sm text-fg/80">
             You paid <Money amount={prompt.paid} currency={court.currency} /> for this court. The new time is <Money amount={prompt.quote} currency={court.currency} />.
             {prompt.code === "PRICE_INCREASE" ? <> Pay <Money amount={prompt.difference} currency={court.currency} /> more to confirm. The extra time is kept only after that payment.</> : prompt.refundAmount > 0 ? <> Refund <Money amount={prompt.refundAmount} currency={court.currency} /> to your card?</> : <> No card refund is due. Change the time anyway?</>}
           </p>
@@ -230,7 +230,7 @@ export function CourtReschedule({
           </div>
         </div>
       ) : null}
-      {error ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-100" role="alert">{error}</p> : null}
+      {error ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-800 dark:text-rose-100" role="alert">{error}</p> : null}
       <Button type="button" variant="secondary" className="mt-3 w-full sm:w-auto" disabled={busy} icon={<X className="h-4 w-4" aria-hidden="true" />} onClick={onClose}>Keep current time</Button>
     </div>
   );

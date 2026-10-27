@@ -57,17 +57,17 @@ function WeekTimes({
   onPick: (slot: WeekSlot) => void;
 }) {
   if (loading) {
-    return <p className="mt-3 flex items-center gap-2 text-sm text-mist" aria-busy="true"><Spinner className="h-4 w-4" /> Loading open times</p>;
+    return <p className="mt-3 flex items-center gap-2 text-sm text-fg" aria-busy="true"><Spinner className="h-4 w-4" /> Loading open times</p>;
   }
   if (slots.length === 0) {
-    return <p className="mt-3 text-sm text-mist" role="status">{held ? "That time is held for a later week because you keep weeks ahead. Choose another date, or cancel that held week and book again." : empty}</p>;
+    return <p className="mt-3 text-sm text-fg" role="status">{held ? "That time is held for a later week because you keep weeks ahead. Choose another date, or cancel that held week and book again." : empty}</p>;
   }
   return (
     <div className="mt-3 grid gap-2 sm:grid-cols-2" role="list">
       {slots.map((slot) => {
         const picked = selected?.date === slot.date && selected.start === slot.start;
         return (
-          <Button key={`${slot.date}-${slot.start}`} type="button" variant="secondary" aria-pressed={picked} className={`w-full ${picked ? "border-line bg-line/15 text-white" : ""}`} disabled={busy} onClick={() => onPick(slot)}>
+          <Button key={`${slot.date}-${slot.start}`} type="button" variant="secondary" aria-pressed={picked} className={`w-full ${picked ? "border-accent-text bg-accent/15 text-fg" : ""}`} disabled={busy} onClick={() => onPick(slot)}>
             {slot.label}
           </Button>
         );
@@ -252,15 +252,15 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
   }
 
   return (
-    <div className="mt-2 rounded-xl bg-black/20 p-3">
-      <p className="text-sm text-mist/75">This week is <span className="font-semibold text-white"><Money amount={total} currency={first.currency} /></span> for the courts left ticked.</p>
+    <div className="mt-2 rounded-xl bg-inset p-3">
+      <p className="text-sm text-fg/75">This week is <span className="font-semibold text-fg"><Money amount={total} currency={first.currency} /></span> for the courts left ticked.</p>
       <ul className="mt-3 grid gap-2 sm:grid-cols-2">
         {courts.map((court) => (
           <li key={court.bookingId}>
-            <label className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-mist">
+            <label className="flex items-center gap-2 rounded-xl border border-fg/10 px-3 py-2 text-sm text-fg">
               <input
                 type="checkbox"
-                className="h-4 w-4 accent-line"
+                className="h-4 w-4 accent-accent-text"
                 checked={checked.has(court.courtId)}
                 disabled={locked || rescheduling || sessionCourt !== null || changingHours || hourCourt !== null}
                 onChange={() => {
@@ -273,17 +273,17 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
                   });
                 }}
               />
-              <span className={`min-w-0 ${!checked.has(court.courtId) ? "text-mist/50 line-through" : ""}`}>
+              <span className={`min-w-0 ${!checked.has(court.courtId) ? "text-fg/50 line-through" : ""}`}>
                 <span className="block">{court.courtName}</span>
-                <span className="block text-xs text-mist/60">{formatVenueRange(court.startTime, court.endTime, court.timeZone)}</span>
+                <span className="block text-xs text-fg/60">{formatVenueRange(court.startTime, court.endTime, court.timeZone)}</span>
               </span>
-              <span className="ml-auto text-xs text-mist/60">{court.status === "confirmed" ? "Paid" : "Held"}</span>
+              <span className="ml-auto text-xs text-fg/60">{court.status === "confirmed" ? "Paid" : "Held"}</span>
             </label>
             <div className="mt-1 flex flex-wrap gap-3">
               <button
                 type="button"
                 aria-expanded={sessionId === court.bookingId}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-line hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-accent-text hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={locked || dirty}
                 onClick={() => {
                   setRescheduling(false);
@@ -301,7 +301,7 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
               <button
                 type="button"
                 aria-expanded={hourBookingId === court.bookingId}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-line hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-accent-text hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={locked || dirty}
                 onClick={() => {
                   setRescheduling(false);
@@ -321,21 +321,21 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
         ))}
       </ul>
       {dirty ? (
-        <div className={`mt-3 rounded-xl border p-3 ${confirmPaid ? "border-amber-300/50 bg-amber-400/10" : "border-line/30 bg-line/5"}`} role="status">
-          <p className="flex items-center gap-2 text-sm font-semibold text-white">
-            {confirmPaid ? <TriangleAlert className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" /> : <CircleAlert className="h-4 w-4 shrink-0 text-line" aria-hidden="true" />}
+        <div className={`mt-3 rounded-xl border p-3 ${confirmPaid ? "border-amber-300/50 bg-amber-400/10" : "border-accent-text/30 bg-accent/5"}`} role="status">
+          <p className="flex items-center gap-2 text-sm font-semibold text-fg">
+            {confirmPaid ? <TriangleAlert className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" /> : <CircleAlert className="h-4 w-4 shrink-0 text-accent-text" aria-hidden="true" />}
             {confirmPaid ? "Please confirm before we cancel paid courts" : "You have unsaved changes for this week"}
           </p>
-          <p className="mt-2 text-sm text-mist/80">
-            Weekly total: <span className="text-mist/60 line-through"><Money amount={currentTotal} currency={first.currency} /></span>{" "}
-            <span className="font-semibold text-white"><Money amount={total} currency={first.currency} /></span>
+          <p className="mt-2 text-sm text-fg/80">
+            Weekly total: <span className="text-fg/60 line-through"><Money amount={currentTotal} currency={first.currency} /></span>{" "}
+            <span className="font-semibold text-fg"><Money amount={total} currency={first.currency} /></span>
           </p>
-          {removedPaid.length > 0 ? <p className="mt-2 text-xs text-mist/80">{removedPaid.length} paid {removedPaid.length === 1 ? "court is" : "courts are"} cancelled under the cancellation policy.</p> : null}
+          {removedPaid.length > 0 ? <p className="mt-2 text-xs text-fg/80">{removedPaid.length} paid {removedPaid.length === 1 ? "court is" : "courts are"} cancelled under the cancellation policy.</p> : null}
         </div>
       ) : null}
-      {notice ? <p className="mt-3 rounded-xl border border-line/40 bg-line/10 px-3 py-2 text-sm text-line" role="status">{notice}</p> : null}
-      {confirmDelete ? <p className="mt-2 text-sm text-mist" role="status">Delete this week? Unpaid courts are released. A paid court is cancelled under the cancellation policy.</p> : null}
-      {error ? <p className="mt-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-100" role="alert">{error}</p> : null}
+      {notice ? <p className="mt-3 rounded-xl border border-accent-text/40 bg-accent/10 px-3 py-2 text-sm text-accent-text" role="status">{notice}</p> : null}
+      {confirmDelete ? <p className="mt-2 text-sm text-fg" role="status">Delete this week? Unpaid courts are released. A paid court is cancelled under the cancellation policy.</p> : null}
+      {error ? <p className="mt-2 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-800 dark:text-rose-100" role="alert">{error}</p> : null}
       {block ? <WeekReason facts={block.facts} fallback={block.fallback} /> : null}
       {block?.facts.code === "PRICE_INCREASE" && pendingMove ? (
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
@@ -370,23 +370,23 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
           onClose={() => setChangingHours(false)}
         />
       ) : rescheduling ? (
-        <div className="mt-3 rounded-xl border border-line/30 bg-line/5 p-3">
-          <p className="text-sm font-semibold text-white">Reschedule this week</p>
-          <p className="mt-1 text-xs text-mist/70">Every court in this week moves together. Currently {formatWeekDate(first.startTime, first.timeZone)} · {formatVenueRange(first.startTime, first.endTime, first.timeZone)}</p>
-          <label className="mt-3 block text-sm text-mist">
-            <span className="mb-1 block text-mist/70">Date</span>
-            <PickerInput type="date" required value={moveDate} disabled={locked} onChange={(event) => { setMoveDate(event.target.value); setBlock(null); setChosenTime(null); }} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white [color-scheme:dark]" />
+        <div className="mt-3 rounded-xl border border-accent-text/30 bg-accent/5 p-3">
+          <p className="text-sm font-semibold text-fg">Reschedule this week</p>
+          <p className="mt-1 text-xs text-fg/70">Every court in this week moves together. Currently {formatWeekDate(first.startTime, first.timeZone)} · {formatVenueRange(first.startTime, first.endTime, first.timeZone)}</p>
+          <label className="mt-3 block text-sm text-fg">
+            <span className="mb-1 block text-fg/70">Date</span>
+            <PickerInput type="date" required value={moveDate} disabled={locked} onChange={(event) => { setMoveDate(event.target.value); setBlock(null); setChosenTime(null); }} className="w-full rounded-xl border border-fg/15 bg-fg/5 px-3 py-2 text-fg [color-scheme:dark]" />
           </label>
-          <p className="mt-3 text-xs text-mist/70">Pick a time, then confirm. Nothing moves until you confirm.</p>
+          <p className="mt-3 text-xs text-fg/70">Pick a time, then confirm. Nothing moves until you confirm.</p>
           <WeekTimes slots={times ?? []} loading={loadingTimes || times === null} held={heldSlot} empty="No open time on this date fits every court in this week." busy={locked} selected={chosenTime} onPick={(slot) => { setChosenTime(slot); setBlock(null); setError(null); }} />
           {heldTimes.length > 0 ? (
             <div className="mt-3">
-              <p className="text-sm text-mist">These times are held for a later week. Choosing one keeps this week where it is.</p>
+              <p className="text-sm text-fg">These times are held for a later week. Choosing one keeps this week where it is.</p>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {heldTimes.map((slot) => {
                   const picked = chosenTime?.date === slot.date && chosenTime.start === slot.start;
                   return (
-                    <Button key={`held-${slot.date}-${slot.start}`} type="button" variant="secondary" aria-pressed={picked} className={`w-full ${picked ? "border-line bg-line/15 text-white" : ""}`} disabled={locked} onClick={() => { setChosenTime(slot); setBlock(null); setError(null); }}>{slot.label}</Button>
+                    <Button key={`held-${slot.date}-${slot.start}`} type="button" variant="secondary" aria-pressed={picked} className={`w-full ${picked ? "border-accent-text bg-accent/15 text-fg" : ""}`} disabled={locked} onClick={() => { setChosenTime(slot); setBlock(null); setError(null); }}>{slot.label}</Button>
                   );
                 })}
               </div>
@@ -406,14 +406,14 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
         </div>
       ) : null}
       {hourCourt || sessionCourt ? null : (
-        <div className="mt-3 flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-mist/80"><span className="font-medium text-white">Need a different day or time?</span></p>
+        <div className="mt-3 flex flex-col gap-2 rounded-xl border border-fg/10 bg-fg/[0.03] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-fg/80"><span className="font-medium text-fg">Need a different day or time?</span></p>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Button
               type="button"
               variant="secondary"
               aria-expanded={rescheduling}
-              className={`w-full sm:w-auto ${rescheduling ? "border-line bg-line/15 text-white" : ""}`}
+              className={`w-full sm:w-auto ${rescheduling ? "border-accent-text bg-accent/15 text-fg" : ""}`}
               disabled={locked || dirty}
               icon={<CalendarDays className="h-4 w-4" aria-hidden="true" />}
               onClick={() => {
@@ -433,7 +433,7 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
               type="button"
               variant="secondary"
               aria-expanded={changingHours}
-              className={`w-full sm:w-auto ${changingHours ? "border-line bg-line/15 text-white" : ""}`}
+              className={`w-full sm:w-auto ${changingHours ? "border-accent-text bg-accent/15 text-fg" : ""}`}
               disabled={locked || dirty}
               icon={<Clock className="h-4 w-4" aria-hidden="true" />}
               onClick={() => {
@@ -454,16 +454,16 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
       <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <Button type="button" variant="danger" className="w-full sm:w-auto" loading={deleting} disabled={locked && !deleting} onClick={() => void removeWeek()}>{confirmDelete ? "Confirm delete" : "Delete this week"}</Button>
         {availability === "full" ? (
-          <button type="button" aria-disabled="true" aria-describedby={reasonId} className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-mist/70 sm:w-auto" onClick={(event) => event.preventDefault()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") event.preventDefault(); }}>
+          <button type="button" aria-disabled="true" aria-describedby={reasonId} className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl border border-fg/15 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg/70 sm:w-auto" onClick={(event) => event.preventDefault()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") event.preventDefault(); }}>
             Add another court
           </button>
         ) : availability === "loading" ? (
           <Button type="button" variant="secondary" className="w-full sm:w-auto" loading disabled>Add another court</Button>
         ) : (
-          <Link to={`/${first.venueSlug}/book?${addParams}`} className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-mist hover:bg-white/10 sm:w-auto">Add another court</Link>
+          <Link to={`/${first.venueSlug}/book?${addParams}`} className="inline-flex w-full items-center justify-center rounded-xl border border-fg/15 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg hover:bg-fg/10 sm:w-auto">Add another court</Link>
         )}
         {pendingTopUp.length > 0 ? (
-          <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pendingTopUp.map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
+          <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pendingTopUp.map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
             <CreditCard className="h-4 w-4" aria-hidden="true" />
             Pay the difference
           </Link>
@@ -474,13 +474,13 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
             <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked} icon={<Undo2 className="h-4 w-4" aria-hidden="true" />} onClick={undoChanges}>Cancel changes</Button>
           </>
         ) : pending.length > 0 ? (
-          <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pending.map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-line px-4 py-2.5 text-sm font-semibold text-ink hover:bg-lime-300 sm:w-auto">
+          <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pending.map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
             <CreditCard className="h-4 w-4" aria-hidden="true" />
             Pay this week
           </Link>
-        ) : <p className="text-sm text-line">This week is paid.</p>}
+        ) : <p className="text-sm text-accent-text">This week is paid.</p>}
       </div>
-      {availability === "full" ? <p id={reasonId} className="mt-2 text-xs text-mist/70" role="tooltip">All courts are booked for this week. Use Reschedule this week to look at another time.</p> : null}
+      {availability === "full" ? <p id={reasonId} className="mt-2 text-xs text-fg/70" role="tooltip">All courts are booked for this week. Use Reschedule this week to look at another time.</p> : null}
     </div>
   );
 }

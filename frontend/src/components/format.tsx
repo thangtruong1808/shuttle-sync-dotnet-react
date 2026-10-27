@@ -53,11 +53,11 @@ export function formatVenueDateTime(value: string, timeZone: string): string {
 
 export function CourtImage({ src, alt }: { src: string | null; alt: string }) {
   return (
-    <div className="aspect-[16/10] overflow-hidden rounded-2xl bg-black/30">
+    <div className="aspect-[16/10] overflow-hidden rounded-2xl bg-inset">
       {src ? (
         <img src={src} alt={alt} loading="lazy" className="h-full w-full object-cover" />
       ) : (
-        <div className="flex h-full items-center justify-center text-sm text-mist/45" role="img" aria-label={alt}>
+        <div className="flex h-full items-center justify-center text-sm text-fg/45" role="img" aria-label={alt}>
           Court photo coming soon
         </div>
       )}
@@ -67,9 +67,9 @@ export function CourtImage({ src, alt }: { src: string | null; alt: string }) {
 
 export function EmptyState({ title, body }: { title: string; body: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-white/15 px-4 py-8 text-center">
-      <p className="font-medium text-white">{title}</p>
-      <p className="mt-2 text-sm leading-relaxed text-mist/70">{body}</p>
+    <div className="rounded-2xl border border-dashed border-fg/15 px-4 py-8 text-center">
+      <p className="font-medium text-fg">{title}</p>
+      <p className="mt-2 text-sm leading-relaxed text-fg/70">{body}</p>
     </div>
   );
 }
@@ -85,12 +85,12 @@ export function ErrorState({
 }) {
   return (
     <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-5" role="alert">
-      <p className="text-sm text-rose-100">{message}</p>
+      <p className="text-sm text-rose-800 dark:text-rose-100">{message}</p>
       <button
         type="button"
         disabled={loading}
         aria-busy={loading}
-        className="mt-3 inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-sm font-semibold text-mist hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-3 inline-flex items-center gap-2 rounded-lg border border-fg/15 px-3 py-1.5 text-sm font-semibold text-fg hover:bg-fg/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text disabled:cursor-not-allowed disabled:opacity-60"
         onClick={onRetry}
       >
         {loading ? <Spinner className="h-4 w-4" /> : null}
