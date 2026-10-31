@@ -53,7 +53,7 @@ public sealed class CourtAiImageGenerator(
             .Take(25)
             .ToArray();
 
-        var geminiOutcome = await AskGeminiForUniqueCourtDesignAsync(
+        var geminiOutcome = await AskGeminiForUniqueArtworkDesignAsync(
             venueName,
             court,
             existingPrompts,
@@ -63,25 +63,11 @@ public sealed class CourtAiImageGenerator(
             return (null, geminiOutcome.Error, geminiOutcome.StatusCode);
         }
 
-        byte[] imageBytes;
-        string contentType;
-        string promptSummary;
-
-        if (geminiOutcome.InlineImageBytes is { Length: > 0 } rawBytes && !string.IsNullOrWhiteSpace(geminiOutcome.InlineMimeType))
-        {
-            imageBytes = rawBytes;
-            contentType = geminiOutcome.InlineMimeType!;
-            promptSummary = geminiOutcome.PromptSummary;
-        }
-        else
-        {
-            var spec = EnsureUniqueSpec(geminiOutcome.Spec!, court, existingPrompts);
-            promptSummary = BuildPromptSummary(spec, venueName, court);
-            imageBytes = RenderCourtPng(spec, court, attemptSeed: 0);
-            contentType = "image/png";
-        }
-
+        var spec = EnsureUniqueSpec(geminiOutcome.Spec!, court, existingPrompts);
+        var promptSummary = BuildPromptSummary(spec, venueName, court);
+        var imageBytes = RenderBadmintonRacketAndShuttlePng(spec, court, attemptSeed: 0);
         var imageHash = ComputeSha256Hex(imageBytes);
+
         var attempt = 1;
         while (existingHashes.Contains(imageHash) && attempt <= 8)
         {
@@ -91,8 +77,7 @@ public sealed class CourtAiImageGenerator(
                 existingPrompts,
                 attempt);
             promptSummary = $"{BuildPromptSummary(fallbackSpec, venueName, court)} [v{attempt}]";
-            imageBytes = RenderCourtPng(fallbackSpec, court, attemptSeed: attempt * 7919);
-            contentType = "image/png";
+            imageBytes = RenderBadmintonRacketAndShuttlePng(fallbackSpec, court, attemptSeed: attempt * 7919);
             imageHash = ComputeSha256Hex(imageBytes);
             attempt++;
         }
@@ -104,7 +89,7 @@ public sealed class CourtAiImageGenerator(
             await using var stream = new MemoryStream(imageBytes, writable: false);
             imageUrl = await cloudinaryImages.UploadAsync(
                 stream,
-                contentType,
+                "image/png",
                 CloudFolder,
                 publicId,
                 cancellationToken);
@@ -117,7 +102,7 @@ public sealed class CourtAiImageGenerator(
         return (new CourtAiImageResult(imageUrl, publicId, imageHash, promptSummary), null, StatusCodes.Status200OK);
     }
 
-    private async Task<(CourtVisualSpec? Spec, byte[]? InlineImageBytes, string? InlineMimeType, string PromptSummary, string? Error, int StatusCode)> AskGeminiForUniqueCourtDesignAsync(
+    private async Task<(CourtArtworkSpec? Spec, string? Error, int StatusCode)> AskGeminiForUniqueArtworkDesignAsync(
         string venueName,
         DashCourtRow court,
         string[] existingPrompts,
@@ -129,31 +114,34 @@ public sealed class CourtAiImageGenerator(
 
         var variationNonce = Guid.NewGuid().ToString("N")[..8];
         var instruction = $"""
-            You are an architectural sports arena designer generating a unique visual design specification for a badminton court photo.
-            Every court MUST look visually distinct from all other courts (different mat color palette, arena wall architecture, lighting style, and camera perspective).
+            You are the sports illustrator for "Shuttle Sync", a modern badminton booking platform.
+            Design an energetic, entertaining badminton illustration featuring pro badminton rackets and a detailed 16-feather shuttlecock in action, styled with Shuttle Sync's frontend design tokens:
+
+            Shuttle Sync Design Tokens:
+            - Deep Botanical Forest Surfaces: "#07140F", "#0C1C16", "#0E1F17", "#10261C", "#142A20", "#163528"
+            - Subtle Sage Grid / Border Lines: "#233A2F", "#2A4739"
+            - Signature Electric Volt-Lime Accent: "#C6F54E"
+            - Secondary Sport Accents: "#86EFAC" (mint), "#BEF264" (chartreuse), "#5EEAD4" (teal), "#FDE047" (warm gold), "#38BDF8" (sky spark), "#FB923C" (sunset energy)
+            - Crisp Feather & String Highlights: "#F5F8F4", "#E7F6EE"
+            - IMPORTANT: Every court MUST feature both badminton racket(s) and a realistic feathered shuttlecock with dynamic motion trails/sparks, NO indoor room walls/floors, and NO text or numbers (#1, #2).
 
             Venue: {venueName}
             Court Name: {court.CourtName}
-            Court Number: {court.CourtNumber}
-            Surface Type: {court.SurfaceType ?? "Pro synthetic PVC mat"}
-            Description: {court.Description ?? "Indoor tournament badminton court"}
             Unique Seed Token: {variationNonce}
 
-            Existing court designs already used (DO NOT repeat these themes, color combinations, or perspectives):
+            Existing court designs already used (DO NOT repeat these combinations):
             - {avoidBlock}
 
             Return ONLY a valid JSON object (no markdown fences, no extra prose) with these exact fields:
-            - "themeTitle": short distinctive 3-6 word title for this court's look
-            - "matPrimaryHex": 6-digit hex color (e.g. "#0E7C61", "#1B4F9C", "#7A2E8E", "#B84A27", "#0F6E8C", "#2D6A4F", "#8E244D", "#3B429F") for the outer court mat
-            - "matInnerHex": 6-digit hex color for the inner play area (slightly brighter or complementary tone)
-            - "floorOuterHex": 6-digit hex color for the surrounding hall floor (warm maple wood, dark walnut, slate, charcoal, birch, etc.)
-            - "wallTopHex": 6-digit hex color for the upper arena ceiling/wall
-            - "wallBottomHex": 6-digit hex color for the lower arena wall
-            - "accentHex": 6-digit hex color for LED architectural trim & net badge
-            - "lineHex": "#FFFFFF" or "#FFF8E7" or "#FFE680" for court boundary lines
-            - "lightingStyle": one of ["spotlight", "skylight", "arena-beams", "perimeter-glow"]
-            - "cameraAngle": one of ["elevated-center", "corner-left", "corner-right", "low-pro"]
-            - "wallPattern": one of ["acoustic-slats", "geometric-panels", "panoramic-glass", "stadium-tiers"]
+            - "themeTitle": short 3-5 word title for this badminton racket & shuttlecock action artwork
+            - "bgStartHex": deep forest hex from ["#07140F", "#0A1B14", "#0C1C16", "#0E2219", "#10261C", "#091915"]
+            - "bgEndHex": richer forest/teal hex from ["#142A20", "#163528", "#1B3F30", "#13332B", "#1A3829", "#1E3A2F"]
+            - "glowHex": primary spotlight & smash-trail hex from ["#C6F54E", "#BEF264", "#A3E635", "#86EFAC", "#5EEAD4"]
+            - "secondaryAccentHex": racket trim & cork ribbon hex from ["#5EEAD4", "#FDE047", "#38BDF8", "#FB923C", "#6EE7B7", "#A7F3D0"]
+            - "featherHex": "#F5F8F4" or "#E7F6EE" or "#FEFCE8" for the shuttlecock goose feathers
+            - "composition": one of ["smash-impact", "crossed-pro-rackets", "forehand-drive", "aerial-drop-shot"]
+            - "backdropGrid": one of ["schedule-slots", "dot-matrix", "topographic-rings", "diagonal-mesh"]
+            - "glowCorner": one of ["top-right", "top-left", "bottom-right", "center-crest"]
             """;
 
         var requestBody = new
@@ -186,70 +174,17 @@ public sealed class CourtAiImageGenerator(
             responsePayload = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                return (null, null, null, "", "Gemini could not generate the court image right now. Please try again in a moment.", StatusCodes.Status502BadGateway);
+                return (null, "Gemini could not generate the court image right now. Please try again in a moment.", StatusCodes.Status502BadGateway);
             }
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
-            return (null, null, null, "", "Gemini could not be reached right now. Please try again in a moment.", StatusCodes.Status502BadGateway);
-        }
-
-        if (TryExtractInlineImage(responsePayload, out var inlineBytes, out var inlineMime))
-        {
-            return (null, inlineBytes, inlineMime, $"Gemini inline image for {court.CourtName} (#{court.CourtNumber}) [{variationNonce}]", null, StatusCodes.Status200OK);
+            return (null, "Gemini could not be reached right now. Please try again in a moment.", StatusCodes.Status502BadGateway);
         }
 
         var textReply = ExtractTextReply(responsePayload);
         var spec = ParseSpecOrDefault(textReply, court);
-        return (spec, null, null, BuildPromptSummary(spec, venueName, court), null, StatusCodes.Status200OK);
-    }
-
-    private static bool TryExtractInlineImage(string payload, out byte[]? bytes, out string? mimeType)
-    {
-        bytes = null;
-        mimeType = null;
-        try
-        {
-            using var document = JsonDocument.Parse(payload);
-            if (!document.RootElement.TryGetProperty("candidates", out var candidates))
-            {
-                return false;
-            }
-
-            foreach (var candidate in candidates.EnumerateArray())
-            {
-                if (!candidate.TryGetProperty("content", out var content)
-                    || !content.TryGetProperty("parts", out var parts))
-                {
-                    continue;
-                }
-
-                foreach (var part in parts.EnumerateArray())
-                {
-                    if (!part.TryGetProperty("inlineData", out var inlineData))
-                    {
-                        continue;
-                    }
-
-                    var mime = inlineData.TryGetProperty("mimeType", out var m) ? m.GetString() : null;
-                    var data = inlineData.TryGetProperty("data", out var d) ? d.GetString() : null;
-                    if (!string.IsNullOrWhiteSpace(mime)
-                        && !string.IsNullOrWhiteSpace(data)
-                        && mime is "image/png" or "image/jpeg" or "image/webp")
-                    {
-                        bytes = Convert.FromBase64String(data);
-                        mimeType = mime;
-                        return true;
-                    }
-                }
-            }
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-
-        return false;
+        return (spec, null, StatusCodes.Status200OK);
     }
 
     private static string? ExtractTextReply(string payload)
@@ -287,7 +222,7 @@ public sealed class CourtAiImageGenerator(
         return null;
     }
 
-    private static CourtVisualSpec ParseSpecOrDefault(string? rawText, DashCourtRow court)
+    private static CourtArtworkSpec ParseSpecOrDefault(string? rawText, DashCourtRow court)
     {
         if (!string.IsNullOrWhiteSpace(rawText))
         {
@@ -298,7 +233,7 @@ public sealed class CourtAiImageGenerator(
                 var jsonSlice = rawText[start..(end + 1)];
                 try
                 {
-                    var parsed = JsonSerializer.Deserialize<CourtVisualSpec>(jsonSlice, JsonOptions);
+                    var parsed = JsonSerializer.Deserialize<CourtArtworkSpec>(jsonSlice, JsonOptions);
                     if (parsed is not null && !string.IsNullOrWhiteSpace(parsed.ThemeTitle))
                     {
                         return parsed;
@@ -306,7 +241,7 @@ public sealed class CourtAiImageGenerator(
                 }
                 catch (JsonException)
                 {
-                    // Fall back to deterministic unique spec below.
+                    // Fall back to deterministic Shuttle Sync spec below.
                 }
             }
         }
@@ -314,16 +249,16 @@ public sealed class CourtAiImageGenerator(
         return DefaultSpecForCourt(court, extraSalt: RandomNumberGenerator.GetInt32(1, 10000));
     }
 
-    private static CourtVisualSpec EnsureUniqueSpec(
-        CourtVisualSpec spec,
+    private static CourtArtworkSpec EnsureUniqueSpec(
+        CourtArtworkSpec spec,
         DashCourtRow court,
         string[] existingPrompts,
         int extraAttempt = 0)
     {
-        var summary = $"{spec.ThemeTitle}|{spec.MatPrimaryHex}|{spec.MatInnerHex}|{spec.CameraAngle}|{spec.LightingStyle}";
         var collides = existingPrompts.Any(p =>
-            p.Contains(spec.MatPrimaryHex ?? "", StringComparison.OrdinalIgnoreCase)
-            && p.Contains(spec.CameraAngle ?? "", StringComparison.OrdinalIgnoreCase));
+            p.Contains(spec.Composition ?? "", StringComparison.OrdinalIgnoreCase)
+            && p.Contains(spec.BackdropGrid ?? "", StringComparison.OrdinalIgnoreCase)
+            && p.Contains(spec.SecondaryAccentHex ?? "", StringComparison.OrdinalIgnoreCase));
 
         if (!collides && extraAttempt == 0)
         {
@@ -333,365 +268,692 @@ public sealed class CourtAiImageGenerator(
         var fallback = DefaultSpecForCourt(court, extraAttempt + existingPrompts.Length + 1);
         return spec with
         {
-            ThemeTitle = $"{spec.ThemeTitle} #{court.CourtNumber}-{extraAttempt + 1}",
-            MatPrimaryHex = fallback.MatPrimaryHex,
-            MatInnerHex = fallback.MatInnerHex,
-            AccentHex = fallback.AccentHex,
-            CameraAngle = fallback.CameraAngle,
-            LightingStyle = fallback.LightingStyle,
-            WallPattern = fallback.WallPattern,
+            ThemeTitle = $"{spec.ThemeTitle} · {fallback.Composition}",
+            BgStartHex = fallback.BgStartHex,
+            BgEndHex = fallback.BgEndHex,
+            GlowHex = fallback.GlowHex,
+            SecondaryAccentHex = fallback.SecondaryAccentHex,
+            FeatherHex = fallback.FeatherHex,
+            Composition = fallback.Composition,
+            BackdropGrid = fallback.BackdropGrid,
+            GlowCorner = fallback.GlowCorner,
         };
     }
 
-    private static CourtVisualSpec DefaultSpecForCourt(DashCourtRow court, int extraSalt)
+    private static CourtArtworkSpec DefaultSpecForCourt(DashCourtRow court, int extraSalt)
     {
-        (string Title, string MatOut, string MatIn, string Floor, string WallTop, string WallBot, string Accent)[] palettes =
+        (string Title, string BgStart, string BgEnd, string Glow, string Secondary, string Feather)[] palettes =
         [
-            ("Emerald BWF Championship", "#0D6E52", "#148F6B", "#7A5230", "#0F172A", "#1E293B", "#34D399"),
-            ("Royal Cobalt Arena", "#1D4ED8", "#2563EB", "#855834", "#111827", "#1E3A5F", "#60A5FA"),
-            ("Sunset Terracotta Hall", "#9A3412", "#C2410C", "#27272A", "#18181B", "#3F2318", "#FB923C"),
-            ("Amethyst Pro Pavilion", "#5B21B6", "#6D28D9", "#6B4F35", "#090D16", "#231942", "#C084FC"),
-            ("Oceanic Teal Stadium", "#0F766E", "#0D9488", "#5C4028", "#0C1924", "#163244", "#2DD4BF"),
-            ("Crimson Grand Court", "#9F1239", "#BE123C", "#785338", "#14141F", "#2D1622", "#FB7185"),
-            ("Nordic Slate & Gold", "#334155", "#475569", "#8C6239", "#0B1120", "#1E293B", "#FBBF24"),
-            ("Forest Jade & Birch", "#166534", "#15803D", "#A17449", "#101E17", "#1C3528", "#4ADE80"),
+            ("Volt Smash Impact", "#07140F", "#163528", "#C6F54E", "#5EEAD4", "#F5F8F4"),
+            ("Twin Racket Rally", "#0C1C16", "#142A20", "#BEF264", "#FDE047", "#E7F6EE"),
+            ("Emerald Forehand Drive", "#0A1B14", "#1B3F30", "#86EFAC", "#38BDF8", "#F5F8F4"),
+            ("Canopy Aerial Drop", "#10261C", "#07140F", "#C6F54E", "#FB923C", "#FEFCE8"),
+            ("Mint & Volt Pro Clash", "#091915", "#13332B", "#5EEAD4", "#C6F54E", "#F5F8F4"),
+            ("Chartreuse String Surge", "#0E1F17", "#1E3A2F", "#A3E635", "#6EE7B7", "#E7F6EE"),
+            ("Botanical Power Clear", "#07140F", "#1A3829", "#C6F54E", "#FDE047", "#F5F8F4"),
+            ("Sage Velocity Whip", "#0C1C16", "#163528", "#D9F99D", "#5EEAD4", "#E7F6EE"),
         ];
 
-        string[] angles = ["elevated-center", "corner-left", "corner-right", "low-pro"];
-        string[] lights = ["spotlight", "skylight", "arena-beams", "perimeter-glow"];
-        string[] walls = ["acoustic-slats", "geometric-panels", "panoramic-glass", "stadium-tiers"];
+        string[] compositions = ["smash-impact", "crossed-pro-rackets", "forehand-drive", "aerial-drop-shot"];
+        string[] grids = ["schedule-slots", "dot-matrix", "topographic-rings", "diagonal-mesh"];
+        string[] corners = ["top-right", "top-left", "bottom-right", "center-crest"];
 
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes($"{court.Id}:{court.CourtNumber}:{court.CourtName}:{extraSalt}"));
         var idx = BinaryPrimitives.ReadUInt16LittleEndian(hashBytes.AsSpan(0, 2));
         var palette = palettes[(idx + court.CourtNumber) % palettes.Length];
-        return new CourtVisualSpec(
+        return new CourtArtworkSpec(
             ThemeTitle: palette.Title,
-            MatPrimaryHex: palette.MatOut,
-            MatInnerHex: palette.MatIn,
-            FloorOuterHex: palette.Floor,
-            WallTopHex: palette.WallTop,
-            WallBottomHex: palette.WallBot,
-            AccentHex: palette.Accent,
-            LineHex: "#FFFFFF",
-            LightingStyle: lights[(idx >> 3) % lights.Length],
-            CameraAngle: angles[(idx >> 5) % angles.Length],
-            WallPattern: walls[(idx >> 7) % walls.Length]);
+            BgStartHex: palette.BgStart,
+            BgEndHex: palette.BgEnd,
+            GlowHex: palette.Glow,
+            SecondaryAccentHex: palette.Secondary,
+            FeatherHex: palette.Feather,
+            Composition: compositions[(idx >> 2) % compositions.Length],
+            BackdropGrid: grids[(idx >> 4) % grids.Length],
+            GlowCorner: corners[(idx >> 6) % corners.Length]);
     }
 
-    private static string BuildPromptSummary(CourtVisualSpec spec, string venueName, DashCourtRow court) =>
-        $"{spec.ThemeTitle} | {venueName} - {court.CourtName} (#{court.CourtNumber}) | mat:{spec.MatPrimaryHex}/{spec.MatInnerHex} | floor:{spec.FloorOuterHex} | wall:{spec.WallPattern} | light:{spec.LightingStyle} | angle:{spec.CameraAngle}";
+    private static string BuildPromptSummary(CourtArtworkSpec spec, string venueName, DashCourtRow court) =>
+        $"{spec.ThemeTitle} | {venueName} - {court.CourtName} | tokens:{spec.BgStartHex}/{spec.GlowHex}/{spec.SecondaryAccentHex} | comp:{spec.Composition} | grid:{spec.BackdropGrid} | glow:{spec.GlowCorner}";
 
-    private static byte[] RenderCourtPng(CourtVisualSpec spec, DashCourtRow court, int attemptSeed)
+    private static byte[] RenderBadmintonRacketAndShuttlePng(CourtArtworkSpec spec, DashCourtRow court, int attemptSeed)
     {
         const int width = 960;
         const int height = 600;
-        const int horizonY = 215;
 
-        var wallTop = ParseColor(spec.WallTopHex, (15, 23, 42));
-        var wallBottom = ParseColor(spec.WallBottomHex, (30, 41, 59));
-        var floorOuter = ParseColor(spec.FloorOuterHex, (122, 82, 48));
-        var matPrimary = ParseColor(spec.MatPrimaryHex, (13, 110, 82));
-        var matInner = ParseColor(spec.MatInnerHex, (20, 143, 107));
-        var accent = ParseColor(spec.AccentHex, (52, 211, 153));
-        var line = ParseColor(spec.LineHex, (255, 255, 255));
+        // Shuttle Sync CSS design tokens:
+        var bgStart = ClampToBotanicalDark(ParseColor(spec.BgStartHex, (16, 38, 28)));
+        var bgEnd = ClampToBotanicalDark(ParseColor(spec.BgEndHex, (22, 53, 40)));
+        var voltAccent = (R: (byte)198, G: (byte)245, B: (byte)78); // #C6F54E (--accent)
+        var glowColor = LerpColor(ParseColor(spec.GlowHex, voltAccent), voltAccent, 0.55f);
+        var secondary = ParseColor(spec.SecondaryAccentHex, (94, 234, 212));
+        var featherColor = ParseColor(spec.FeatherHex, (245, 248, 244));
+        var borderToken = (R: (byte)35, G: (byte)58, B: (byte)47);   // #233A2F (--border)
+        var surface2Token = (R: (byte)20, G: (byte)42, B: (byte)32); // #142A20 (--surface-2)
+        var fgToken = (R: (byte)231, G: (byte)246, B: (byte)238);     // #E7F6EE (--fg)
 
-        var cameraShift = (spec.CameraAngle ?? "").ToLowerInvariant() switch
+        var seed = SHA256.HashData(Encoding.UTF8.GetBytes($"{court.Id}:{spec.ThemeTitle}:{spec.Composition}:{attemptSeed}"));
+        var phase = (seed[0] / 255f) * MathF.PI * 2f;
+
+        var (glowX, glowY) = (spec.GlowCorner ?? "").ToLowerInvariant() switch
         {
-            "corner-left" => -0.18f,
-            "corner-right" => 0.18f,
-            "low-pro" => 0.05f,
-            _ => 0.0f,
+            "top-left" => (width * 0.18f, height * 0.18f),
+            "bottom-right" => (width * 0.82f, height * 0.80f),
+            "center-crest" => (width * 0.50f, height * 0.34f),
+            _ => (width * 0.82f, height * 0.16f),
         };
 
-        var seedBytes = SHA256.HashData(Encoding.UTF8.GetBytes($"{court.Id}:{court.CourtNumber}:{spec.ThemeTitle}:{attemptSeed}"));
-        var angleOffset = ((seedBytes[0] / 255f) - 0.5f) * 0.08f + cameraShift;
+        var secondaryOrbX = width * (0.20f + (seed[1] / 255f) * 0.58f);
+        var secondaryOrbY = height * (0.60f + (seed[2] / 255f) * 0.26f);
 
         var pixels = new byte[width * height * 3];
+        var gridMode = (spec.BackdropGrid ?? "").ToLowerInvariant();
 
+        // 1. Shuttle Sync botanical dark gradient + radial volt spotlight + schedule/geometric grid
         for (var y = 0; y < height; y++)
         {
-            if (y < horizonY)
+            var ny = y / (float)height;
+            for (var x = 0; x < width; x++)
             {
-                var wt = y / (float)horizonY;
-                var baseWall = LerpColor(wallTop, wallBottom, wt);
-                for (var x = 0; x < width; x++)
-                {
-                    var c = ApplyWallPattern(baseWall, accent, x, y, width, horizonY, spec.WallPattern, spec.LightingStyle, seedBytes[1]);
-                    SetPixel(pixels, width, x, y, c);
-                }
-            }
-            else
-            {
-                var ft = (y - horizonY) / (float)(height - horizonY);
-                var z = 1.0f / (0.18f + ft * 0.92f);
-                var plankShade = MathF.Sin((z * 18f) + seedBytes[2] * 0.1f) * 0.035f;
+                var nx = x / (float)width;
+                var diagT = (nx * 0.55f) + (ny * 0.45f);
+                var c = LerpColor(bgStart, bgEnd, diagT);
 
-                for (var x = 0; x < width; x++)
+                var dxGlow = (x - glowX) / (width * 0.55f);
+                var dyGlow = (y - glowY) / (height * 0.65f);
+                var distGlow = MathF.Sqrt(dxGlow * dxGlow + dyGlow * dyGlow);
+                if (distGlow < 1f)
                 {
-                    var screenX = (x - width * 0.5f) / (width * 0.5f);
-                    var u = (screenX - angleOffset * (1.0f - ft)) / (0.30f + ft * 0.85f);
-                    var v = (ft - 0.06f) / 0.86f;
-
-                    var c = FloorPixelColor(u, v, floorOuter, matPrimary, matInner, line, accent, plankShade);
-                    SetPixel(pixels, width, x, y, c);
+                    c = LerpColor(c, glowColor, (1f - distGlow) * (1f - distGlow) * 0.36f);
                 }
+
+                var dxSec = (x - secondaryOrbX) / (width * 0.44f);
+                var dySec = (y - secondaryOrbY) / (height * 0.48f);
+                var distSec = MathF.Sqrt(dxSec * dxSec + dySec * dySec);
+                if (distSec < 1f)
+                {
+                    c = LerpColor(c, secondary, (1f - distSec) * (1f - distSec) * 0.20f);
+                }
+
+                if (gridMode == "schedule-slots")
+                {
+                    if (x % 80 == 0 || y % 60 == 0)
+                    {
+                        c = LerpColor(c, borderToken, 0.42f);
+                    }
+                }
+                else if (gridMode == "dot-matrix")
+                {
+                    var gx = (x + 16) % 32 - 16;
+                    var gy = (y + 16) % 32 - 16;
+                    if (gx * gx + gy * gy <= 4)
+                    {
+                        c = LerpColor(c, glowColor, 0.16f);
+                    }
+                }
+                else if (gridMode == "topographic-rings")
+                {
+                    var rDist = MathF.Sqrt((x - width * 0.5f) * (x - width * 0.5f) + (y - height * 0.5f) * (y - height * 0.5f));
+                    if (MathF.Abs((rDist + seed[3]) % 56f - 28f) < 1.2f)
+                    {
+                        c = LerpColor(c, borderToken, 0.55f);
+                    }
+                }
+                else
+                {
+                    if ((x + y + seed[4]) % 44 == 0 || (x - y + 1024) % 44 == 0)
+                    {
+                        c = LerpColor(c, borderToken, 0.38f);
+                    }
+                }
+
+                SetPixel(pixels, width, x, y, c);
             }
         }
 
-        DrawNetAndPosts(pixels, width, height, horizonY, angleOffset, accent, line);
-        DrawCourtBadge(pixels, width, height, court.CourtNumber, matPrimary, accent, line, seedBytes[3]);
+        // 2. Subtle Bento / Schedule pills in corners to connect with CourtCard & DayChart UI
+        DrawSchedulePillsBackdrop(pixels, width, height, seed, surface2Token, borderToken, voltAccent, secondary);
+
+        // 3. Draw entertaining Badminton Racket(s) + Detailed Feathered Shuttlecock + Smash Energy Trail!
+        var comp = (spec.Composition ?? "").ToLowerInvariant();
+        var mirror = (seed[5] & 1) == 1;
+
+        if (comp == "crossed-pro-rackets")
+        {
+            DrawSwooshTrail(pixels, width, height, mirror, phase, voltAccent, secondary);
+            // Two crossed pro badminton rackets + center shuttlecock
+            DrawProBadmintonRacket(pixels, width, height, width * 0.43f, height * 0.43f, -0.62f, 1.05f, secondary, fgToken, voltAccent);
+            DrawProBadmintonRacket(pixels, width, height, width * 0.57f, height * 0.43f, 0.62f, 1.05f, voltAccent, fgToken, secondary);
+            DrawImpactBurst(pixels, width, height, width * 0.50f, height * 0.38f, 82f, voltAccent, secondary);
+            DrawRealisticFeatheredShuttlecock(pixels, width, height, width * 0.50f, height * 0.36f, mirror ? -0.35f : 0.35f, 1.18f, featherColor, voltAccent, secondary);
+        }
+        else if (comp == "forehand-drive")
+        {
+            DrawSwooshTrail(pixels, width, height, !mirror, phase, secondary, voltAccent);
+            var rx = mirror ? width * 0.64f : width * 0.36f;
+            var sx = mirror ? width * 0.34f : width * 0.66f;
+            DrawProBadmintonRacket(pixels, width, height, rx, height * 0.46f, mirror ? 0.52f : -0.52f, 1.15f, voltAccent, fgToken, secondary);
+            DrawImpactBurst(pixels, width, height, width * 0.50f, height * 0.40f, 70f, voltAccent, secondary);
+            DrawRealisticFeatheredShuttlecock(pixels, width, height, sx, height * 0.36f, mirror ? 0.85f : -0.85f, 1.25f, featherColor, secondary, voltAccent);
+        }
+        else if (comp == "aerial-drop-shot")
+        {
+            DrawSwooshTrail(pixels, width, height, mirror, phase, voltAccent, fgToken);
+            DrawProBadmintonRacket(pixels, width, height, width * 0.38f, height * 0.50f, -0.78f, 1.10f, secondary, fgToken, voltAccent);
+            DrawRealisticFeatheredShuttlecock(pixels, width, height, width * 0.62f, height * 0.30f, -0.65f, 1.22f, featherColor, voltAccent, secondary);
+            DrawRealisticFeatheredShuttlecock(pixels, width, height, width * 0.26f, height * 0.28f, 0.55f, 0.78f, featherColor, secondary, voltAccent);
+        }
+        else
+        {
+            // "smash-impact": Dynamic angled racket striking a blazing shuttlecock
+            DrawSwooshTrail(pixels, width, height, mirror, phase, voltAccent, secondary);
+            var racketX = mirror ? width * 0.60f : width * 0.40f;
+            var shuttleX = mirror ? width * 0.38f : width * 0.62f;
+            DrawProBadmintonRacket(pixels, width, height, racketX, height * 0.45f, mirror ? 0.46f : -0.46f, 1.18f, voltAccent, fgToken, secondary);
+            DrawImpactBurst(pixels, width, height, (racketX + shuttleX) * 0.5f, height * 0.39f, 95f, voltAccent, secondary);
+            DrawRealisticFeatheredShuttlecock(pixels, width, height, shuttleX, height * 0.37f, mirror ? 0.72f : -0.72f, 1.28f, featherColor, secondary, voltAccent);
+        }
+
+        // 4. Subtle 1px inner card border matching `border-border` (#233a2f)
+        DrawInnerFrameBorder(pixels, width, height, borderToken);
 
         return EncodeRgbPng(pixels, width, height);
     }
 
-    private static (byte R, byte G, byte B) ApplyWallPattern(
-        (byte R, byte G, byte B) baseWall,
-        (byte R, byte G, byte B) accent,
-        int x,
-        int y,
-        int width,
-        int horizonY,
-        string? wallPattern,
-        string? lightingStyle,
-        byte seed)
+    private static (byte R, byte G, byte B) ClampToBotanicalDark((byte R, byte G, byte B) color)
     {
-        var c = baseWall;
-        var pat = (wallPattern ?? "").ToLowerInvariant();
-        if (pat == "acoustic-slats")
-        {
-            if ((x + seed) % 18 < 3 && y > 35 && y < horizonY - 12)
-            {
-                c = LerpColor(c, (byte.MaxValue, byte.MaxValue, byte.MaxValue), 0.07f);
-            }
-        }
-        else if (pat == "geometric-panels")
-        {
-            if (((x + y + seed) % 64 == 0 || (x - y + 512) % 64 == 0) && y > 25)
-            {
-                c = LerpColor(c, accent, 0.18f);
-            }
-        }
-        else if (pat == "panoramic-glass")
-        {
-            if (y is > 45 and < 155 && x is > 90 and < 870)
-            {
-                c = LerpColor(c, accent, 0.14f);
-                if (x % 110 < 3 || y is 47 or 153)
-                {
-                    c = LerpColor(c, (220, 230, 242), 0.35f);
-                }
-            }
-        }
-        else
-        {
-            if (y % 28 < 2 && y > 40)
-            {
-                c = LerpColor(c, accent, 0.15f);
-            }
-        }
-
-        if (y >= horizonY - 5)
-        {
-            c = LerpColor(c, accent, 0.65f);
-        }
-
-        var light = (lightingStyle ?? "").ToLowerInvariant();
-        var beamCount = light == "skylight" ? 3 : 5;
-        for (var i = 1; i <= beamCount; i++)
-        {
-            var bx = width * i / (float)(beamCount + 1);
-            var spread = 22f + y * 0.55f;
-            var dist = MathF.Abs(x - bx);
-            if (dist < spread)
-            {
-                var intensity = (1.0f - dist / spread) * (1.0f - (y / (float)horizonY) * 0.55f) * 0.28f;
-                c = LerpColor(c, (255, 252, 240), intensity);
-            }
-        }
-
-        return c;
+        var r = (byte)Math.Clamp((int)color.R, 6, 32);
+        var g = (byte)Math.Clamp(Math.Max((int)color.G, r + 10), 18, 66);
+        var b = (byte)Math.Clamp((int)color.B, 12, 52);
+        return (r, g, b);
     }
 
-    private static (byte R, byte G, byte B) FloorPixelColor(
-        float u,
-        float v,
-        (byte R, byte G, byte B) floorOuter,
-        (byte R, byte G, byte B) matPrimary,
-        (byte R, byte G, byte B) matInner,
-        (byte R, byte G, byte B) line,
-        (byte R, byte G, byte B) accent,
-        float plankShade)
-    {
-        var absU = MathF.Abs(u);
-        if (v < 0f || v > 1.0f || absU > 0.86f)
-        {
-            var c = Shade(floorOuter, plankShade);
-            if (v is >= -0.02f and <= 1.02f && absU <= 0.88f)
-            {
-                c = LerpColor(c, (10, 15, 25), 0.25f);
-            }
-
-            return c;
-        }
-
-        if (absU > 0.72f || v < 0.06f || v > 0.94f)
-        {
-            return Shade(matPrimary, plankShade * 0.3f);
-        }
-
-        var courtU = absU / 0.72f;
-        var courtV = (v - 0.06f) / 0.88f;
-        var distNet = MathF.Abs(courtV - 0.5f);
-
-        const float lw = 0.013f;
-        var isLine =
-            MathF.Abs(courtU - 1.0f) < lw
-            || MathF.Abs(courtU - 0.84f) < lw
-            || MathF.Abs(courtV - 0.0f) < lw
-            || MathF.Abs(courtV - 1.0f) < lw
-            || MathF.Abs(courtV - 0.065f) < lw
-            || MathF.Abs(courtV - 0.935f) < lw
-            || MathF.Abs(distNet - 0.15f) < lw
-            || (courtU < lw * 0.9f && distNet >= 0.15f);
-
-        if (isLine)
-        {
-            return line;
-        }
-
-        var inner = distNet < 0.15f
-            ? LerpColor(matInner, accent, 0.10f)
-            : matInner;
-
-        return Shade(inner, (0.5f - distNet) * 0.06f);
-    }
-
-    private static void DrawNetAndPosts(
+    /// <summary>
+    /// Draws a full, unmistakable badminton racket:
+    /// - Isometric oval head with outer frame & inner rim highlight
+    /// - Crossed tensioned string mesh inside the head
+    /// - Y-shaped throat / T-joint connecting the head to the shaft
+    /// - Slender graphite shaft, cone cap, and ribbed wrapped grip handle
+    /// </summary>
+    private static void DrawProBadmintonRacket(
         byte[] pixels,
         int width,
         int height,
-        int horizonY,
-        float angleOffset,
-        (byte R, byte G, byte B) accent,
-        (byte R, byte G, byte B) line)
+        float headCenterX,
+        float headCenterY,
+        float angleRad,
+        float scale,
+        (byte R, byte G, byte B) frameColor,
+        (byte R, byte G, byte B) stringColor,
+        (byte R, byte G, byte B) accentTrimColor)
     {
-        const float netFt = 0.06f + 0.5f * 0.86f;
-        var netBaseY = horizonY + (int)(netFt * (height - horizonY));
-        var netHeight = 46;
-        var netTopY = netBaseY - netHeight;
+        var cos = MathF.Cos(angleRad);
+        var sin = MathF.Sin(angleRad);
+        const float rx = 92f;
+        const float ry = 116f;
 
-        var scale = 0.30f + netFt * 0.85f;
-        var shift = angleOffset * (1.0f - netFt);
-        var leftX = (int)(((-0.74f * scale + shift) * 0.5f + 0.5f) * width);
-        var rightX = (int)(((0.74f * scale + shift) * 0.5f + 0.5f) * width);
+        var bound = (int)(340f * scale);
+        var minX = Math.Max(0, (int)headCenterX - bound);
+        var maxX = Math.Min(width - 1, (int)headCenterX + bound);
+        var minY = Math.Max(0, (int)headCenterY - bound);
+        var maxY = Math.Min(height - 1, (int)headCenterY + bound);
 
-        leftX = Math.Clamp(leftX, 20, width - 20);
-        rightX = Math.Clamp(rightX, leftX + 40, width - 20);
+        var darkShaft = (R: (byte)14, G: (byte)31, B: (byte)23);
 
-        for (var y = netTopY; y <= netBaseY; y++)
+        for (var y = minY; y <= maxY; y++)
         {
-            if (y < 0 || y >= height) continue;
-            for (var x = leftX; x <= rightX; x++)
+            for (var x = minX; x <= maxX; x++)
             {
-                if (x <= leftX + 5 || x >= rightX - 5)
-                {
-                    SetPixel(pixels, width, x, y, accent);
-                }
-                else if (y <= netTopY + 5)
-                {
-                    SetPixel(pixels, width, x, y, line);
-                }
-                else if ((x + y) % 4 == 0 || (x - y + 1024) % 4 == 0)
-                {
-                    var existing = GetPixel(pixels, width, x, y);
-                    SetPixel(pixels, width, x, y, LerpColor(existing, (230, 238, 245), 0.42f));
-                }
-            }
-        }
-    }
+                var dx = (x - headCenterX) / scale;
+                var dy = (y - headCenterY) / scale;
+                var lx = dx * cos + dy * sin;
+                var ly = -dx * sin + dy * cos;
 
-    private static void DrawCourtBadge(
-        byte[] pixels,
-        int width,
-        int height,
-        int courtNumber,
-        (byte R, byte G, byte B) matPrimary,
-        (byte R, byte G, byte B) accent,
-        (byte R, byte G, byte B) line,
-        byte badgeSeed)
-    {
-        var badgeX = 48 + (badgeSeed % 24);
-        var badgeY = 38;
-        const int bw = 128;
-        const int bh = 54;
+                var absLx = MathF.Abs(lx);
 
-        for (var y = badgeY; y < badgeY + bh && y < height; y++)
-        {
-            for (var x = badgeX; x < badgeX + bw && x < width; x++)
-            {
-                var border = x < badgeX + 3 || x >= badgeX + bw - 3 || y < badgeY + 3 || y >= badgeY + bh - 3;
-                SetPixel(pixels, width, x, y, border ? accent : matPrimary);
-            }
-        }
+                // 1. Isometric Oval Head & String Bed
+                var normX = lx / rx;
+                var normY = ly / ry;
+                var ellipse = normX * normX + normY * normY;
 
-        var label = $"#{Math.Clamp(courtNumber, 1, 99)}";
-        DrawText5x7(pixels, width, height, badgeX + 20, badgeY + 13, label, line, scale: 4);
-    }
-
-    private static void DrawText5x7(
-        byte[] pixels,
-        int width,
-        int height,
-        int startX,
-        int startY,
-        string text,
-        (byte R, byte G, byte B) color,
-        int scale)
-    {
-        var cursorX = startX;
-        foreach (var ch in text)
-        {
-            var glyph = Glyph5x7(ch);
-            for (var row = 0; row < 7; row++)
-            {
-                var bits = glyph[row];
-                for (var col = 0; col < 5; col++)
+                if (ellipse <= 1.16f && ellipse >= 0.84f)
                 {
-                    if (((bits >> (4 - col)) & 1) == 0) continue;
-                    for (var sy = 0; sy < scale; sy++)
+                    // Outer racket frame with two-tone sport paint at 10 & 2 o'clock and 4 & 8 o'clock
+                    var twoTone = (ly < -ry * 0.25f && absLx > rx * 0.45f) || (ly > ry * 0.35f && absLx > rx * 0.35f);
+                    var rimCol = twoTone ? accentTrimColor : frameColor;
+                    if (ellipse is >= 0.96f and <= 1.04f)
                     {
-                        for (var sx = 0; sx < scale; sx++)
+                        rimCol = LerpColor(rimCol, stringColor, 0.35f);
+                    }
+
+                    BlendPixel(pixels, width, x, y, rimCol, 0.96f);
+                    continue;
+                }
+
+                if (ellipse < 0.84f)
+                {
+                    // Fine crossed badminton strings (vertical mains + horizontal crosses)
+                    var mainDist = MathF.Abs((lx + 200f) % 11.5f - 5.75f);
+                    var crossDist = MathF.Abs((ly + 200f) % 11.5f - 5.75f);
+                    if (mainDist < 0.95f || crossDist < 0.95f)
+                    {
+                        // Sweet-spot highlight near center of string bed
+                        var sweetSpot = ellipse < 0.28f;
+                        var sCol = sweetSpot ? accentTrimColor : stringColor;
+                        BlendPixel(pixels, width, x, y, sCol, sweetSpot ? 0.58f : 0.38f);
+                    }
+
+                    continue;
+                }
+
+                // 2. Y-Throat / T-Joint (ly from ry*0.95 to ry + 36)
+                if (ly >= ry * 0.92f && ly <= ry + 36f)
+                {
+                    var t = (ly - ry * 0.92f) / (36f + ry * 0.08f);
+                    var armCenter = 24f * (1f - t);
+                    if (MathF.Abs(absLx - armCenter) <= 4.2f || (t > 0.72f && absLx <= 6.5f))
+                    {
+                        BlendPixel(pixels, width, x, y, accentTrimColor, 0.94f);
+                        continue;
+                    }
+                }
+
+                // 3. Slender Graphite Shaft (ly from ry + 36 to ry + 122)
+                if (ly > ry + 36f && ly <= ry + 122f && absLx <= 3.8f)
+                {
+                    var shaftCol = ((int)ly / 14) % 2 == 0 ? frameColor : LerpColor(frameColor, stringColor, 0.4f);
+                    BlendPixel(pixels, width, x, y, shaftCol, 0.94f);
+                    continue;
+                }
+
+                // 4. Cone Cap (ly from ry + 122 to ry + 142)
+                if (ly > ry + 122f && ly <= ry + 142f)
+                {
+                    var ct = (ly - (ry + 122f)) / 20f;
+                    var coneHalfW = 3.8f + ct * 5.2f;
+                    if (absLx <= coneHalfW)
+                    {
+                        BlendPixel(pixels, width, x, y, accentTrimColor, 0.95f);
+                        continue;
+                    }
+                }
+
+                // 5. Wrapped Grip Handle + Butt Cap (ly from ry + 142 to ry + 228)
+                if (ly > ry + 142f && ly <= ry + 228f)
+                {
+                    var isButtCap = ly > ry + 216f;
+                    var gripHalfW = isButtCap ? 10.5f : 9.0f;
+                    if (absLx <= gripHalfW)
+                    {
+                        if (isButtCap)
                         {
-                            var px = cursorX + col * scale + sx;
-                            var py = startY + row * scale + sy;
-                            if (px >= 0 && px < width && py >= 0 && py < height)
-                            {
-                                SetPixel(pixels, width, px, py, color);
-                            }
+                            BlendPixel(pixels, width, x, y, frameColor, 0.96f);
+                        }
+                        else
+                        {
+                            // Diagonal overgrip tape wrap lines
+                            var wrapBand = MathF.Abs(((ly + lx * 0.45f) % 13f) - 6.5f) < 1.3f;
+                            var gripCol = wrapBand ? accentTrimColor : LerpColor(darkShaft, stringColor, 0.22f);
+                            BlendPixel(pixels, width, x, y, gripCol, 0.95f);
                         }
                     }
                 }
             }
-
-            cursorX += 6 * scale;
         }
     }
 
-    private static byte[] Glyph5x7(char c) => c switch
+    /// <summary>
+    /// Draws a realistic, unmistakable feathered badminton shuttlecock:
+    /// - Smooth hemispherical white cork base at the nose
+    /// - Crisp colored trim ribbon around the cork collar
+    /// - Flared conical crown of 8 overlapping pointed goose feathers with quill stems
+    /// - Two horizontal binding threads across the feather stems
+    /// </summary>
+    private static void DrawRealisticFeatheredShuttlecock(
+        byte[] pixels,
+        int width,
+        int height,
+        float centerX,
+        float centerY,
+        float angleRad,
+        float scale,
+        (byte R, byte G, byte B) featherColor,
+        (byte R, byte G, byte B) ribbonColor,
+        (byte R, byte G, byte B) accentColor)
     {
-        '#' => [0b01010, 0b11111, 0b01010, 0b01010, 0b11111, 0b01010, 0b00000],
-        '0' => [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
-        '1' => [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-        '2' => [0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111],
-        '3' => [0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110],
-        '4' => [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
-        '5' => [0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110],
-        '6' => [0b01110, 0b10000, 0b11110, 0b10001, 0b10001, 0b10001, 0b01110],
-        '7' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
-        '8' => [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
-        '9' => [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110],
-        _ => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
-    };
+        var cos = MathF.Cos(angleRad);
+        var sin = MathF.Sin(angleRad);
+        var bound = (int)(150f * scale);
+
+        var minX = Math.Max(0, (int)centerX - bound);
+        var maxX = Math.Min(width - 1, (int)centerX + bound);
+        var minY = Math.Max(0, (int)centerY - bound);
+        var maxY = Math.Min(height - 1, (int)centerY + bound);
+
+        var featherShadow = (R: (byte)167, G: (byte)189, B: (byte)177); // --fg-muted
+
+        for (var y = minY; y <= maxY; y++)
+        {
+            for (var x = minX; x <= maxX; x++)
+            {
+                var dx = (x - centerX) / scale;
+                var dy = (y - centerY) / scale;
+                // In local shuttle coordinates:
+                // ly = +55 is the rounded cork nose tip (pointing down-forward)
+                // ly = +24..+34 is the colored collar ribbon
+                // ly = -76..+24 is the flared conical feather skirt
+                var lx = dx * cos + dy * sin;
+                var ly = -dx * sin + dy * cos;
+                var absLx = MathF.Abs(lx);
+
+                // 1. Hemispherical Cork Base (centered at (0, 34), radius 24, extending down to ly = +58)
+                if (ly >= 31f)
+                {
+                    var corkDist = MathF.Sqrt(lx * lx + (ly - 34f) * (ly - 34f));
+                    if (corkDist <= 24.5f)
+                    {
+                        var shadeT = (lx + 24f) / 48f * 0.25f + (58f - ly) / 28f * 0.15f;
+                        var corkCol = LerpColor(featherShadow, featherColor, Math.Clamp(0.68f + shadeT, 0f, 1f));
+                        var aa = Math.Clamp((24.5f - corkDist) * scale, 0f, 1f);
+                        BlendPixel(pixels, width, x, y, corkCol, aa * 0.98f);
+                        continue;
+                    }
+                }
+
+                // 2. Colored Trim Band / Collar Ribbon (ly in 23..32)
+                if (ly is >= 23f and < 32f && absLx <= 24.5f)
+                {
+                    var bandCol = ly < 26.5f ? accentColor : ribbonColor;
+                    BlendPixel(pixels, width, x, y, bandCol, 0.98f);
+                    continue;
+                }
+
+                // 3. Flared Conical Feather Crown (ly from -78 at feather tips to +23 at collar)
+                if (ly is >= -78f and < 23f)
+                {
+                    var t = (23f - ly) / 101f; // t = 0 at collar, t = 1 at outer feather tips
+                    var skirtHalfW = 23.5f + t * 48f;
+                    if (absLx <= skirtHalfW)
+                    {
+                        var u = lx / skirtHalfW; // -1 .. +1 across the skirt width
+                        const float featherCount = 7.5f;
+                        var fPos = (u + 1f) * 0.5f * featherCount;
+                        var fIdx = MathF.Floor(fPos);
+                        var fFrac = fPos - fIdx; // 0..1 within a single feather
+                        var distFromStem = MathF.Abs(fFrac - 0.5f) * 2f; // 0 at quill stem, 1 at feather edge
+
+                        // Pointed diamond feather tips at the top of the crown (t > 0.72)
+                        if (t > 0.72f)
+                        {
+                            var tipT = (t - 0.72f) / 0.28f;
+                            if (distFromStem > (1f - tipT * 0.92f))
+                            {
+                                continue; // Creates crisp V-notches between individual pointed feathers!
+                            }
+                        }
+
+                        // Lower stem window (between t = 0.04 and t = 0.34, feathers narrow to stems with small gaps)
+                        if (t < 0.34f && distFromStem > 0.62f)
+                        {
+                            // Two horizontal binding threads at t = 0.14 and t = 0.27
+                            var isBindingThread = MathF.Abs(t - 0.14f) < 0.028f || MathF.Abs(t - 0.27f) < 0.028f;
+                            if (isBindingThread)
+                            {
+                                BlendPixel(pixels, width, x, y, featherColor, 0.92f);
+                            }
+
+                            continue;
+                        }
+
+                        var isQuillStem = distFromStem < 0.14f;
+                        var isBindingRing = MathF.Abs(t - 0.14f) < 0.026f || MathF.Abs(t - 0.27f) < 0.026f;
+                        var isFeatherEdge = distFromStem > 0.84f;
+
+                        (byte R, byte G, byte B) col;
+                        if (isBindingRing)
+                        {
+                            col = LerpColor(featherColor, ribbonColor, 0.45f);
+                        }
+                        else if (isQuillStem)
+                        {
+                            col = featherColor;
+                        }
+                        else if (isFeatherEdge)
+                        {
+                            col = LerpColor(featherShadow, ribbonColor, 0.30f);
+                        }
+                        else
+                        {
+                            // Overlapping vane shading so each feather has 3D depth
+                            var vaneShade = fFrac < 0.5f ? 0.94f : 0.78f;
+                            col = LerpColor(featherShadow, featherColor, vaneShade);
+                        }
+
+                        BlendPixel(pixels, width, x, y, col, 0.96f);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void DrawImpactBurst(
+        byte[] pixels,
+        int width,
+        int height,
+        float cx,
+        float cy,
+        float maxRadius,
+        (byte R, byte G, byte B) voltColor,
+        (byte R, byte G, byte B) secondaryColor)
+    {
+        // Concentric shockwave rings + radial spark streaks
+        DrawConcentricRings(pixels, width, height, cx, cy, [maxRadius * 0.45f, maxRadius * 0.78f, maxRadius * 1.12f], voltColor, secondaryColor);
+
+        const int rays = 12;
+        for (var i = 0; i < rays; i++)
+        {
+            var angle = i * (MathF.PI * 2f / rays) + 0.2f;
+            var cos = MathF.Cos(angle);
+            var sin = MathF.Sin(angle);
+            var rStart = maxRadius * 0.32f;
+            var rEnd = maxRadius * (i % 2 == 0 ? 1.05f : 0.75f);
+            for (var r = rStart; r <= rEnd; r += 2f)
+            {
+                var px = cx + cos * r;
+                var py = cy + sin * r;
+                var col = i % 2 == 0 ? voltColor : secondaryColor;
+                BlendDisc(pixels, width, height, px, py, 2.0f, col, 0.55f);
+            }
+        }
+    }
+
+    private static void DrawSwooshTrail(
+        byte[] pixels,
+        int width,
+        int height,
+        bool mirror,
+        float phase,
+        (byte R, byte G, byte B) voltColor,
+        (byte R, byte G, byte B) secondaryColor)
+    {
+        for (var ribbon = -1; ribbon <= 1; ribbon++)
+        {
+            var yOff = ribbon * 18f;
+            for (var step = 0; step < 800; step++)
+            {
+                var t = step / 799f;
+                var xNorm = mirror ? 1f - t : t;
+                var px = width * (0.06f + xNorm * 0.88f);
+                var py = height * (0.78f - 0.50f * MathF.Sin(t * MathF.PI * 0.90f + phase * 0.1f)) + yOff;
+                var radius = (ribbon == 0 ? 3.8f : 2.0f) * MathF.Sin(t * MathF.PI);
+                if (radius <= 0.2f) continue;
+                var col = ribbon == 0 ? LerpColor(secondaryColor, voltColor, t) : secondaryColor;
+                BlendDisc(pixels, width, height, px, py, radius, col, ribbon == 0 ? 0.42f : 0.22f);
+            }
+        }
+    }
+
+    private static void DrawSchedulePillsBackdrop(
+        byte[] pixels,
+        int width,
+        int height,
+        byte[] seed,
+        (byte R, byte G, byte B) surface2,
+        (byte R, byte G, byte B) border,
+        (byte R, byte G, byte B) volt,
+        (byte R, byte G, byte B) secondary)
+    {
+        (float Cx, float Cy, float W, float H, bool Highlight)[] pills =
+        [
+            (width * (0.15f + (seed[7] % 18) * 0.004f), height * 0.18f, 128f, 32f, (seed[8] & 1) == 0),
+            (width * (0.84f - (seed[9] % 18) * 0.004f), height * 0.20f, 116f, 32f, (seed[8] & 1) != 0),
+            (width * (0.16f + (seed[10] % 16) * 0.004f), height * 0.82f, 140f, 32f, false),
+            (width * (0.83f - (seed[11] % 16) * 0.004f), height * 0.80f, 122f, 32f, true),
+        ];
+
+        foreach (var pill in pills)
+        {
+            var stroke = pill.Highlight ? LerpColor(border, volt, 0.45f) : border;
+            var fill = pill.Highlight ? LerpColor(surface2, secondary, 0.14f) : surface2;
+            DrawRoundedContainerBadge(pixels, width, height, pill.Cx, pill.Cy, pill.W, pill.H, 16f, fill, stroke, fillAlpha: 0.38f);
+            var dotX = pill.Cx - pill.W * 0.34f;
+            var dotCol = pill.Highlight ? volt : secondary;
+            BlendDisc(pixels, width, height, dotX, pill.Cy, 4.2f, dotCol, 0.72f);
+        }
+    }
+
+    private static void DrawRoundedContainerBadge(
+        byte[] pixels,
+        int width,
+        int height,
+        float cx,
+        float cy,
+        float boxW,
+        float boxH,
+        float cornerRadius,
+        (byte R, byte G, byte B) fillColor,
+        (byte R, byte G, byte B) strokeColor,
+        float fillAlpha)
+    {
+        var halfW = boxW * 0.5f;
+        var halfH = boxH * 0.5f;
+        var minX = Math.Max(0, (int)(cx - halfW - 3));
+        var maxX = Math.Min(width - 1, (int)(cx + halfW + 3));
+        var minY = Math.Max(0, (int)(cy - halfH - 3));
+        var maxY = Math.Min(height - 1, (int)(cy + halfH + 3));
+
+        var innerW = MathF.Max(0f, halfW - cornerRadius);
+        var innerH = MathF.Max(0f, halfH - cornerRadius);
+
+        for (var y = minY; y <= maxY; y++)
+        {
+            for (var x = minX; x <= maxX; x++)
+            {
+                var qx = MathF.Abs(x - cx) - innerW;
+                var qy = MathF.Abs(y - cy) - innerH;
+                var dist = MathF.Sqrt(MathF.Max(qx, 0f) * MathF.Max(qx, 0f) + MathF.Max(qy, 0f) * MathF.Max(qy, 0f))
+                    + MathF.Min(MathF.Max(qx, qy), 0f)
+                    - cornerRadius;
+
+                if (dist <= 0f)
+                {
+                    if (MathF.Abs(dist) <= 1.8f)
+                    {
+                        BlendPixel(pixels, width, x, y, strokeColor, 0.65f);
+                    }
+                    else
+                    {
+                        BlendPixel(pixels, width, x, y, fillColor, fillAlpha);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void DrawConcentricRings(
+        byte[] pixels,
+        int width,
+        int height,
+        float cx,
+        float cy,
+        float[] radii,
+        (byte R, byte G, byte B) colorA,
+        (byte R, byte G, byte B) colorB)
+    {
+        var maxR = (int)radii.Max() + 4;
+        var minX = Math.Max(0, (int)cx - maxR);
+        var maxX = Math.Min(width - 1, (int)cx + maxR);
+        var minY = Math.Max(0, (int)cy - maxR);
+        var maxY = Math.Min(height - 1, (int)cy + maxR);
+
+        for (var y = minY; y <= maxY; y++)
+        {
+            for (var x = minX; x <= maxX; x++)
+            {
+                var d = MathF.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+                for (var i = 0; i < radii.Length; i++)
+                {
+                    var delta = MathF.Abs(d - radii[i]);
+                    if (delta < 1.6f)
+                    {
+                        var col = i % 2 == 0 ? colorA : colorB;
+                        BlendPixel(pixels, width, x, y, col, (1f - delta / 1.6f) * 0.45f);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void DrawInnerFrameBorder(byte[] pixels, int width, int height, (byte R, byte G, byte B) borderColor)
+    {
+        for (var x = 0; x < width; x++)
+        {
+            BlendPixel(pixels, width, x, 0, borderColor, 0.7f);
+            BlendPixel(pixels, width, x, height - 1, borderColor, 0.7f);
+        }
+
+        for (var y = 0; y < height; y++)
+        {
+            BlendPixel(pixels, width, 0, y, borderColor, 0.7f);
+            BlendPixel(pixels, width, width - 1, y, borderColor, 0.7f);
+        }
+    }
+
+    private static void BlendDisc(
+        byte[] pixels,
+        int width,
+        int height,
+        float cx,
+        float cy,
+        float radius,
+        (byte R, byte G, byte B) color,
+        float alpha)
+    {
+        var rInt = (int)MathF.Ceiling(radius);
+        var minX = Math.Max(0, (int)cx - rInt);
+        var maxX = Math.Min(width - 1, (int)cx + rInt);
+        var minY = Math.Max(0, (int)cy - rInt);
+        var maxY = Math.Min(height - 1, (int)cy + rInt);
+
+        for (var y = minY; y <= maxY; y++)
+        {
+            for (var x = minX; x <= maxX; x++)
+            {
+                var d = MathF.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+                if (d <= radius)
+                {
+                    var falloff = (1f - d / radius) * alpha;
+                    BlendPixel(pixels, width, x, y, color, falloff);
+                }
+            }
+        }
+    }
+
+    private static void BlendPixel(byte[] pixels, int width, int x, int y, (byte R, byte G, byte B) color, float alpha)
+    {
+        var existing = GetPixel(pixels, width, x, y);
+        SetPixel(pixels, width, x, y, LerpColor(existing, color, alpha));
+    }
 
     private static void SetPixel(byte[] pixels, int width, int x, int y, (byte R, byte G, byte B) color)
     {
@@ -716,11 +978,6 @@ public sealed class CourtAiImageGenerator(
             (byte)(a.B + (b.B - a.B) * clamped));
     }
 
-    private static (byte R, byte G, byte B) Shade((byte R, byte G, byte B) c, float delta) => (
-        (byte)Math.Clamp((int)(c.R * (1f + delta)), 0, 255),
-        (byte)Math.Clamp((int)(c.G * (1f + delta)), 0, 255),
-        (byte)Math.Clamp((int)(c.B * (1f + delta)), 0, 255));
-
     private static (byte R, byte G, byte B) ParseColor(string? hex, (byte R, byte G, byte B) fallback)
     {
         if (string.IsNullOrWhiteSpace(hex)) return fallback;
@@ -744,11 +1001,11 @@ public sealed class CourtAiImageGenerator(
         Span<byte> ihdr = stackalloc byte[13];
         BinaryPrimitives.WriteUInt32BigEndian(ihdr[..4], (uint)width);
         BinaryPrimitives.WriteUInt32BigEndian(ihdr[4..8], (uint)height);
-        ihdr[8] = 8;  // bit depth
-        ihdr[9] = 2;  // color type: truecolor RGB
-        ihdr[10] = 0; // compression
-        ihdr[11] = 0; // filter
-        ihdr[12] = 0; // interlace
+        ihdr[8] = 8;
+        ihdr[9] = 2;
+        ihdr[10] = 0;
+        ihdr[11] = 0;
+        ihdr[12] = 0;
         WritePngChunk(output, "IHDR"u8, ihdr);
 
         using var compressed = new MemoryStream();
@@ -757,7 +1014,7 @@ public sealed class CourtAiImageGenerator(
             var rowStride = width * 3;
             for (var y = 0; y < height; y++)
             {
-                zlib.WriteByte(0); // filter type 0 (None)
+                zlib.WriteByte(0);
                 zlib.Write(rgb, y * rowStride, rowStride);
             }
         }
@@ -814,17 +1071,14 @@ public sealed class CourtAiImageGenerator(
     private static string ComputeSha256Hex(byte[] data) =>
         Convert.ToHexStringLower(SHA256.HashData(data));
 
-    private sealed record CourtVisualSpec(
+    private sealed record CourtArtworkSpec(
         string ThemeTitle,
-        string? MatPrimaryHex,
-        string? MatInnerHex,
-        string? FloorOuterHex,
-        string? WallTopHex,
-        string? WallBottomHex,
-        string? AccentHex,
-        string? LineHex,
-        string? LightingStyle,
-        string? CameraAngle,
-        string? WallPattern);
+        string? BgStartHex,
+        string? BgEndHex,
+        string? GlowHex,
+        string? SecondaryAccentHex,
+        string? FeatherHex,
+        string? Composition,
+        string? BackdropGrid,
+        string? GlowCorner);
 }
-
