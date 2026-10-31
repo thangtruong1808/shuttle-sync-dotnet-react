@@ -165,9 +165,9 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] flex-col items-end gap-3">
+    <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] flex-col items-end gap-3">
       {open ? (
-        <section className="flex h-[min(40rem,calc(100dvh-6.5rem))] min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-border bg-surface p-4 shadow-pop" aria-label="Support chat">
+        <section className="pointer-events-auto flex h-[min(40rem,calc(100dvh-6.5rem))] min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-border bg-surface p-4 shadow-pop" aria-label="Support chat">
           <div className="flex items-center gap-3">
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-canvas text-accent-text ring-1 ring-accent-text/60">
               <AssistantMark className="h-6 w-6" />
@@ -240,7 +240,7 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
       ) : null}
       <button
         type="button"
-        className="inline-flex items-center gap-2.5 rounded-full bg-accent py-2 pl-2 pr-4 text-sm font-semibold text-accent-fg shadow-pop"
+        className="pointer-events-auto inline-flex items-center gap-2.5 rounded-full bg-accent py-2 pl-2 pr-4 text-sm font-semibold text-accent-fg shadow-pop"
         aria-expanded={open}
         onClick={() => {
           if (open) {

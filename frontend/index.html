@@ -26,7 +26,9 @@
         try {
           theme = localStorage.getItem("shuttle-sync-theme") || "system";
         } catch (error) {}
-        var dark = theme === "dark" || (theme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        var hour = new Date().getHours();
+        var autoDark = hour < 6 || hour >= 18;
+        var dark = theme === "dark" || (theme !== "light" && autoDark);
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = dark ? "dark" : "light";
         var themeMeta = document.getElementById("theme-color");

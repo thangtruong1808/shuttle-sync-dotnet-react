@@ -130,7 +130,6 @@ export function Navbar() {
             </div>
           ) : status !== "authenticated" || !user ? (
             <div className="hidden items-center gap-1.5 sm:flex">
-              <ThemeToggle className="mr-1" />
               <NavLink to="/login" className={buttonClass("ghost", "sm", focusRing)}><LogIn className="h-4 w-4" aria-hidden="true" />Log in</NavLink>
               <NavLink to="/register" className={buttonClass("primary", "sm", focusRing)}><UserPlus className="h-4 w-4" aria-hidden="true" />Sign up</NavLink>
             </div>

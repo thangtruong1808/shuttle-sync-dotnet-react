@@ -11,6 +11,9 @@ database/
 # scripts
 scripts/
 
+#docs
+docs/
+
 #documentation
 documentation/
 

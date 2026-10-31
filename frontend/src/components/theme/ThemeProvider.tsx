@@ -12,7 +12,7 @@ type ThemeState = {
 
 const ThemeContext = createContext<ThemeState>({
   theme: "system",
-  resolved: "dark",
+  resolved: "light",
   setTheme: () => undefined,
 });
 
@@ -30,7 +30,8 @@ function readChoice(): ThemeChoice {
 }
 
 function systemTheme(): "light" | "dark" {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  const hour = new Date().getHours();
+  return hour >= 6 && hour < 18 ? "light" : "dark";
 }
 
 function apply(resolved: "light" | "dark") {
@@ -46,10 +47,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const resolved = theme === "system" ? system : theme;
 
   useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => setSystem(media.matches ? "dark" : "light");
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
+    const sync = () => setSystem(systemTheme());
+    sync();
+    const timer = window.setInterval(sync, 60_000);
+    window.addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
   }, []);
 
   useEffect(() => {
