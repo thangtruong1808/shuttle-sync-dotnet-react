@@ -163,6 +163,121 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return rows.ToArray();
     }
 
+    public async Task<DashCourtRow?> FindCourtAsync(Guid venueId, Guid courtId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        return await connection.QuerySingleOrDefaultAsync<DashCourtRow>(new CommandDefinition(
+            """
+            SELECT Id, VenueId, CourtName, CourtNumber, Description, SurfaceType, ImageUrl, IsActive
+            FROM Courts
+            WHERE Id = @CourtId AND VenueId = @VenueId AND IsDeleted = 0
+            """,
+            new { CourtId = courtId, VenueId = venueId }, cancellationToken: cancellationToken));
+    }
+
+    public async Task<DashCourtAiSignatureRow[]> ListExistingCourtAiSignaturesAsync(Guid excludeCourtId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        try
+        {
+            var rows = await connection.QueryAsync<DashCourtAiSignatureRow>(new CommandDefinition(
+                """
+                SELECT Id, CourtName, CourtNumber, AiImageHash, AiImagePrompt, ImageUrl
+                FROM Courts
+                WHERE Id <> @CourtId AND IsDeleted = 0
+                """,
+                new { CourtId = excludeCourtId }, cancellationToken: cancellationToken));
+            return rows.ToArray();
+        }
+        catch (MySqlException exception) when (exception.Number == 1054)
+        {
+            var rows = await connection.QueryAsync<DashCourtAiSignatureRow>(new CommandDefinition(
+                """
+                SELECT Id, CourtName, CourtNumber, NULL AS AiImageHash, NULL AS AiImagePrompt, ImageUrl
+                FROM Courts
+                WHERE Id <> @CourtId AND IsDeleted = 0
+                """,
+                new { CourtId = excludeCourtId }, cancellationToken: cancellationToken));
+            return rows.ToArray();
+        }
+    }
+
+    public async Task<string?> SaveCourtAiImageAsync(
+        Guid venueId,
+        Guid courtId,
+        string imageUrl,
+        string publicId,
+        string imageHash,
+        string prompt,
+        Guid actorId,
+        string? ip,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        int changed;
+        try
+        {
+            changed = await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Courts
+                SET ImageUrl = @ImageUrl,
+                    AiImagePublicId = @PublicId,
+                    AiImageHash = @ImageHash,
+                    AiImagePrompt = @Prompt,
+                    AiImageGeneratedAt = UTC_TIMESTAMP(6),
+                    UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @CourtId AND VenueId = @VenueId AND IsDeleted = 0
+                """,
+                new
+                {
+                    CourtId = courtId,
+                    VenueId = venueId,
+                    ImageUrl = imageUrl,
+                    PublicId = publicId,
+                    ImageHash = imageHash,
+                    Prompt = prompt.Length > 1000 ? prompt[..1000] : prompt,
+                },
+                tx,
+                cancellationToken: cancellationToken));
+        }
+        catch (MySqlException exception) when (exception.Number == 1062)
+        {
+            return "A duplicate court AI image was detected. Please try generating again.";
+        }
+        catch (MySqlException exception) when (exception.Number == 1054)
+        {
+            changed = await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Courts
+                SET ImageUrl = @ImageUrl, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @CourtId AND VenueId = @VenueId AND IsDeleted = 0
+                """,
+                new { CourtId = courtId, VenueId = venueId, ImageUrl = imageUrl },
+                tx,
+                cancellationToken: cancellationToken));
+        }
+
+        if (changed == 0)
+        {
+            return "That court was not found.";
+        }
+
+        await AuditAsync(
+            connection,
+            tx,
+            actorId,
+            venueId,
+            "ai-image",
+            "Court",
+            courtId,
+            new { imageUrl, publicId, imageHash, prompt },
+            ip,
+            cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return null;
+    }
+
     public async Task<string?> SaveCourtAsync(DashCourtWrite write, bool creating, Guid actorId, string? ip, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -2304,6 +2419,16 @@ public sealed class DashRateWindowRow
 }
 
 public sealed record DashCourtWrite(Guid Id, Guid VenueId, string CourtName, int CourtNumber, string? Description, string? SurfaceType, string? ImageUrl, bool IsActive);
+
+public sealed class DashCourtAiSignatureRow
+{
+    public Guid Id { get; init; }
+    public string CourtName { get; init; } = "";
+    public int CourtNumber { get; init; }
+    public string? AiImageHash { get; init; }
+    public string? AiImagePrompt { get; init; }
+    public string? ImageUrl { get; init; }
+}
 
 public sealed class DashCourtRow
 {

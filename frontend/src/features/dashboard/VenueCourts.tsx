@@ -5,6 +5,7 @@ import { Check, control, Field, Notice, Success, useBusy } from "./dashboardUi";
 import {
   DashError,
   deleteCourt,
+  generateCourtAiImage,
   listCourts,
   saveCourt,
   uploadDashboardImage,
@@ -200,6 +201,25 @@ function CourtRow({ venueId, court, onChanged }: { venueId: string; court: DashC
           }}
         >
           Save
+        </Button>
+        <Button
+          variant="secondary"
+          loading={busy === "ai"}
+          disabled={busy !== null && busy !== "ai"}
+          onClick={() => {
+            setMessage(null);
+            void run("ai", async () => {
+              try {
+                const generated = await generateCourtAiImage(venueId, court.id);
+                setForm((current) => ({ ...current, imageUrl: generated.url }));
+                onChanged("AI court photo generated and saved to Cloudinary (shuttle-sync/court-ai).");
+              } catch (reason) {
+                setMessage(reason instanceof DashError ? reason.message : "The AI court photo could not be generated.");
+              }
+            });
+          }}
+        >
+          {court.imageUrl ? "Regenerate AI photo" : "Generate AI photo"}
         </Button>
         {confirming ? (
           <>

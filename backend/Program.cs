@@ -39,6 +39,7 @@ builder.Services.AddSingleton(stripeSettings);
 builder.Services.AddSingleton(geminiSettings);
 builder.Services.AddSingleton<SupportChatLimiter>();
 builder.Services.AddSingleton<CloudinaryImages>();
+builder.Services.AddSingleton<CourtAiImageGenerator>();
 builder.Services.AddSingleton<AccessTokens>();
 builder.Services.AddSingleton<AuthRateLimiter>();
 builder.Services.AddSingleton<PasswordHasher<UserRow>>();

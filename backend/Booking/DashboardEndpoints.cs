@@ -18,6 +18,7 @@ public static class DashboardEndpoints
         dash.MapGet("/venues/{venueId:guid}/courts", ListCourtsAsync);
         dash.MapPost("/venues/{venueId:guid}/courts", CreateCourtAsync);
         dash.MapPut("/venues/{venueId:guid}/courts/{courtId:guid}", UpdateCourtAsync);
+        dash.MapPost("/venues/{venueId:guid}/courts/{courtId:guid}/ai-image", GenerateCourtAiImageAsync);
         dash.MapDelete("/venues/{venueId:guid}/courts/{courtId:guid}", DeleteCourtAsync);
         dash.MapGet("/venues/{venueId:guid}/sessions", ListSessionsAsync);
         dash.MapPost("/venues/{venueId:guid}/sessions", CreateSessionsAsync);
@@ -167,6 +168,58 @@ public static class DashboardEndpoints
         if (!TryCourt(body, courtId, venueId, out var write, out var error)) return Form(error);
         error = await repo.SaveCourtAsync(write, false, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
+    }
+
+    private static async Task<IResult> GenerateCourtAiImageAsync(
+        Guid venueId,
+        Guid courtId,
+        HttpContext http,
+        AuthRepository auth,
+        DashboardRepository repo,
+        CourtAiImageGenerator aiImages,
+        CancellationToken cancellationToken)
+    {
+        var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
+        if (gate.Error is not null) return gate.Error;
+        var venue = await repo.FindVenueAsync(venueId, cancellationToken);
+        if (venue is null) return Missing();
+        var court = await repo.FindCourtAsync(venueId, courtId, cancellationToken);
+        if (court is null) return Missing();
+
+        var existing = await repo.ListExistingCourtAiSignaturesAsync(courtId, cancellationToken);
+        var (generated, genError, status) = await aiImages.GenerateAndUploadAsync(
+            venue.Name,
+            court,
+            existing,
+            cancellationToken);
+        if (genError is not null || generated is null)
+        {
+            return Form(genError ?? "Could not generate an AI court photo.", status);
+        }
+
+        var saveError = await repo.SaveCourtAiImageAsync(
+            venueId,
+            courtId,
+            generated.ImageUrl,
+            generated.PublicId,
+            generated.ImageHash,
+            generated.Prompt,
+            gate.Actor!.UserId,
+            gate.Actor.Ip,
+            cancellationToken);
+        if (saveError is not null)
+        {
+            return Form(saveError);
+        }
+
+        return Results.Ok(new
+        {
+            url = generated.ImageUrl,
+            folder = $"shuttle-sync/{CourtAiImageGenerator.CloudFolder}",
+            publicId = generated.PublicId,
+            hash = generated.ImageHash,
+            prompt = generated.Prompt,
+        });
     }
 
     private static async Task<IResult> DeleteCourtAsync(Guid venueId, Guid courtId, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)

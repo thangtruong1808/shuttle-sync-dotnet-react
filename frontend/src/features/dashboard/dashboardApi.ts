@@ -259,6 +259,20 @@ export function deleteCourt(venueId: string, courtId: string): Promise<void> {
   return send(`/api/dashboard/venues/${venueId}/courts/${courtId}`, "DELETE");
 }
 
+export async function generateCourtAiImage(
+  venueId: string,
+  courtId: string,
+): Promise<{ url: string; folder: string; publicId: string; hash: string; prompt: string }> {
+  const response = await apiFetch(`/api/dashboard/venues/${venueId}/courts/${courtId}/ai-image`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    return fail(response);
+  }
+  return (await response.json()) as { url: string; folder: string; publicId: string; hash: string; prompt: string };
+}
+
 export function listSocials(venueId: string): Promise<DashSocial[]> {
   return read(`/api/dashboard/venues/${venueId}/socials?upcoming=true`);
 }

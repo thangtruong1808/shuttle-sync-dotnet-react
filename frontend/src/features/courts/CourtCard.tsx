@@ -27,8 +27,8 @@ export function CourtCard({
       <CourtImage src={imageUrl} alt={`${name} court`} />
       <div className="mt-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <Title className="truncate font-display text-xl text-fg">{name}</Title>
-          <p className="text-sm text-fg-muted">Court {number}</p>
+          <Title className="truncate font-display text-xl text-fg">{name || `Court ${number}`}</Title>
+
         </div>
         {surface ? <Badge>{surface}</Badge> : null}
       </div>
