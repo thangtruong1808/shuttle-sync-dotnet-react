@@ -1,5 +1,50 @@
 import { formatVenueDateTime } from "../../components/format";
-import type { CourtWeekCourt } from "./profileApi";
+import type { CancelResult, CourtWeekCourt } from "./profileApi";
+
+export function cancelNotice(result: CancelResult) {
+  const money = new Intl.NumberFormat("en-AU", { style: "currency", currency: result.currency }).format(result.refundAmount);
+  const parts = [`Cancelled. Refund amount: ${money}.`];
+  if (result.feePercent > 0) {
+    parts.push(`A ${Number(result.feePercent.toFixed(2))}% late fee was kept.`);
+  }
+  if (result.pointsRestored > 0) {
+    parts.push(`${result.pointsRestored} points were returned.`);
+  }
+  return parts.join(" ");
+}
+
+export function startsIn(iso: string) {
+  const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60_000);
+  if (minutes <= 0) return "Starting now";
+  if (minutes < 60) return `Starts in ${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `Starts in ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  const days = Math.round(hours / 24);
+  return `Starts in ${days} ${days === 1 ? "day" : "days"}`;
+}
+
+export function duration(start: string, end: string) {
+  const minutes = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60_000));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest} min`;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+}
+
+export function venueFields(iso: string, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timeZone || "Australia/Melbourne",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+  const hour = part("hour") === "24" ? "00" : part("hour").padStart(2, "0");
+  return { date: `${part("year")}-${part("month")}-${part("day")}`, time: `${hour}:${part("minute").padStart(2, "0")}` };
+}
 
 export const holdFilters = [
   { id: "all", label: "All" },

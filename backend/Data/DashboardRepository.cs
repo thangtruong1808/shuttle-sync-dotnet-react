@@ -887,9 +887,9 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return null;
     }
 
-    public async Task<DashPage<DashPromoRow>> ListPromotionsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowedVenues, bool admin, int page, CancellationToken cancellationToken)
+    public async Task<DashPage<DashPromoRow>> ListPromotionsAsync(Guid? venueId, IReadOnlyCollection<Guid> allowedVenues, bool admin, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var (pageNumber, size, skip) = PageOf(page);
+        var (pageNumber, size, skip) = PageOf(page, pageSize);
         if (!admin && (allowedVenues.Count == 0 || (venueId is not null && !allowedVenues.Contains(venueId.Value))))
         {
             return new DashPage<DashPromoRow>([], pageNumber, size, 0);
@@ -934,12 +934,22 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return rows.ToArray();
     }
 
-    public async Task<string?> SavePromotionAsync(DashPromoWrite write, bool creating, Guid actorId, string? ip, CancellationToken cancellationToken)
+    public async Task<string?> SavePromotionAsync(DashPromoWrite write, bool creating, Guid actorId, string actorRole, string? ip, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
+            if (write.VenueId is null && actorRole != "admin")
+            {
+                return "Only an admin can manage global promotion codes.";
+            }
+
+            if (write.VenueId is Guid targetVenueId && !await CanAccessVenueInTxAsync(connection, tx, actorId, actorRole, targetVenueId, cancellationToken))
+            {
+                return "That venue was not found.";
+            }
+
             if (creating)
             {
                 await connection.ExecuteAsync(new CommandDefinition(
@@ -953,6 +963,30 @@ public sealed class DashboardRepository(IConfiguration configuration)
             }
             else
             {
+                var existing = await connection.QuerySingleOrDefaultAsync<DashPromoRow>(new CommandDefinition(
+                    """
+                    SELECT Id, VenueId, Code, DiscountType, DiscountValue, MaxUses, UsedCount, MaxUsesPerUser,
+                           ValidFrom, ValidTo, IsActive
+                    FROM PromotionCodes
+                    WHERE Id = @Id
+                    FOR UPDATE
+                    """,
+                    new { write.Id }, tx, cancellationToken: cancellationToken));
+                if (existing is null)
+                {
+                    return "That promotion was not found.";
+                }
+
+                if (existing.VenueId is null && actorRole != "admin")
+                {
+                    return "Only an admin can change a global promotion code.";
+                }
+
+                if (existing.VenueId is Guid currentVenueId && !await CanAccessVenueInTxAsync(connection, tx, actorId, actorRole, currentVenueId, cancellationToken))
+                {
+                    return "Only an admin or assigned staff can change this promotion code.";
+                }
+
                 var changed = await connection.ExecuteAsync(new CommandDefinition(
                     """
                     UPDATE PromotionCodes
@@ -978,23 +1012,34 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return null;
     }
 
-    public async Task<string?> DeletePromotionAsync(Guid id, Guid actorId, string? ip, CancellationToken cancellationToken)
+    public async Task<string?> DeletePromotionAsync(Guid id, Guid actorId, string actorRole, string? ip, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         var row = await connection.QuerySingleOrDefaultAsync<DashPromoRow>(new CommandDefinition(
             """
             SELECT Id, VenueId, Code, DiscountType, DiscountValue, MaxUses, UsedCount, MaxUsesPerUser,
                    ValidFrom, ValidTo, IsActive
             FROM PromotionCodes
             WHERE Id = @Id
+            FOR UPDATE
             """,
-            new { Id = id }, cancellationToken: cancellationToken));
+            new { Id = id }, tx, cancellationToken: cancellationToken));
         if (row is null)
         {
             return "That promotion was not found.";
         }
 
-        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        if (row.VenueId is null && actorRole != "admin")
+        {
+            return "Only an admin can delete a global promotion code.";
+        }
+
+        if (row.VenueId is Guid currentVenueId && !await CanAccessVenueInTxAsync(connection, tx, actorId, actorRole, currentVenueId, cancellationToken))
+        {
+            return "Only an admin or assigned staff can delete this promotion code.";
+        }
+
         try
         {
             var changed = await connection.ExecuteAsync(new CommandDefinition(
@@ -1013,6 +1058,28 @@ public sealed class DashboardRepository(IConfiguration configuration)
         await AuditAsync(connection, tx, actorId, row.VenueId, "delete", "PromotionCode", id, new { id, row.Code }, ip, cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return null;
+    }
+
+    private static async Task<bool> CanAccessVenueInTxAsync(MySqlConnection connection, MySqlTransaction tx, Guid userId, string role, Guid venueId, CancellationToken cancellationToken)
+    {
+        var found = await connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                """
+                SELECT COUNT(*)
+                FROM Venues v
+                WHERE v.Id = @VenueId AND v.IsDeleted = 0
+                  AND (
+                    @Role = 'admin'
+                    OR EXISTS (
+                      SELECT 1 FROM UserVenues uv
+                      WHERE uv.UserId = @UserId AND uv.VenueId = v.Id
+                    )
+                  )
+                """,
+                new { UserId = userId, Role = role, VenueId = venueId },
+                tx,
+                cancellationToken: cancellationToken));
+        return found > 0;
     }
 
     public async Task<DashPage<DashUserRow>> ListUsersAsync(string? query, int page, int pageSize, CancellationToken cancellationToken)
@@ -1560,35 +1627,51 @@ public sealed class DashboardRepository(IConfiguration configuration)
         }
 
         var venueClause = admin
-            ? "(@VenueId IS NULL OR b.VenueId = @VenueId)"
-            : "b.VenueId IN @Allowed AND (@VenueId IS NULL OR b.VenueId = @VenueId)";
+            ? "(@VenueId IS NULL OR combined.VenueId = @VenueId)"
+            : "combined.VenueId IN @Allowed AND (@VenueId IS NULL OR combined.VenueId = @VenueId)";
+        var unionSql = """
+            (
+                SELECT r.Id, r.PromotionCodeId, r.UserId, b.VenueId, r.DiscountAmount, r.CreatedAt
+                FROM PromotionRedemptions r
+                JOIN Bookings b ON b.Id = r.BookingId
+                UNION ALL
+                SELECT MIN(sr.Id) AS Id, sr.PromotionCodeId, sr.UserId, sr.VenueId, SUM(sr.DiscountAmount) AS DiscountAmount, MIN(sr.CreatedAt) AS CreatedAt
+                FROM PublicSocialRegistrations sr
+                WHERE sr.PromotionCodeId IS NOT NULL AND sr.DiscountAmount > 0 AND sr.Status IN ('pending', 'confirmed', 'waitlist', 'completed')
+                GROUP BY COALESCE(sr.CheckoutGroupId, sr.Id), sr.PromotionCodeId, sr.UserId, sr.VenueId
+                UNION ALL
+                SELECT MIN(sf.Id) AS Id, sf.PromotionCodeId, sr.UserId, sf.VenueId, SUM(sf.DiscountAmount) AS DiscountAmount, MIN(sf.CreatedAt) AS CreatedAt
+                FROM PublicSocialFriends sf
+                JOIN PublicSocialRegistrations sr ON sr.Id = sf.RegistrationId
+                WHERE sf.PromotionCodeId IS NOT NULL AND sf.DiscountAmount > 0 AND sf.Status IN ('pending', 'confirmed', 'waitlist', 'completed')
+                GROUP BY COALESCE(sf.CheckoutGroupId, sf.Id), sf.PromotionCodeId, sr.UserId, sf.VenueId
+            ) combined
+            """;
         await using var connection = await OpenAsync(cancellationToken);
         var total = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
             $"""
-            SELECT COUNT(*) FROM PromotionRedemptions r
-            JOIN Bookings b ON b.Id = r.BookingId
+            SELECT COUNT(*) FROM {unionSql}
             WHERE {venueClause}
             """,
             new { VenueId = venueId, Allowed = allowed }, cancellationToken: cancellationToken));
         var rows = await connection.QueryAsync<DashRedemptionRow>(new CommandDefinition(
             $"""
-            SELECT r.Id, p.Code, u.Email AS UserEmail, v.Name AS VenueName, r.DiscountAmount, r.CreatedAt
-            FROM PromotionRedemptions r
-            JOIN PromotionCodes p ON p.Id = r.PromotionCodeId
-            JOIN Users u ON u.Id = r.UserId
-            JOIN Bookings b ON b.Id = r.BookingId
-            JOIN Venues v ON v.Id = b.VenueId
+            SELECT combined.Id, p.Code, u.Email AS UserEmail, v.Name AS VenueName, combined.DiscountAmount, combined.CreatedAt
+            FROM {unionSql}
+            JOIN PromotionCodes p ON p.Id = combined.PromotionCodeId
+            JOIN Users u ON u.Id = combined.UserId
+            JOIN Venues v ON v.Id = combined.VenueId
             WHERE {venueClause}
-            ORDER BY r.CreatedAt DESC
+            ORDER BY combined.CreatedAt DESC
             LIMIT @Take OFFSET @Skip
             """,
             new { VenueId = venueId, Allowed = allowed, Take = size, Skip = skip }, cancellationToken: cancellationToken));
         return new DashPage<DashRedemptionRow>(rows.ToArray(), pageNumber, size, total);
     }
 
-    public async Task<DashPage<DashRecommendationRow>> ListRecommendationsAsync(bool admin, IReadOnlyCollection<Guid> allowed, int page, CancellationToken cancellationToken)
+    public async Task<DashPage<DashRecommendationRow>> ListRecommendationsAsync(bool admin, IReadOnlyCollection<Guid> allowed, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var (pageNumber, size, skip) = PageOf(page);
+        var (pageNumber, size, skip) = PageOf(page, pageSize);
         if (!admin && allowed.Count == 0)
         {
             return new DashPage<DashRecommendationRow>([], pageNumber, size, 0);

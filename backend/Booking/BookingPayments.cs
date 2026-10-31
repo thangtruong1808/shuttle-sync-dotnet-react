@@ -901,26 +901,33 @@ public sealed class BookingPayments(
         return false;
     }
 
-    private static async Task CancelIntentsAsync(IReadOnlyList<string> intentIds, CancellationToken cancellationToken)
+    private async Task CancelIntentsAsync(IReadOnlyList<string> intentIds, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(StripeConfiguration.ApiKey))
+        if (!settings.IsConfigured || intentIds.Count == 0)
         {
             return;
         }
 
+        StripeConfiguration.ApiKey = settings.SecretKey;
+        var requestOptions = new RequestOptions { ApiKey = settings.SecretKey };
         var service = new PaymentIntentService();
         var sessions = new SessionService();
         foreach (var intentId in intentIds)
         {
+            if (string.IsNullOrWhiteSpace(intentId))
+            {
+                continue;
+            }
+
             try
             {
                 if (intentId.StartsWith("cs_", StringComparison.Ordinal))
                 {
-                    await sessions.ExpireAsync(intentId, cancellationToken: cancellationToken);
+                    await sessions.ExpireAsync(intentId, requestOptions: requestOptions, cancellationToken: cancellationToken);
                 }
                 else
                 {
-                    await service.CancelAsync(intentId, cancellationToken: cancellationToken);
+                    await service.CancelAsync(intentId, requestOptions: requestOptions, cancellationToken: cancellationToken);
                 }
             }
             catch (StripeException)

@@ -30,6 +30,7 @@ export function RewardsPage() {
             <p>Book a court or register for a public social that starts inside those dates. The pay page tells you how many points that session will add.</p>
             <p>Each confirmed friend earns the same points after the social ends. Three friends at +10 pts add 30 pts, on top of your own place.</p>
             <p>A weekly social earns points again only after that week's session ends, and only while the date is still inside the incentive.</p>
+            <p>Venue staff and admins can also award recommendation bonus points directly to your balance for community contributions and fair play.</p>
           </GuideCard>
           <GuideCard title="How you spend points">
             <p>On the pay page, choose 25%, 50%, 75%, or 100% of the points that fit the price, or move the slider.</p>

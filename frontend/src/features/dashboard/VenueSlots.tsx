@@ -12,8 +12,8 @@ import {
   listCourts,
   type DashSocial,
 } from "./dashboardApi";
-export function Slots({ venueId, currency }: { venueId: string; currency: string }) {
-  const [date, setDate] = useState(today);
+export function Slots({ venueId, currency, timeZone }: { venueId: string; currency: string; timeZone?: string }) {
+  const [date, setDate] = useState(() => today(timeZone));
   const [rows, setRows] = useState<DashSocial[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -28,7 +28,7 @@ export function Slots({ venueId, currency }: { venueId: string; currency: string
     let active = true;
     listSocials(venueId)
       .then((socials) => {
-        if (active) setRows(socials);
+        if (active) { setRows(socials); setError(null); }
       })
       .catch((reason: unknown) => {
         if (active) setError(reason instanceof DashError ? reason.message : "Social times could not be loaded.");

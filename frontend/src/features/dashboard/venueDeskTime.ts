@@ -1,7 +1,7 @@
 export const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-export function today(): string {
-  return new Date().toISOString().slice(0, 10);
+export function today(timeZone = "Australia/Melbourne"): string {
+  return venueLocalDate(new Date().toISOString(), timeZone);
 }
 
 export function venueLocalDate(iso: string, timeZone: string): string {

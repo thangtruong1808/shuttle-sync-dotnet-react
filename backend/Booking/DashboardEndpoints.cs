@@ -456,13 +456,13 @@ public static class DashboardEndpoints
         return error is null ? Results.NoContent() : Form(error);
     }
 
-    private static async Task<IResult> ListPromotionsAsync(Guid? venueId, int? page, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> ListPromotionsAsync(Guid? venueId, int? page, int? pageSize, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
         if (!actor.IsStaff) return Forbidden();
         var allowed = actor.IsAdmin ? [] : await repo.AssignedVenueIdsAsync(actor.UserId, cancellationToken);
-        var result = await repo.ListPromotionsAsync(venueId, allowed, actor.IsAdmin, page ?? 1, cancellationToken);
+        var result = await repo.ListPromotionsAsync(venueId, allowed, actor.IsAdmin, page ?? 1, pageSize ?? 10, cancellationToken);
         return Results.Ok(new
         {
             items = result.Items.Select(row => new
@@ -489,10 +489,11 @@ public static class DashboardEndpoints
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
+        if (!actor.IsStaff) return Forbidden();
         if (body.VenueId is null && !actor.IsAdmin) return Forbidden();
         if (body.VenueId is not null && !await repo.CanAccessVenueAsync(actor.UserId, actor.Role, body.VenueId.Value, cancellationToken)) return Missing();
         if (!TryPromo(body, Guid.NewGuid(), out var write, out var error)) return Form(error);
-        error = await repo.SavePromotionAsync(write, true, actor.UserId, actor.Ip, cancellationToken);
+        error = await repo.SavePromotionAsync(write, true, actor.UserId, actor.Role, actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
     }
 
@@ -500,19 +501,21 @@ public static class DashboardEndpoints
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
-        if (!actor.IsAdmin) return Form("Only an admin can change a promotion code.", StatusCodes.Status403Forbidden);
+        if (!actor.IsStaff) return Forbidden();
+        if (body.VenueId is null && !actor.IsAdmin) return Form("Only an admin can change a global promotion code.", StatusCodes.Status403Forbidden);
+        if (body.VenueId is not null && !await repo.CanAccessVenueAsync(actor.UserId, actor.Role, body.VenueId.Value, cancellationToken)) return Missing();
         if (!TryPromo(body, promotionId, out var write, out var error)) return Form(error);
-        error = await repo.SavePromotionAsync(write, false, actor.UserId, actor.Ip, cancellationToken);
-        return error is null ? Results.NoContent() : Form(error);
+        error = await repo.SavePromotionAsync(write, false, actor.UserId, actor.Role, actor.Ip, cancellationToken);
+        return error is null ? Results.NoContent() : Form(error, error.StartsWith("Only an admin", StringComparison.Ordinal) ? StatusCodes.Status403Forbidden : StatusCodes.Status400BadRequest);
     }
 
     private static async Task<IResult> DeletePromotionAsync(Guid promotionId, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
-        if (!actor.IsAdmin) return Form("Only an admin can delete a promotion code.", StatusCodes.Status403Forbidden);
-        var error = await repo.DeletePromotionAsync(promotionId, actor.UserId, actor.Ip, cancellationToken);
-        return error is null ? Results.NoContent() : Form(error);
+        if (!actor.IsStaff) return Forbidden();
+        var error = await repo.DeletePromotionAsync(promotionId, actor.UserId, actor.Role, actor.Ip, cancellationToken);
+        return error is null ? Results.NoContent() : Form(error, error.StartsWith("Only an admin", StringComparison.Ordinal) ? StatusCodes.Status403Forbidden : StatusCodes.Status400BadRequest);
     }
 
     private static async Task<IResult> ListUsersAsync(string? q, int? page, int? pageSize, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
@@ -693,11 +696,11 @@ public static class DashboardEndpoints
         }));
     }
 
-    private static async Task<IResult> ListRecommendationsAsync(int? page, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> ListRecommendationsAsync(int? page, int? pageSize, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var scoped = await Scope(http, auth, repo, cancellationToken);
         if (scoped.Error is not null) return scoped.Error;
-        var result = await repo.ListRecommendationsAsync(scoped.Actor!.IsAdmin, scoped.Allowed, page ?? 1, cancellationToken);
+        var result = await repo.ListRecommendationsAsync(scoped.Actor!.IsAdmin, scoped.Allowed, page ?? 1, pageSize ?? 10, cancellationToken);
         return Results.Ok(Page(result, row => new
         {
             id = row.Id,

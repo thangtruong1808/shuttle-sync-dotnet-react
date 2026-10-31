@@ -8,7 +8,8 @@ import { Button, PageHeader, Skeleton, Spinner, buttonClass } from "../../compon
 import { EmptyState, ErrorState, Money, formatVenueDateTime, formatVenueRange, initials } from "../../components/format";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
-import { cancelBooking, myFriendSpots, renameFriend, type CancelResult, type FriendSpot, type Page } from "./profileApi";
+import { cancelBooking, myFriendSpots, renameFriend, type FriendSpot, type Page } from "./profileApi";
+import { cancelNotice, duration, startsIn } from "./bookingWeek";
 import { ListPager } from "./ProfileLists";
 
 const tabs = [
@@ -18,18 +19,6 @@ const tabs = [
 ] as const;
 
 type Tab = (typeof tabs)[number]["id"];
-
-function cancelNotice(result: CancelResult) {
-  const money = new Intl.NumberFormat("en-AU", { style: "currency", currency: result.currency }).format(result.refundAmount);
-  const parts = [`Cancelled. Refund amount: ${money}.`];
-  if (result.feePercent > 0) {
-    parts.push(`A ${Number(result.feePercent.toFixed(2))}% late fee was kept.`);
-  }
-  if (result.pointsRestored > 0) {
-    parts.push(`${result.pointsRestored} points were returned.`);
-  }
-  return parts.join(" ");
-}
 
 function groupBySocial(items: FriendSpot[]) {
   const groups: FriendSpot[][] = [];
@@ -50,24 +39,6 @@ function spotStatus(status: string, tab: Tab) {
   if (status === "pending") return { label: "Waiting for payment", tone: "bg-amber-400/15 text-amber-700 dark:text-amber-200" };
   if (status === "cancelled") return { label: "Cancelled", tone: "bg-rose-500/15 text-rose-700 dark:text-rose-200" };
   return { label: "Expired", tone: "bg-fg/10 text-fg" };
-}
-
-function startsIn(iso: string) {
-  const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60_000);
-  if (minutes <= 0) return "Starting now";
-  if (minutes < 60) return `Starts in ${minutes} min`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `Starts in ${hours} ${hours === 1 ? "hour" : "hours"}`;
-  const days = Math.round(hours / 24);
-  return `Starts in ${days} ${days === 1 ? "day" : "days"}`;
-}
-
-function duration(start: string, end: string) {
-  const minutes = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60_000));
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours === 0) return `${rest} min`;
-  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
 const emptyCopy: Record<Tab, { title: string; body: string }> = {

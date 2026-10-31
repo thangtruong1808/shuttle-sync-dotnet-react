@@ -9,34 +9,10 @@ import { ConfirmTimeDialog } from "./ConfirmTimeDialog";
 import { ChangeHours } from "./ChangeHours";
 import { CourtReschedule } from "./CourtReschedule";
 import { WeekReason } from "./WeekReason";
-
-function venueFields(iso: string, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timeZone || "Australia/Melbourne",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(iso));
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
-  const hour = part("hour") === "24" ? "00" : part("hour").padStart(2, "0");
-  return { date: `${part("year")}-${part("month")}-${part("day")}`, time: `${hour}:${part("minute").padStart(2, "0")}` };
-}
+import { formatWeekDate, venueFields } from "./bookingWeek";
 
 function requestMessage(reason: unknown, fallback: string) {
   return reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? fallback : fallback;
-}
-
-function formatWeekDate(value: string, timeZone: string) {
-  return new Intl.DateTimeFormat("en-AU", {
-    timeZone: timeZone || "Australia/Melbourne",
-    weekday: "long",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
 }
 
 function WeekTimes({

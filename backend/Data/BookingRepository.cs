@@ -2140,6 +2140,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                 WHERE IsActive = 1
                   AND ValidFrom <= UTC_TIMESTAMP(6)
                   AND ValidTo > UTC_TIMESTAMP(6)
+                  AND (MaxUses IS NULL OR UsedCount < MaxUses)
                   AND (VenueId IS NULL OR VenueId = @VenueId)
                 ORDER BY Code
                 """,
@@ -3194,7 +3195,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         var rows = (await connection.QueryAsync<SocialPointRow>(new CommandDefinition(
             """
-            SELECT Id, UserId, PointsRedeemed
+            SELECT Id, UserId, PointsRedeemed, PromotionCodeId, CheckoutGroupId
             FROM PublicSocialRegistrations
             WHERE Status IN ('pending', 'waitlist')
               AND HoldExpiresAt IS NOT NULL
@@ -3206,6 +3207,18 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         foreach (var row in rows)
         {
             await RestoreSocialPointsAsync(connection, tx, row.UserId, row.PointsRedeemed, cancellationToken);
+        }
+
+        foreach (var promoId in rows
+            .Where(row => row.PromotionCodeId is not null)
+            .GroupBy(row => row.CheckoutGroupId ?? row.Id)
+            .Select(group => group.First().PromotionCodeId!.Value))
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE PromotionCodes SET UsedCount = GREATEST(UsedCount - 1, 0), UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                new { Id = promoId },
+                tx,
+                cancellationToken: cancellationToken));
         }
 
         if (rows.Length > 0)
@@ -3793,7 +3806,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
             return SocialCheckoutHold.Fail("This drop-in social does not have a session price yet.", StatusCodes.Status400BadRequest);
         }
 
-        var (promoId, discount, promoError) = await LockSocialPromotionAsync(connection, tx, venueId, price, promotionCode, cancellationToken);
+        var (promoId, discount, promoError) = await LockSocialPromotionAsync(connection, tx, venueId, userId, price, promotionCode, cancellationToken, existing?.Id, existing?.PromotionCodeId);
         if (promoError is not null)
         {
             return SocialCheckoutHold.Fail(promoError, StatusCodes.Status400BadRequest);
@@ -4171,7 +4184,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
             return SocialCheckoutHold.Fail("This drop-in social does not have a session price yet.", StatusCodes.Status400BadRequest);
         }
 
-        var (promoId, discount, promoError) = await LockSocialPromotionAsync(connection, tx, venueId, price, promotionCode, cancellationToken);
+        var (promoId, discount, promoError) = await LockSocialPromotionAsync(connection, tx, venueId, userId, price, promotionCode, cancellationToken, existing?.Id, existing?.PromotionCodeId);
         if (promoError is not null)
         {
             return SocialCheckoutHold.Fail(promoError, StatusCodes.Status400BadRequest);
@@ -4484,7 +4497,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         }
 
         var subtotal = socials.Sum(social => decimal.Round(social.Price, 2, MidpointRounding.AwayFromZero));
-        var (promoId, discount, promoError) = await LockSocialPromotionAsync(connection, tx, venueId, subtotal, promotionCode, cancellationToken);
+        var (promoId, discount, promoError) = await LockSocialPromotionAsync(connection, tx, venueId, userId, subtotal, promotionCode, cancellationToken);
         if (promoError is not null)
         {
             return SocialCheckoutHold.Fail(promoError, StatusCodes.Status400BadRequest);
@@ -4737,7 +4750,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
 
         var replacedIntent = await ReleasePendingFriendsAsync(connection, tx, registrationId.Value, cancellationToken);
         var subtotal = decimal.Round(price * cleaned.Length, 2, MidpointRounding.AwayFromZero);
-        var (promoId, discount, promoError) = await LockSocialPromotionAsync(connection, tx, venueId, subtotal, promotionCode, cancellationToken);
+        var (promoId, discount, promoError) = await LockSocialPromotionAsync(connection, tx, venueId, userId, subtotal, promotionCode, cancellationToken);
         if (promoError is not null)
         {
             return SocialCheckoutHold.Fail(promoError, StatusCodes.Status400BadRequest);
@@ -5191,7 +5204,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         var held = await connection.QuerySingleOrDefaultAsync<FriendPointRow>(new CommandDefinition(
             """
-            SELECT f.PointsRedeemed, f.CheckoutGroupId, f.Status, COALESCE(p.Amount, 0) AS ChargedAmount
+            SELECT f.PointsRedeemed, f.PromotionCodeId, f.CheckoutGroupId, f.Status, COALESCE(p.Amount, 0) AS ChargedAmount
             FROM PublicSocialFriends f
             JOIN PublicSocialRegistrations r ON r.Id = f.RegistrationId
             JOIN PublicSocials s ON s.Id = f.SocialId
@@ -5247,6 +5260,26 @@ public sealed partial class BookingRepository(IConfiguration configuration)
             if (others > 0 || write.RefundAmount < held.ChargedAmount)
             {
                 paymentStatus = "partially_refunded";
+            }
+        }
+
+        if (held.PromotionCodeId is Guid cancelledFriendPromoId)
+        {
+            var remainingFriends = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                """
+                SELECT COUNT(*) FROM PublicSocialFriends
+                WHERE CheckoutGroupId = @GroupId AND Status IN ('pending', 'confirmed', 'waitlist')
+                """,
+                new { GroupId = held.CheckoutGroupId },
+                tx,
+                cancellationToken: cancellationToken));
+            if (remainingFriends == 0)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE PromotionCodes SET UsedCount = GREATEST(UsedCount - 1, 0), UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                    new { Id = cancelledFriendPromoId },
+                    tx,
+                    cancellationToken: cancellationToken));
             }
         }
 
@@ -5481,7 +5514,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         var rows = (await connection.QueryAsync<SocialPointRow>(new CommandDefinition(
             """
-            SELECT Id, UserId, PointsRedeemed
+            SELECT Id, UserId, PointsRedeemed, PromotionCodeId, CheckoutGroupId
             FROM PublicSocialRegistrations
             WHERE CheckoutGroupId = @GroupId AND Status = 'pending'
             FOR UPDATE
@@ -5492,6 +5525,16 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         foreach (var row in rows)
         {
             await RestoreSocialPointsAsync(connection, tx, row.UserId, row.PointsRedeemed, cancellationToken);
+        }
+
+        var groupPromoId = rows.Select(row => row.PromotionCodeId).FirstOrDefault(id => id is not null);
+        if (groupPromoId is not null)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE PromotionCodes SET UsedCount = GREATEST(UsedCount - 1, 0), UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                new { Id = groupPromoId },
+                tx,
+                cancellationToken: cancellationToken));
         }
 
         if (rows.Length > 0)
@@ -5994,7 +6037,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         var locked = await connection.QuerySingleOrDefaultAsync<CancelLockRow>(new CommandDefinition(
             """
-            SELECT r.SocialId, r.Status, r.PointsRedeemed
+            SELECT r.SocialId, r.Status, r.PointsRedeemed, r.PromotionCodeId, r.CheckoutGroupId
             FROM PublicSocialRegistrations r
             JOIN PublicSocials s ON s.Id = r.SocialId
             WHERE r.Id = @Id AND r.UserId = @UserId
@@ -6081,6 +6124,26 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                     WHERE Id IN @Ids AND Status = 'pending'
                     """,
                     new { Ids = siblings.Select(sibling => sibling.Id).ToArray() },
+                    tx,
+                    cancellationToken: cancellationToken));
+            }
+        }
+
+        if (locked.PromotionCodeId is Guid cancelledPromoId)
+        {
+            var remainingInGroup = groupId is null ? 0 : await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                """
+                SELECT COUNT(*) FROM PublicSocialRegistrations
+                WHERE CheckoutGroupId = @GroupId AND Status IN ('pending', 'confirmed', 'waitlist')
+                """,
+                new { GroupId = groupId },
+                tx,
+                cancellationToken: cancellationToken));
+            if (remainingInGroup == 0)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "UPDATE PromotionCodes SET UsedCount = GREATEST(UsedCount - 1, 0), UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                    new { Id = cancelledPromoId },
                     tx,
                     cancellationToken: cancellationToken));
             }
@@ -6584,9 +6647,12 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         MySqlConnection connection,
         MySqlTransaction tx,
         Guid venueId,
+        Guid userId,
         decimal price,
         string? code,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? existingRegistrationId = null,
+        Guid? existingPromoId = null)
     {
         if (string.IsNullOrWhiteSpace(code))
         {
@@ -6595,7 +6661,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
 
         var promo = await connection.QuerySingleOrDefaultAsync<SocialPromoRow>(new CommandDefinition(
             """
-            SELECT Id, DiscountType, DiscountValue
+            SELECT Id, DiscountType, DiscountValue, MaxUses, UsedCount, MaxUsesPerUser
             FROM PromotionCodes
             WHERE Code = @Code AND IsActive = 1
               AND ValidFrom <= UTC_TIMESTAMP(6) AND ValidTo > UTC_TIMESTAMP(6)
@@ -6608,6 +6674,27 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         if (promo is null)
         {
             return (null, 0, "That promotion code is not valid.");
+        }
+
+        var alreadyHeldByThisRow = existingPromoId == promo.Id;
+        if (!alreadyHeldByThisRow && promo.MaxUses is not null && promo.UsedCount >= promo.MaxUses)
+        {
+            return (null, 0, "That promotion code has been used up.");
+        }
+
+        var userUses = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM PromotionRedemptions WHERE PromotionCodeId = @PromoId AND UserId = @UserId)
+              + (SELECT COUNT(DISTINCT COALESCE(CheckoutGroupId, Id)) FROM PublicSocialRegistrations WHERE PromotionCodeId = @PromoId AND UserId = @UserId AND Status IN ('pending', 'confirmed', 'waitlist') AND (@ExcludeId IS NULL OR Id <> @ExcludeId))
+              + (SELECT COUNT(DISTINCT COALESCE(f.CheckoutGroupId, f.Id)) FROM PublicSocialFriends f JOIN PublicSocialRegistrations r ON r.Id = f.RegistrationId WHERE f.PromotionCodeId = @PromoId AND r.UserId = @UserId AND f.Status IN ('pending', 'confirmed', 'waitlist'))
+            """,
+            new { PromoId = promo.Id, UserId = userId, ExcludeId = existingRegistrationId },
+            tx,
+            cancellationToken: cancellationToken));
+        if (promo.MaxUsesPerUser > 0 && userUses >= promo.MaxUsesPerUser)
+        {
+            return (null, 0, "You have already used this promotion code the maximum number of times.");
         }
 
         var discount = promo.DiscountType == "percent"
@@ -7441,6 +7528,8 @@ public sealed class SocialPointRow
     public Guid Id { get; init; }
     public Guid UserId { get; init; }
     public int PointsRedeemed { get; init; }
+    public Guid? PromotionCodeId { get; init; }
+    public Guid? CheckoutGroupId { get; init; }
 }
 
 public sealed class WeeklySocialRow
@@ -7484,6 +7573,9 @@ public sealed class SocialPromoRow
     public Guid Id { get; init; }
     public string DiscountType { get; init; } = "";
     public decimal DiscountValue { get; init; }
+    public int? MaxUses { get; init; }
+    public int UsedCount { get; init; }
+    public int MaxUsesPerUser { get; init; }
 }
 
 public sealed class SocialPaymentStateRow
@@ -7502,6 +7594,8 @@ public sealed class CancelLockRow
     public Guid SocialId { get; init; }
     public string Status { get; init; } = "";
     public int PointsRedeemed { get; init; }
+    public Guid? PromotionCodeId { get; init; }
+    public Guid? CheckoutGroupId { get; init; }
 }
 
 public sealed class StartedWaitlistRow
@@ -7595,6 +7689,7 @@ public sealed class FriendCancelContext
 public sealed class FriendPointRow
 {
     public int PointsRedeemed { get; init; }
+    public Guid? PromotionCodeId { get; init; }
     public Guid CheckoutGroupId { get; init; }
     public string Status { get; init; } = "";
     public decimal ChargedAmount { get; init; }

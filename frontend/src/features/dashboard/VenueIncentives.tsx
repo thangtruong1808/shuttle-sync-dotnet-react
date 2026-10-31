@@ -12,8 +12,8 @@ import {
   type DashVenueIncentive,
 } from "./dashboardApi";
 
-export function Incentives({ venueId }: { venueId: string }) {
-  const [form, setForm] = useState({ startsOn: today(), endsOn: today(), points: "10", isActive: true });
+export function Incentives({ venueId, timeZone }: { venueId: string; timeZone?: string }) {
+  const [form, setForm] = useState(() => ({ startsOn: today(timeZone), endsOn: today(timeZone), points: "10", isActive: true }));
   const [rows, setRows] = useState<DashVenueIncentive[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);

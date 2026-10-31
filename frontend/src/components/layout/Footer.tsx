@@ -85,10 +85,6 @@ export function Footer() {
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-5 text-sm text-fg-muted sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <p>© {new Date().getFullYear()} Shuttle Sync</p>
           <div className="flex flex-wrap items-center gap-4">
-            <span className="inline-flex gap-4" aria-label="Social">
-              <a className={`inline-flex items-center gap-1.5 hover:text-fg ${focusRing}`} href="https://instagram.com" target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" aria-hidden="true" />Instagram</a>
-              <a className={`inline-flex items-center gap-1.5 hover:text-fg ${focusRing}`} href="https://facebook.com" target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" aria-hidden="true" />Facebook</a>
-            </span>
             <span className="rounded-full border border-border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Powered by Stripe</span>
             <ThemeToggle />
           </div>

@@ -78,11 +78,11 @@ export default function VenueDesk() {
           <div className="mt-6">
             {current === "details" ? <Details venue={venue} admin={admin} onSaved={() => setAttempt((value) => value + 1)} /> : null}
             {current === "courts" ? <Courts venueId={venueId} /> : null}
-            {current === "slots" ? <Slots venueId={venueId} currency={venue.currency} /> : null}
+            {current === "slots" ? <Slots venueId={venueId} currency={venue.currency} timeZone={venue.timeZone} /> : null}
             {current === "rates" && admin ? <Rates venueId={venueId} currency={venue.currency} hourlyRate={venue.hourlyRate} /> : null}
             {current === "rates" && !admin ? <EmptyState title="Admins only" body="Court rates are managed by an admin." /> : null}
-            {current === "closures" ? <Closures venueId={venueId} /> : null}
-            {current === "incentives" && admin ? <Incentives venueId={venueId} /> : null}
+            {current === "closures" ? <Closures venueId={venueId} timeZone={venue.timeZone} /> : null}
+            {current === "incentives" && admin ? <Incentives venueId={venueId} timeZone={venue.timeZone} /> : null}
             {current === "incentives" && !admin ? <EmptyState title="Admins only" body="Reward incentives are managed by an admin." /> : null}
           </div>
         </>

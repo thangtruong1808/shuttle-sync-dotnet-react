@@ -371,22 +371,6 @@ export function startGroupCheckout(slug: string, groupId: string, points: number
   });
 }
 
-export function addHoldCourts(slug: string, groupId: string, start: string, end: string, courtIds: string[]): Promise<{ added: number }> {
-  return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/${groupId}/courts`, "no-store", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ courtIds, start, end }),
-  });
-}
-
-export function openPlayerSession(slug: string, courtId: string, date: string, start: string, end: string): Promise<{ sessionId: string; price: number; currency: string }> {
-  return readJson(`/api/venues/${encodeURIComponent(slug)}/sessions`, "no-store", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ courtId, date, start, end }),
-  });
-}
-
 export function venueSlot(slug: string, sessionId: string): Promise<CourtSlotDetail> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/slots/${sessionId}`);
 }

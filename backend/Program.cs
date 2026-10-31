@@ -19,6 +19,10 @@ var builder = WebApplication.CreateBuilder(args);
 var authSettings = AuthSettings.FromConfiguration(builder.Configuration);
 var cloudinarySettings = CloudinarySettings.FromConfiguration(builder.Configuration);
 var stripeSettings = StripeSettings.FromConfiguration(builder.Configuration);
+if (stripeSettings.IsConfigured)
+{
+    Stripe.StripeConfiguration.ApiKey = stripeSettings.SecretKey;
+}
 var geminiSettings = GeminiSettings.FromConfiguration(builder.Configuration);
 
 var port = Environment.GetEnvironmentVariable("PORT");

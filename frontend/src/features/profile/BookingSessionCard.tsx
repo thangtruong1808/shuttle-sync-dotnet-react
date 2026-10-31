@@ -1,5 +1,6 @@
 import { CalendarDays, ChevronDown, Clock, CreditCard, Gift, MapPin, ShieldCheck, TriangleAlert, Undo2, Users, X } from "lucide-react";
 import { Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
+import { duration, startsIn } from "./bookingWeek";
 import type { BookingRow } from "./profileApi";
 
 export type BookingTab = "upcoming" | "past" | "cancelled";
@@ -21,24 +22,6 @@ function bookingStatus(booking: BookingRow, tab: BookingTab) {
     default:
       return tab === "past" ? { label: "Played", tone: "bg-accent/15 text-accent-text" } : { label: "Confirmed", tone: "bg-accent/15 text-accent-text" };
   }
-}
-
-function startsIn(iso: string) {
-  const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60_000);
-  if (minutes <= 0) return "Starting now";
-  if (minutes < 60) return `Starts in ${minutes} min`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `Starts in ${hours} ${hours === 1 ? "hour" : "hours"}`;
-  const days = Math.round(hours / 24);
-  return `Starts in ${days} ${days === 1 ? "day" : "days"}`;
-}
-
-function duration(start: string, end: string) {
-  const minutes = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60_000));
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours === 0) return `${rest} min`;
-  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
 export function sessionKey(booking: BookingRow) {

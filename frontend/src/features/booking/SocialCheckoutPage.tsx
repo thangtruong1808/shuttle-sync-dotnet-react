@@ -11,24 +11,10 @@ import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { socialOffer, socialRegistration, startSocialBatchCheckout, venuePromotions, type Promotion, type SocialOffer, type SocialRegistration } from "../venues/venueApi";
 import { PaymentResultBanner, paymentOutcomeKind, paymentSettled, useCleanReturnUrl } from "./PaymentResultBanner";
+import { pointsQuote as quote, promoDiscount } from "./bookingMath";
 
 const checkoutKey = "shuttle-sync-social-batch";
 const pointPercents = [25, 50, 75, 100] as const;
-
-function quote(requested: number, balance: number, rate: number, price: number) {
-  const safeRate = rate < 1 ? 100 : rate;
-  const points = Math.min(Math.max(0, Math.floor(requested)), Math.max(balance, 0), price <= 0 ? 0 : Math.floor(price * safeRate));
-  const value = Math.floor((points * 100) / safeRate) / 100;
-  const used = value <= 0 ? 0 : points;
-  const cash = Math.round((price - (value <= 0 ? 0 : value)) * 100) / 100;
-  return { points: used, value: value <= 0 ? 0 : value, cash };
-}
-
-function promoDiscount(price: number, promo: Promotion | null) {
-  if (!promo) return 0;
-  const amount = promo.discountType === "percent" ? Math.round(price * promo.discountValue) / 100 : promo.discountValue;
-  return Math.min(price, Math.max(0, amount));
-}
 
 function percentLabel(value: number) {
   return Number(value.toFixed(2)).toString();

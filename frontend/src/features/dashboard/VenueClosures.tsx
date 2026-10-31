@@ -13,7 +13,7 @@ import {
   type DashClosure,
   type DashCourt,
 } from "./dashboardApi";
-export function Closures({ venueId }: { venueId: string }) {
+export function Closures({ venueId, timeZone }: { venueId: string; timeZone?: string }) {
   const [courts, setCourts] = useState<DashCourt[]>([]);
   const [rows, setRows] = useState<DashClosure[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +21,7 @@ export function Closures({ venueId }: { venueId: string }) {
   const [success, setSuccess] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);
-  const [draft, setDraft] = useState({ courtId: "", date: today(), start: "09:00", end: "18:00", reason: "" });
+  const [draft, setDraft] = useState(() => ({ courtId: "", date: today(timeZone), start: "09:00", end: "18:00", reason: "" }));
   const { busy, run } = useBusy();
 
   useEffect(() => {

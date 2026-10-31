@@ -55,18 +55,6 @@ export type DashSocial = {
   timeZone: string;
 };
 
-export type DashSession = {
-  id: string;
-  courtId: string;
-  courtName: string;
-  courtNumber: number;
-  startTime: string;
-  endTime: string;
-  price: number;
-  incentivePoints: number | null;
-  timeZone: string;
-};
-
 export type DashClosure = {
   id: string;
   courtId: string | null;
@@ -287,22 +275,6 @@ export function deleteSocial(venueId: string, socialId: string): Promise<void> {
   return send(`/api/dashboard/venues/${venueId}/socials/${socialId}`, "DELETE");
 }
 
-export function listSessions(venueId: string, date: string): Promise<DashSession[]> {
-  return read(`/api/dashboard/venues/${venueId}/sessions?date=${encodeURIComponent(date)}`);
-}
-
-export function createSessions(venueId: string, body: { courtId: string; date: string; start: string; end: string; price: number }): Promise<void> {
-  return send(`/api/dashboard/venues/${venueId}/sessions`, "POST", body);
-}
-
-export function updateSession(venueId: string, sessionId: string, body: { courtId: string; date: string; start: string; end: string; price: number }): Promise<void> {
-  return send(`/api/dashboard/venues/${venueId}/sessions/${sessionId}`, "PUT", body);
-}
-
-export function deleteSession(venueId: string, sessionId: string): Promise<void> {
-  return send(`/api/dashboard/venues/${venueId}/sessions/${sessionId}`, "DELETE");
-}
-
 export type DashVenueIncentive = {
   id: string;
   points: number;
@@ -332,14 +304,6 @@ export function updateVenueIncentive(venueId: string, incentiveId: string, body:
 
 export function deleteVenueIncentive(venueId: string, incentiveId: string): Promise<void> {
   return send(`/api/dashboard/venues/${venueId}/incentives/${incentiveId}`, "DELETE");
-}
-
-export function saveIncentive(venueId: string, sessionId: string, points: number, isActive: boolean): Promise<void> {
-  return send(`/api/dashboard/venues/${venueId}/sessions/${sessionId}/incentive`, "PUT", { points, isActive });
-}
-
-export function deleteIncentive(venueId: string, sessionId: string): Promise<void> {
-  return send(`/api/dashboard/venues/${venueId}/sessions/${sessionId}/incentive`, "DELETE");
 }
 
 export type DashRateWindow = {

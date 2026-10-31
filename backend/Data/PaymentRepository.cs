@@ -1145,6 +1145,26 @@ public sealed class PaymentRepository(IConfiguration configuration)
             return (null, 0, "That promotion code is not valid.");
         }
 
+        if (promo.MaxUses is not null && promo.UsedCount >= promo.MaxUses)
+        {
+            return (null, 0, "That promotion code has been used up.");
+        }
+
+        var userUses = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM PromotionRedemptions WHERE PromotionCodeId = @PromoId AND UserId = @UserId)
+              + (SELECT COUNT(DISTINCT COALESCE(CheckoutGroupId, Id)) FROM PublicSocialRegistrations WHERE PromotionCodeId = @PromoId AND UserId = @UserId AND Status IN ('pending', 'confirmed', 'waitlist'))
+              + (SELECT COUNT(DISTINCT COALESCE(f.CheckoutGroupId, f.Id)) FROM PublicSocialFriends f JOIN PublicSocialRegistrations r ON r.Id = f.RegistrationId WHERE f.PromotionCodeId = @PromoId AND r.UserId = @UserId AND f.Status IN ('pending', 'confirmed', 'waitlist'))
+            """,
+            new { PromoId = promo.Id, UserId = userId },
+            tx,
+            cancellationToken: cancellationToken));
+        if (promo.MaxUsesPerUser > 0 && userUses >= promo.MaxUsesPerUser)
+        {
+            return (null, 0, "You have already used this promotion code the maximum number of times.");
+        }
+
         var discount = promo.DiscountType == "percent"
             ? decimal.Round(price * promo.DiscountValue / 100m, 2, MidpointRounding.AwayFromZero)
             : promo.DiscountValue;

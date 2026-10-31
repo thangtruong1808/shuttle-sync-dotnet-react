@@ -8,10 +8,10 @@ import { EmptyState, ErrorState, formatVenueRange } from "../../components/forma
 import { loadCurrentUser } from "../auth/authSlice";
 import { useVenues } from "../../components/layout/SiteLayout";
 import { venueForPage } from "../venues/venueApi";
-import { cancelBooking, myBookings, myCourtWeeks, type BookingRow, type CancelResult, type CourtWeekCourt, type Page } from "./profileApi";
+import { cancelBooking, myBookings, myCourtWeeks, type BookingRow, type CourtWeekCourt, type Page } from "./profileApi";
 import { RecommendationBanner } from "./RecommendationNotice";
 import { ListPager } from "./ProfileLists";
-import { holdFilters, visibleSeries, weekOfYear, type HoldFilter } from "./bookingWeek";
+import { cancelNotice, holdFilters, visibleSeries, weekOfYear, type HoldFilter } from "./bookingWeek";
 import { SeriesCard } from "./BookingSeriesCard";
 import { BookingSummary, SessionGroupCard, sessionGroups, sessionKey } from "./BookingSessionCard";
 
@@ -20,18 +20,6 @@ const tabs = [
   { id: "past", label: "Past" },
   { id: "cancelled", label: "Cancelled" },
 ] as const;
-
-function cancelNotice(result: CancelResult) {
-  const money = new Intl.NumberFormat("en-AU", { style: "currency", currency: result.currency }).format(result.refundAmount);
-  const parts = [`Cancelled. Refund amount: ${money}.`];
-  if (result.feePercent > 0) {
-    parts.push(`A ${Number(result.feePercent.toFixed(2))}% late fee was kept.`);
-  }
-  if (result.pointsRestored > 0) {
-    parts.push(`${result.pointsRestored} points were returned.`);
-  }
-  return parts.join(" ");
-}
 
 export function BookingsSection() {
   const { venues, defaultSlug } = useVenues();

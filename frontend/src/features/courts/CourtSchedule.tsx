@@ -12,13 +12,13 @@ function clock(ms: number): string {
   return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
 }
 
-export function useNow(): number {
+export function useNow(intervalMs = 30_000): number {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [intervalMs]);
 
   return now;
 }
@@ -220,7 +220,7 @@ export function SocialRoster({
 }
 
 export function SessionClock({ start, end }: { start: string; end: string }) {
-  const now = useNow();
+  const now = useNow(1000);
   const startMs = new Date(start).getTime();
   const endMs = new Date(end).getTime();
   if (now >= endMs) {

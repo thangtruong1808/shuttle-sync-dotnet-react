@@ -5,6 +5,7 @@ import { Alert, Button, PickerInput, Spinner, controlClass } from "../../compone
 import { Money } from "../../components/format";
 import { AuthRequestError } from "../auth/authApi";
 import { ConfirmTimeDialog } from "./ConfirmTimeDialog";
+import { venueFields as venueClock } from "./bookingWeek";
 import { applyWeekChange, moveCourtSessions, refreshUnpaidHolds, weekOpenTimes, WeekChangeError, type CourtWeekCourt, type WeekSlot } from "./profileApi";
 
 type PricePrompt = {
@@ -14,21 +15,6 @@ type PricePrompt = {
   difference: number;
   refundAmount: number;
 };
-
-function venueClock(iso: string, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timeZone || "Australia/Melbourne",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(iso));
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
-  const hour = part("hour") === "24" ? "00" : part("hour").padStart(2, "0");
-  return { date: `${part("year")}-${part("month")}-${part("day")}`, time: `${hour}:${part("minute").padStart(2, "0")}` };
-}
 
 function bookedMinutes(start: string, end: string) {
   const minutes = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000);

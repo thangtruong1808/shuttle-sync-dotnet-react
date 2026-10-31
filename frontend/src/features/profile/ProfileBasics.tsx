@@ -2,13 +2,13 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useVenues } from "../../components/layout/SiteLayout";
 import { venueForPage } from "../venues/venueApi";
-import { CalendarDays, Gift, LogOut, Save, Users, Wallet } from "lucide-react";
+import { CalendarDays, Gift, Save, Users, Wallet } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../app/store";
 import { formatVenueDay, formatVenueRange } from "../../components/format";
 import { Alert, Button, Card, Field, Input, PageHeader, Skeleton, Spinner, StatCard } from "../../components/ui";
 import { AuthRequestError, updateProfile, uploadAvatar } from "../auth/authApi";
-import { loadCurrentUser, logout, signedIn } from "../auth/authSlice";
+import { loadCurrentUser, signedIn } from "../auth/authSlice";
 import { myBookings, myCourtWeeks, myRewards, type BookingRow, type CourtWeekCourt } from "./profileApi";
 
 type NextBooking = { venueName: string; place: string; startTime: string; endTime: string; timeZone: string };
@@ -230,25 +230,3 @@ function isPhotoFile(file: File) {
   return name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp");
 }
 
-export function LogoutSection() {
-  const dispatch = useDispatch<AppDispatch>();
-  const [leaving, setLeaving] = useState(false);
-  return (
-    <div>
-      <h1 className="font-display text-3xl text-fg">Log out</h1>
-      <p className="mt-2 text-sm text-fg/70">This signs you out on this device.</p>
-      <Button
-        className="mt-4"
-        variant="danger"
-        icon={<LogOut className="h-4 w-4" aria-hidden="true" />}
-        loading={leaving}
-        onClick={() => {
-          setLeaving(true);
-          void dispatch(logout()).finally(() => setLeaving(false));
-        }}
-      >
-        Log out
-      </Button>
-    </div>
-  );
-}
