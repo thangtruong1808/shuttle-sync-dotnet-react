@@ -11,22 +11,22 @@ public static class OAuthEndpoints
     public static void MapOAuthEndpoints(this WebApplication app)
     {
         var auth = app.MapGroup("/api/auth");
-        auth.MapGet("/google/start", (HttpContext http, AuthSettings settings) =>
-            Start(http, settings, "google", "https://accounts.google.com/o/oauth2/v2/auth", new Dictionary<string, string?>
+        auth.MapGet("/google/start", (HttpContext http, AuthSettings settings, AuthRepository repository, CancellationToken cancellationToken) =>
+            StartAsync(http, settings, repository, "google", "https://accounts.google.com/o/oauth2/v2/auth", new Dictionary<string, string?>
             {
                 ["client_id"] = settings.GoogleClientId,
                 ["redirect_uri"] = settings.GoogleRedirectUri,
                 ["response_type"] = "code",
                 ["scope"] = "openid email profile",
-            }, settings.GoogleClientId, settings.GoogleClientSecret, settings.GoogleRedirectUri, "Google"));
+            }, settings.GoogleClientId, settings.GoogleClientSecret, settings.GoogleRedirectUri, "Google", cancellationToken));
 
-        auth.MapGet("/github/start", (HttpContext http, AuthSettings settings) =>
-            Start(http, settings, "github", "https://github.com/login/oauth/authorize", new Dictionary<string, string?>
+        auth.MapGet("/github/start", (HttpContext http, AuthSettings settings, AuthRepository repository, CancellationToken cancellationToken) =>
+            StartAsync(http, settings, repository, "github", "https://github.com/login/oauth/authorize", new Dictionary<string, string?>
             {
                 ["client_id"] = settings.GitHubClientId,
                 ["redirect_uri"] = settings.GitHubRedirectUri,
                 ["scope"] = "read:user user:email",
-            }, settings.GitHubClientId, settings.GitHubClientSecret, settings.GitHubRedirectUri, "GitHub"));
+            }, settings.GitHubClientId, settings.GitHubClientSecret, settings.GitHubRedirectUri, "GitHub", cancellationToken));
 
         auth.MapGet("/google/callback", (HttpContext http, AuthSettings settings, AuthRepository repository, AccessTokens tokens, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
             CallbackAsync(http, settings, repository, tokens, httpClientFactory, loggerFactory.CreateLogger("OAuth"), "google", cancellationToken));
@@ -35,16 +35,18 @@ public static class OAuthEndpoints
             CallbackAsync(http, settings, repository, tokens, httpClientFactory, loggerFactory.CreateLogger("OAuth"), "github", cancellationToken));
     }
 
-    private static IResult Start(
+    private static async Task<IResult> StartAsync(
         HttpContext http,
         AuthSettings settings,
+        AuthRepository repository,
         string provider,
         string authorizeUrl,
         Dictionary<string, string?> query,
         string clientId,
         string clientSecret,
         string redirectUri,
-        string providerLabel)
+        string providerLabel,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(clientId)
             || string.IsNullOrWhiteSpace(clientSecret)
@@ -59,12 +61,14 @@ public static class OAuthEndpoints
             }, statusCode: StatusCodes.Status500InternalServerError);
         }
 
+        var currentSession = await AuthEndpoints.CurrentSessionAsync(http, repository, cancellationToken);
+        var linkUserPart = currentSession?.UserId.ToString("N") ?? "";
         var state = TokenProtection.CreateToken();
         var verifier = TokenProtection.CreateToken();
         query["state"] = state;
         query["code_challenge"] = TokenProtection.CreateCodeChallenge(verifier);
         query["code_challenge_method"] = "S256";
-        AuthCookies.SetOAuthState(http, settings, $"{provider}.{state}.{verifier}");
+        AuthCookies.SetOAuthState(http, settings, $"{provider}.{state}.{verifier}.{linkUserPart}");
         return Results.Redirect(QueryHelpers.AddQueryString(authorizeUrl, query));
     }
 
@@ -96,7 +100,7 @@ public static class OAuthEndpoints
 
         if (string.IsNullOrWhiteSpace(code)
             || string.IsNullOrWhiteSpace(oauthCookie)
-            || !TryReadState(oauthCookie, provider, state, out var verifier))
+            || !TryReadState(oauthCookie, provider, state, out var verifier, out var linkUserId))
         {
             return RedirectError(settings, "oauth_failed");
         }
@@ -125,7 +129,7 @@ public static class OAuthEndpoints
             return RedirectError(settings, "email_unverified");
         }
 
-        var completion = await CompleteSignInAsync(repository, provider, identity with { Email = email }, cancellationToken);
+        var completion = await CompleteSignInAsync(repository, provider, identity with { Email = email }, linkUserId, cancellationToken);
         if (completion.PasswordAccount)
         {
             return RedirectError(settings, "password_account");
@@ -137,7 +141,7 @@ public static class OAuthEndpoints
         }
 
         await AuthEndpoints.IssueSessionAsync(http, repository, tokens, settings, completion.User, cancellationToken);
-        var destination = $"{settings.FrontendOrigin}/";
+        var destination = linkUserId is not null ? $"{settings.FrontendOrigin}/profile/security" : $"{settings.FrontendOrigin}/";
         var scriptDestination = System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(destination);
         var linkDestination = System.Text.Encodings.Web.HtmlEncoder.Default.Encode(destination);
         return Results.Content(
@@ -161,9 +165,34 @@ public static class OAuthEndpoints
         AuthRepository repository,
         string provider,
         ProviderIdentity identity,
+        Guid? linkUserId,
         CancellationToken cancellationToken)
     {
         var existingLogin = await repository.FindExternalLoginAsync(provider, identity.ProviderUserId, cancellationToken);
+        if (linkUserId is Guid targetUserId)
+        {
+            var currentUser = await repository.FindUserByIdAsync(targetUserId, cancellationToken);
+            if (currentUser is null)
+            {
+                return new SignInCompletion(null, PasswordAccount: false);
+            }
+
+            if (existingLogin is not null)
+            {
+                return existingLogin.UserId == currentUser.Id
+                    ? new SignInCompletion(currentUser, PasswordAccount: false)
+                    : new SignInCompletion(null, PasswordAccount: false);
+            }
+
+            var linkedToCurrent = await repository.LinkExternalLoginAsync(
+                currentUser.Id,
+                provider,
+                identity.ProviderUserId,
+                identity.Email,
+                cancellationToken);
+            return new SignInCompletion(linkedToCurrent ? currentUser : null, PasswordAccount: false);
+        }
+
         if (existingLogin is not null)
         {
             var linkedUser = await repository.FindUserByIdAsync(existingLogin.UserId, cancellationToken);
@@ -206,11 +235,12 @@ public static class OAuthEndpoints
         return new SignInCompletion(createdOk ? created : null, PasswordAccount: false);
     }
 
-    private static bool TryReadState(string cookie, string provider, string state, out string verifier)
+    private static bool TryReadState(string cookie, string provider, string state, out string verifier, out Guid? linkUserId)
     {
         verifier = "";
-        var parts = cookie.Split('.', 3);
-        if (parts.Length != 3 || parts[0] != provider || string.IsNullOrEmpty(parts[1]) || string.IsNullOrEmpty(parts[2]))
+        linkUserId = null;
+        var parts = cookie.Split('.', 4);
+        if (parts.Length < 3 || parts[0] != provider || string.IsNullOrEmpty(parts[1]) || string.IsNullOrEmpty(parts[2]))
         {
             return false;
         }
@@ -221,6 +251,11 @@ public static class OAuthEndpoints
         }
 
         verifier = parts[2];
+        if (parts.Length == 4 && Guid.TryParseExact(parts[3], "N", out var parsedUserId))
+        {
+            linkUserId = parsedUserId;
+        }
+
         return true;
     }
 

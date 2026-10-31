@@ -31,6 +31,20 @@ public sealed class WeekChangeResult
 
 public static class WeekChangeText
 {
+    private static readonly HashSet<string> AllowedCodes = new(StringComparer.Ordinal)
+    {
+        "SLOT_TAKEN",
+        "HELD_FOR_RECURRING",
+        "OUTSIDE_POLICY_WINDOW",
+        "COURT_UNAVAILABLE",
+        "PRICE_INCREASE",
+        "PRICE_DECREASE",
+        "ALL_COURTS_BOOKED",
+    };
+
+    public static bool IsAllowedCode(string? code) =>
+        !string.IsNullOrWhiteSpace(code) && AllowedCodes.Contains(code.Trim());
+
     public static string Template(WeekFacts facts)
     {
         var court = facts.Courts.FirstOrDefault() ?? "That court";
@@ -49,13 +63,46 @@ public static class WeekChangeText
     }
 
     public static WeekFacts Facts(string code, IEnumerable<string> courts, string when, IEnumerable<WeekSlotFact> alternatives, decimal? difference) =>
-        new(code, courts.Where(court => court.Length > 0).Distinct().Take(4).ToArray(), when, alternatives.Take(3).ToArray(), difference);
+        new(
+            CleanText(code, 40),
+            courts
+                .Select(court => CleanText(court, 80))
+                .Where(court => court.Length > 0)
+                .Distinct()
+                .Take(4)
+                .ToArray(),
+            CleanText(when, 80),
+            alternatives
+                .Where(slot => slot is not null)
+                .Select(slot => new WeekSlotFact(
+                    CleanText(slot.Date, 80),
+                    CleanText(slot.Start, 80),
+                    CleanText(slot.End, 80),
+                    CleanText(slot.Label, 80)))
+                .Where(slot => slot.Label.Length > 0)
+                .Take(3)
+                .ToArray(),
+            difference);
+
+    private static string CleanText(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "";
+        }
+
+        var cleaned = new string(value.Trim().Where(ch => !char.IsControl(ch)).ToArray());
+        return cleaned.Length <= maxLength ? cleaned : cleaned[..maxLength];
+    }
 }
 
 public sealed class WeekChangeCopy(IHttpClientFactory httpClientFactory, GeminiSettings settings)
 {
+    private const int MaxCacheEntries = 512;
+    private const int MaxHitKeys = 2048;
     private readonly ConcurrentDictionary<string, string> _cache = new();
-    private readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> _hits = new();
+    private readonly Dictionary<string, Queue<DateTimeOffset>> _hits = new(StringComparer.Ordinal);
+    private readonly Lock _gate = new();
 
     public async Task<(string Message, string Source)> PhraseAsync(Guid userId, WeekFacts facts, CancellationToken cancellationToken)
     {
@@ -91,17 +138,60 @@ public sealed class WeekChangeCopy(IHttpClientFactory httpClientFactory, GeminiS
         }
 
         var clean = text!.Trim().Trim('"');
+        if (_cache.Count >= MaxCacheEntries)
+        {
+            _cache.Clear();
+        }
+
         _cache[key] = clean;
         return (clean, "gemini");
     }
 
     private bool Permit(Guid userId)
     {
+        var key = userId.ToString();
         var now = DateTimeOffset.UtcNow;
-        var hits = _hits.GetOrAdd(userId.ToString(), _ => new Queue<DateTimeOffset>());
-        lock (hits)
+        var cutoff = now.AddMinutes(-1);
+        lock (_gate)
         {
-            while (hits.Count > 0 && hits.Peek() < now.AddMinutes(-1))
+            if (_hits.Count >= MaxHitKeys && !_hits.ContainsKey(key))
+            {
+                var emptyKeys = new List<string>();
+                foreach (var (existingKey, queue) in _hits)
+                {
+                    while (queue.Count > 0 && queue.Peek() < cutoff)
+                    {
+                        queue.Dequeue();
+                    }
+
+                    if (queue.Count == 0)
+                    {
+                        emptyKeys.Add(existingKey);
+                    }
+                }
+
+                foreach (var emptyKey in emptyKeys)
+                {
+                    _hits.Remove(emptyKey);
+                }
+
+                if (_hits.Count >= MaxHitKeys)
+                {
+                    var oldestKey = _hits.Keys.FirstOrDefault();
+                    if (oldestKey is not null)
+                    {
+                        _hits.Remove(oldestKey);
+                    }
+                }
+            }
+
+            if (!_hits.TryGetValue(key, out var hits))
+            {
+                hits = new Queue<DateTimeOffset>();
+                _hits[key] = hits;
+            }
+
+            while (hits.Count > 0 && hits.Peek() < cutoff)
             {
                 hits.Dequeue();
             }

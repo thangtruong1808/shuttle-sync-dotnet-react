@@ -504,22 +504,8 @@ public sealed class AuthRepository(IConfiguration configuration)
                 cancellationToken: cancellationToken));
     }
 
-    private async Task<MySqlConnection> OpenAsync(CancellationToken cancellationToken)
-    {
-        var connectionString = configuration.GetConnectionString("Default");
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new InvalidOperationException("The MySQL connection string is not configured.");
-        }
-
-        var builder = new MySqlConnectionStringBuilder(connectionString)
-        {
-            GuidFormat = MySqlGuidFormat.Char36,
-        };
-        var connection = new MySqlConnection(builder.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        return connection;
-    }
+    private Task<MySqlConnection> OpenAsync(CancellationToken cancellationToken) =>
+        DbConnectionFactory.OpenAsync(configuration, cancellationToken);
 
     private const string InsertSessionSql =
         """

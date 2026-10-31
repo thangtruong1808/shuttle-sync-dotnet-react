@@ -25,10 +25,20 @@ public sealed class LenientNullableDecimalConverter : JsonConverter<decimal?>
                 return null;
             }
 
-            return decimal.Parse(text, CultureInfo.InvariantCulture);
+            if (decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+
+            throw new JsonException("Invalid decimal value.");
         }
 
-        return reader.GetDecimal();
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetDecimal(out var number))
+        {
+            return number;
+        }
+
+        throw new JsonException("Invalid decimal value.");
     }
 
     public override void Write(Utf8JsonWriter writer, decimal? value, JsonSerializerOptions options)
@@ -63,10 +73,20 @@ public sealed class LenientNullableIntConverter : JsonConverter<int?>
                 return null;
             }
 
-            return int.Parse(text, CultureInfo.InvariantCulture);
+            if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+
+            throw new JsonException("Invalid integer value.");
         }
 
-        return reader.GetInt32();
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var number))
+        {
+            return number;
+        }
+
+        throw new JsonException("Invalid integer value.");
     }
 
     public override void Write(Utf8JsonWriter writer, int? value, JsonSerializerOptions options)

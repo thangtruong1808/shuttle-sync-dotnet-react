@@ -29,8 +29,6 @@ public static class AuthEndpoints
         signedIn.MapPost("/logout", LogoutAsync);
         signedIn.MapPost("/logout-others", LogoutOthersAsync);
         signedIn.MapPost("/logout-all", LogoutAllAsync);
-
-        auth.MapGet("/avatars/{fileName}", AvatarFile);
     }
 
     private static async Task<IResult> RegisterAsync(
@@ -41,16 +39,16 @@ public static class AuthEndpoints
         AuthRateLimiter rateLimiter,
         CancellationToken cancellationToken)
     {
-        var errors = CredentialRules.Validate(request.Email, request.Password);
-        if (errors.Count > 0)
-        {
-            return Validation(errors);
-        }
-
         var email = CredentialRules.NormalizeEmail(request.Email);
         if (!rateLimiter.Permit(ClientIp(http), email))
         {
             return TooManyAttempts();
+        }
+
+        var errors = CredentialRules.Validate(request.Email, request.Password);
+        if (errors.Count > 0)
+        {
+            return Validation(errors);
         }
 
         var user = new UserRow
@@ -89,16 +87,16 @@ public static class AuthEndpoints
         AuthRateLimiter rateLimiter,
         CancellationToken cancellationToken)
     {
-        var errors = CredentialRules.Validate(request.Email, request.Password);
-        if (errors.Count > 0)
-        {
-            return Validation(errors);
-        }
-
         var email = CredentialRules.NormalizeEmail(request.Email);
         if (!rateLimiter.Permit(ClientIp(http), email))
         {
             return TooManyAttempts();
+        }
+
+        var errors = CredentialRules.ValidateLogin(request.Email, request.Password);
+        if (errors.Count > 0)
+        {
+            return Validation(errors);
         }
 
         var user = await repository.FindUserByEmailAsync(email, cancellationToken);
@@ -291,9 +289,18 @@ public static class AuthEndpoints
         try
         {
             await using var stream = file.OpenReadStream();
+            var detectedType = await CloudinaryImages.DetectImageContentTypeAsync(stream, cancellationToken);
+            if (detectedType is null)
+            {
+                return Validation(new Dictionary<string, string[]>
+                {
+                    ["form"] = ["Use a JPEG, PNG, or WebP image."],
+                });
+            }
+
             url = await images.UploadAsync(
                 stream,
-                contentType,
+                detectedType,
                 "avatars",
                 current.UserId.ToString("D"),
                 cancellationToken);
@@ -310,35 +317,6 @@ public static class AuthEndpoints
         await repository.UpdateAvatarAsync(current.UserId, url, cancellationToken);
         var user = await repository.FindUserByIdAsync(current.UserId, cancellationToken);
         return user is null ? SignInAgain() : Results.Ok(ToUser(user));
-    }
-
-    private static IResult AvatarFile(string fileName, IWebHostEnvironment environment)
-    {
-        if (fileName != Path.GetFileName(fileName))
-        {
-            return Results.NotFound();
-        }
-
-        var extension = Path.GetExtension(fileName);
-        if (!Guid.TryParse(Path.GetFileNameWithoutExtension(fileName), out _)
-            || extension is not (".jpg" or ".png" or ".webp"))
-        {
-            return Results.NotFound();
-        }
-
-        var path = Path.Combine(environment.ContentRootPath, "App_Data", "avatars", fileName);
-        if (!File.Exists(path))
-        {
-            return Results.NotFound();
-        }
-
-        var contentType = extension switch
-        {
-            ".png" => "image/png",
-            ".jpg" => "image/jpeg",
-            _ => "image/webp",
-        };
-        return Results.File(path, contentType);
     }
 
     private static async Task<IResult> ExternalLoginsAsync(
@@ -507,17 +485,12 @@ public static class AuthEndpoints
             userAgent = userAgent[..512];
         }
 
-        var ipAddress = http.Connection.RemoteIpAddress?.ToString();
-        if (ipAddress is { Length: > 64 })
-        {
-            ipAddress = ipAddress[..64];
-        }
-
-        return (string.IsNullOrEmpty(userAgent) ? null : userAgent, string.IsNullOrEmpty(ipAddress) ? null : ipAddress);
+        var ipAddress = ClientIpHelper.GetOptionalClientIp(http);
+        return (string.IsNullOrEmpty(userAgent) ? null : userAgent, ipAddress);
     }
 
     private static string ClientIp(HttpContext http) =>
-        http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        ClientIpHelper.GetClientIp(http);
 
     private static string? PhotoContentType(string contentType, string fileName)
     {

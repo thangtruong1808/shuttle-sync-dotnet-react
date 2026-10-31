@@ -68,6 +68,37 @@ public static partial class CredentialRules
         return errors.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray());
     }
 
+    public static Dictionary<string, string[]> ValidateLogin(string? email, string? password)
+    {
+        var errors = new Dictionary<string, List<string>>();
+        var normalizedEmail = NormalizeEmail(email);
+        var rawPassword = password ?? "";
+
+        if (normalizedEmail.Length == 0)
+        {
+            Add(errors, "email", "Enter an email address.");
+        }
+        else if (normalizedEmail.Length > EmailMaxLength)
+        {
+            Add(errors, "email", "Email must be 256 characters or fewer.");
+        }
+        else if (!EmailPattern().IsMatch(normalizedEmail))
+        {
+            Add(errors, "email", "Enter a valid email address.");
+        }
+
+        if (rawPassword.Length == 0)
+        {
+            Add(errors, "password", "Enter a password.");
+        }
+        else if (rawPassword.Length > PasswordMaxLength)
+        {
+            Add(errors, "password", "Use at most 128 characters.");
+        }
+
+        return errors.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray());
+    }
+
     private static void Add(Dictionary<string, List<string>> errors, string field, string message)
     {
         if (!errors.TryGetValue(field, out var messages))

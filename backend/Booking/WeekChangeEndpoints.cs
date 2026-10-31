@@ -136,7 +136,24 @@ public static class WeekChangeEndpoints
     {
         var userId = await UserIdAsync(http, auth, cancellationToken);
         if (userId is null) return SignIn();
-        var facts = WeekChangeText.Facts(body.Code ?? "", body.Courts ?? [], body.When ?? "", body.Alternatives ?? [], null);
+        if (!WeekChangeText.IsAllowedCode(body.Code))
+        {
+            return Form("Choose a valid reason code.");
+        }
+
+        if ((body.Courts?.Length ?? 0) > 8 || (body.Alternatives?.Length ?? 0) > 8)
+        {
+            return Form("Too many court or alternative entries.");
+        }
+
+        if ((body.When?.Length ?? 0) > 80
+            || body.Courts?.Any(court => (court?.Length ?? 0) > 80) == true
+            || body.Alternatives?.Any(slot => slot is not null && ((slot.Label?.Length ?? 0) > 80 || (slot.Date?.Length ?? 0) > 80 || (slot.Start?.Length ?? 0) > 80 || (slot.End?.Length ?? 0) > 80)) == true)
+        {
+            return Form("Field values can be at most 80 characters.");
+        }
+
+        var facts = WeekChangeText.Facts(body.Code!.Trim(), body.Courts ?? [], body.When ?? "", body.Alternatives ?? [], null);
         var phrased = await copy.PhraseAsync(userId.Value, facts, cancellationToken);
         return Results.Ok(new { message = phrased.Message, source = phrased.Source });
     }

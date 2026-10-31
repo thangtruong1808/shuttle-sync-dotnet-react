@@ -859,20 +859,40 @@ public sealed class PaymentRepository(IConfiguration configuration)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        var payGroupId = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "SELECT PayGroupId FROM Bookings WHERE Id = @Id FOR UPDATE",
+            new { write.Id },
+            tx,
+            cancellationToken: cancellationToken));
+        var directPromoId = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "SELECT PromotionCodeId FROM Bookings WHERE Id = @Id",
+            new { write.Id },
+            tx,
+            cancellationToken: cancellationToken));
+
         var changed = await connection.ExecuteAsync(new CommandDefinition(
             """
             UPDATE Bookings b
             JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
             SET b.Status = 'cancelled',
                 b.CancelledAt = UTC_TIMESTAMP(6),
-                b.CancelledBy = @UserId,
+                b.CancelledBy = COALESCE(@CancelledBy, @UserId),
+                b.CancelReason = COALESCE(@CancelReason, b.CancelReason),
                 b.CancelFeePercent = @FeePercent,
                 b.UpdatedAt = UTC_TIMESTAMP(6)
             WHERE b.Id = @Id AND b.UserId = @UserId AND b.IsDeleted = 0
               AND b.Status IN ('pending', 'confirmed')
-              AND cs.StartTime > UTC_TIMESTAMP(6)
+              AND (@WaiveFeeAndStart = 1 OR cs.StartTime > UTC_TIMESTAMP(6))
             """,
-            write,
+            new
+            {
+                write.Id,
+                write.UserId,
+                write.FeePercent,
+                write.CancelledBy,
+                write.CancelReason,
+                WaiveFeeAndStart = write.WaiveFeeAndStart ? 1 : 0,
+            },
             tx,
             cancellationToken: cancellationToken));
         if (changed != 1)
@@ -880,16 +900,53 @@ public sealed class PaymentRepository(IConfiguration configuration)
             return false;
         }
 
-        if (write.PaymentStatus == "cancelled")
+        if (write.PaymentStatus == "cancelled" && payGroupId is not null)
         {
-            var payGroupId = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition(
-                "SELECT PayGroupId FROM Bookings WHERE Id = @Id",
-                new { Id = write.Id },
+            await ReleasePayGroupAttemptAsync(connection, tx, payGroupId.Value, "cancelled", null, null, cancellationToken, expireWithin24Hours: true);
+        }
+
+        var remainingActive = payGroupId is null ? 0 : await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT COUNT(*) FROM Bookings
+            WHERE PayGroupId = @PayGroupId AND IsDeleted = 0 AND Status IN ('pending', 'confirmed')
+            """,
+            new { PayGroupId = payGroupId },
+            tx,
+            cancellationToken: cancellationToken));
+        if (remainingActive == 0)
+        {
+            var groupIds = payGroupId is null
+                ? [write.Id]
+                : (await connection.QueryAsync<Guid>(new CommandDefinition(
+                    "SELECT Id FROM Bookings WHERE PayGroupId = @PayGroupId",
+                    new { PayGroupId = payGroupId },
+                    tx,
+                    cancellationToken: cancellationToken))).ToArray();
+            var redeemedPromoIds = (await connection.QueryAsync<Guid>(new CommandDefinition(
+                "SELECT DISTINCT PromotionCodeId FROM PromotionRedemptions WHERE BookingId IN @Ids",
+                new { Ids = groupIds },
                 tx,
-                cancellationToken: cancellationToken));
-            if (payGroupId is not null)
+                cancellationToken: cancellationToken))).ToList();
+            if (redeemedPromoIds.Count == 0 && directPromoId is Guid fallbackPromoId)
             {
-                await ReleasePayGroupAttemptAsync(connection, tx, payGroupId.Value, "cancelled", null, null, cancellationToken, expireWithin24Hours: true);
+                redeemedPromoIds.Add(fallbackPromoId);
+            }
+
+            if (redeemedPromoIds.Count > 0)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "DELETE FROM PromotionRedemptions WHERE BookingId IN @Ids",
+                    new { Ids = groupIds },
+                    tx,
+                    cancellationToken: cancellationToken));
+                foreach (var promoId in redeemedPromoIds.Distinct())
+                {
+                    await connection.ExecuteAsync(new CommandDefinition(
+                        "UPDATE PromotionCodes SET UsedCount = GREATEST(UsedCount - 1, 0), UpdatedAt = UTC_TIMESTAMP(6) WHERE Id = @Id",
+                        new { Id = promoId },
+                        tx,
+                        cancellationToken: cancellationToken));
+                }
             }
         }
 
@@ -935,7 +992,7 @@ public sealed class PaymentRepository(IConfiguration configuration)
                 INSERT INTO Refunds
                     (Id, PaymentId, StripeRefundId, Amount, Reason, Status, RequestedBy, ProcessedAt, CreatedAt)
                 VALUES
-                    (@Id, @PaymentId, @StripeRefundId, @Amount, @Reason, @Status, @UserId,
+                    (@Id, @PaymentId, @StripeRefundId, @Amount, @Reason, @Status, @RequestedBy,
                      CASE WHEN @Status = 'succeeded' THEN UTC_TIMESTAMP(6) ELSE NULL END,
                      UTC_TIMESTAMP(6))
                 """,
@@ -945,9 +1002,9 @@ public sealed class PaymentRepository(IConfiguration configuration)
                     write.PaymentId,
                     write.StripeRefundId,
                     Amount = write.RefundAmount,
-                    Reason = "Booking cancelled",
+                    Reason = string.IsNullOrWhiteSpace(write.CancelReason) ? "Booking cancelled" : write.CancelReason,
                     Status = write.RefundStatus,
-                    write.UserId,
+                    RequestedBy = write.CancelledBy ?? write.UserId,
                 },
                 tx,
                 cancellationToken: cancellationToken));
@@ -1573,88 +1630,11 @@ public sealed class PaymentRepository(IConfiguration configuration)
             cancellationToken: cancellationToken));
     }
 
-    private static decimal[] SplitMoney(decimal[] weights, decimal total)
-    {
-        var shares = new decimal[weights.Length];
-        if (weights.Length == 0 || total <= 0)
-        {
-            return shares;
-        }
+    private static decimal[] SplitMoney(decimal[] weights, decimal total) =>
+        ProportionalShares.SplitMoney(weights, total);
 
-        var sum = weights.Sum();
-        var remaining = decimal.Round(Math.Min(total, sum), 2, MidpointRounding.AwayFromZero);
-        for (var index = 0; index < weights.Length; index++)
-        {
-            var share = index == weights.Length - 1 || sum <= 0
-                ? remaining
-                : decimal.Round(remaining * weights[index] / sum, 2, MidpointRounding.AwayFromZero);
-            if (share > weights[index])
-            {
-                share = weights[index];
-            }
-
-            if (share > remaining)
-            {
-                share = remaining;
-            }
-
-            if (share < 0)
-            {
-                share = 0;
-            }
-
-            shares[index] = share;
-            remaining -= share;
-            sum -= weights[index];
-        }
-
-        for (var index = 0; index < shares.Length && remaining > 0; index++)
-        {
-            var room = weights[index] - shares[index];
-            var add = room < remaining ? room : remaining;
-            shares[index] += add;
-            remaining -= add;
-        }
-
-        return shares;
-    }
-
-    private static int[] SplitInt(decimal[] weights, int total)
-    {
-        var shares = new int[weights.Length];
-        if (weights.Length == 0 || total <= 0)
-        {
-            return shares;
-        }
-
-        var sum = weights.Sum();
-        var assigned = 0;
-        for (var index = 0; index < weights.Length; index++)
-        {
-            if (index == weights.Length - 1)
-            {
-                shares[index] = total - assigned;
-            }
-            else
-            {
-                var share = sum <= 0 ? 0 : (int)decimal.Round(total * weights[index] / sum, 0, MidpointRounding.AwayFromZero);
-                shares[index] = share;
-                assigned += share;
-            }
-
-            if (shares[index] < 0)
-            {
-                shares[index] = 0;
-            }
-        }
-
-        if (shares.Sum() != total && shares.Length > 0)
-        {
-            shares[^1] += total - shares.Sum();
-        }
-
-        return shares;
-    }
+    private static int[] SplitInt(decimal[] weights, int total) =>
+        ProportionalShares.SplitInt(weights, total);
 
     private static async Task ExpireBookingAsync(
         MySqlConnection connection,
@@ -1725,19 +1705,8 @@ public sealed class PaymentRepository(IConfiguration configuration)
         return trimmed.Length <= max ? trimmed : trimmed[..max];
     }
 
-    private async Task<MySqlConnection> OpenAsync(CancellationToken cancellationToken)
-    {
-        var connectionString = configuration.GetConnectionString("Default");
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new InvalidOperationException("The MySQL connection string is not configured.");
-        }
-
-        var builder = new MySqlConnectionStringBuilder(connectionString) { GuidFormat = MySqlGuidFormat.Char36 };
-        var connection = new MySqlConnection(builder.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        return connection;
-    }
+    private Task<MySqlConnection> OpenAsync(CancellationToken cancellationToken) =>
+        DbConnectionFactory.OpenAsync(configuration, cancellationToken);
 }
 
 public sealed class ExpiredHoldRow
@@ -1934,4 +1903,7 @@ public sealed record CancelWrite(
     string? PaymentStatus,
     string? StripeRefundId,
     decimal RefundAmount,
-    string RefundStatus);
+    string RefundStatus,
+    Guid? CancelledBy = null,
+    bool WaiveFeeAndStart = false,
+    string? CancelReason = null);

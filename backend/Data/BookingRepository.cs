@@ -2954,8 +2954,50 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         await tx.CommitAsync(cancellationToken);
     }
 
-    public async Task FillOpenWaitlistsAsync(Guid venueId, CancellationToken cancellationToken)
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, long> VenueWaitlistSweepTicks = new();
+    private static readonly long WaitlistSweepCooldownTicks = TimeSpan.FromSeconds(15).Ticks;
+    private static readonly long SocialSweepCooldownTicks = TimeSpan.FromSeconds(30).Ticks;
+    private static readonly SemaphoreSlim ExpireSocialGate = new(1, 1);
+    private static long _lastExpireSocialSweepTicks;
+    private static long _lastAwardSweepTicks;
+
+    public async Task FillAllOpenWaitlistsAsync(CancellationToken cancellationToken)
     {
+        await using var connection = await OpenAsync(cancellationToken);
+        var venueIds = (await connection.QueryAsync<Guid>(new CommandDefinition(
+            """
+            SELECT DISTINCT s.VenueId
+            FROM PublicSocials s
+            WHERE s.IsDeleted = 0 AND s.StartTime > UTC_TIMESTAMP(6)
+              AND (
+                  EXISTS (
+                      SELECT 1 FROM PublicSocialRegistrations w
+                      WHERE w.SocialId = s.Id AND w.Status = 'waitlist' AND w.HoldExpiresAt IS NULL
+                  )
+                  OR EXISTS (
+                      SELECT 1 FROM PublicSocialFriends f
+                      WHERE f.SocialId = s.Id AND f.Status = 'waitlist' AND f.HoldExpiresAt IS NULL
+                  )
+              )
+            """,
+            cancellationToken: cancellationToken))).ToArray();
+        foreach (var venueId in venueIds)
+        {
+            await FillOpenWaitlistsAsync(venueId, cancellationToken, force: true);
+        }
+    }
+
+    public async Task FillOpenWaitlistsAsync(Guid venueId, CancellationToken cancellationToken, bool force = false)
+    {
+        var nowTicks = DateTime.UtcNow.Ticks;
+        if (!force
+            && VenueWaitlistSweepTicks.TryGetValue(venueId, out var lastTicks)
+            && nowTicks - lastTicks < WaitlistSweepCooldownTicks)
+        {
+            return;
+        }
+
+        VenueWaitlistSweepTicks[venueId] = nowTicks;
         await using var connection = await OpenAsync(cancellationToken);
         var socialIds = (await connection.QueryAsync<Guid>(new CommandDefinition(
             """
@@ -3189,7 +3231,35 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         return open;
     }
 
-    public async Task ExpirePublicSocialHoldsAsync(CancellationToken cancellationToken)
+    public async Task ExpirePublicSocialHoldsAsync(CancellationToken cancellationToken, bool force = false)
+    {
+        var nowTicks = DateTime.UtcNow.Ticks;
+        if (!force && nowTicks - Interlocked.Read(ref _lastExpireSocialSweepTicks) < SocialSweepCooldownTicks)
+        {
+            return;
+        }
+
+        if (!await ExpireSocialGate.WaitAsync(0, cancellationToken))
+        {
+            return;
+        }
+
+        try
+        {
+            Interlocked.Exchange(ref _lastExpireSocialSweepTicks, DateTime.UtcNow.Ticks);
+            await ExpirePublicSocialHoldsCoreAsync(cancellationToken);
+        }
+        catch (MySqlException exception) when (exception.Number is 1213 or 1205)
+        {
+            // Next sweep will finish expiring holds.
+        }
+        finally
+        {
+            ExpireSocialGate.Release();
+        }
+    }
+
+    private async Task ExpirePublicSocialHoldsCoreAsync(CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
@@ -3310,8 +3380,14 @@ public sealed partial class BookingRepository(IConfiguration configuration)
 
     private static readonly SemaphoreSlim AwardGate = new(1, 1);
 
-    public async Task AwardEndedSocialIncentivesAsync(CancellationToken cancellationToken)
+    public async Task AwardEndedSocialIncentivesAsync(CancellationToken cancellationToken, bool force = false)
     {
+        var nowTicks = DateTime.UtcNow.Ticks;
+        if (!force && nowTicks - Interlocked.Read(ref _lastAwardSweepTicks) < SocialSweepCooldownTicks)
+        {
+            return;
+        }
+
         // Pages load several endpoints at once, and parallel award sweeps lock the same bookings in different orders.
         if (!await AwardGate.WaitAsync(0, cancellationToken))
         {
@@ -3320,6 +3396,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
 
         try
         {
+            Interlocked.Exchange(ref _lastAwardSweepTicks, DateTime.UtcNow.Ticks);
             await AwardEndedIncentivesOnceAsync(cancellationToken);
         }
         catch (MySqlException exception) when (exception.Number is 1213 or 1205)
@@ -4685,6 +4762,11 @@ public sealed partial class BookingRepository(IConfiguration configuration)
             return SocialCheckoutHold.Fail("Enter at least one friend's name.", StatusCodes.Status400BadRequest);
         }
 
+        if (cleaned.Length > 16)
+        {
+            return SocialCheckoutHold.Fail("You can add at most 16 friends.", StatusCodes.Status400BadRequest);
+        }
+
         if (cleaned.Any(name => name.Length > 80))
         {
             return SocialCheckoutHold.Fail("A friend's name can be at most 80 characters.", StatusCodes.Status400BadRequest);
@@ -5198,6 +5280,20 @@ public sealed partial class BookingRepository(IConfiguration configuration)
             cancellationToken: cancellationToken));
     }
 
+    public async Task<Guid[]> ListActiveRegistrationFriendIdsAsync(Guid registrationId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var ids = await connection.QueryAsync<Guid>(new CommandDefinition(
+            """
+            SELECT Id FROM PublicSocialFriends
+            WHERE RegistrationId = @RegistrationId AND Status IN ('pending', 'confirmed', 'waitlist')
+            ORDER BY CreatedAt
+            """,
+            new { RegistrationId = registrationId },
+            cancellationToken: cancellationToken));
+        return ids.ToArray();
+    }
+
     public async Task<int?> CompleteFriendCancelAsync(SocialCancelWrite write, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -5210,11 +5306,17 @@ public sealed partial class BookingRepository(IConfiguration configuration)
             JOIN PublicSocials s ON s.Id = f.SocialId
             LEFT JOIN PublicSocialPayments p ON p.Id = @PaymentId
             WHERE f.Id = @Id AND r.UserId = @UserId
-              AND f.Status IN ('confirmed', 'waitlist')
-              AND s.StartTime > UTC_TIMESTAMP(6)
+              AND (f.Status IN ('confirmed', 'waitlist') OR (@WaiveFeeAndStart = 1 AND f.Status = 'pending'))
+              AND (@WaiveFeeAndStart = 1 OR s.StartTime > UTC_TIMESTAMP(6))
             FOR UPDATE
             """,
-            write,
+            new
+            {
+                write.Id,
+                write.UserId,
+                write.PaymentId,
+                WaiveFeeAndStart = write.WaiveFeeAndStart ? 1 : 0,
+            },
             tx,
             cancellationToken: cancellationToken));
         if (held is null)
@@ -5235,10 +5337,16 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                 f.CancelledAt = UTC_TIMESTAMP(6),
                 f.CancelFeePercent = @FeePercent
             WHERE f.Id = @Id AND r.UserId = @UserId
-              AND f.Status IN ('confirmed', 'waitlist')
-              AND s.StartTime > UTC_TIMESTAMP(6)
+              AND (f.Status IN ('confirmed', 'waitlist') OR (@WaiveFeeAndStart = 1 AND f.Status = 'pending'))
+              AND (@WaiveFeeAndStart = 1 OR s.StartTime > UTC_TIMESTAMP(6))
             """,
-            write,
+            new
+            {
+                write.Id,
+                write.UserId,
+                write.FeePercent,
+                WaiveFeeAndStart = write.WaiveFeeAndStart ? 1 : 0,
+            },
             tx,
             cancellationToken: cancellationToken));
         if (changed != 1)
@@ -5303,7 +5411,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                 INSERT INTO PublicSocialRefunds
                     (Id, PaymentId, StripeRefundId, Amount, Reason, Status, RequestedBy, ProcessedAt, CreatedAt)
                 VALUES
-                    (@Id, @PaymentId, @StripeRefundId, @Amount, 'Friend cancelled', @Status, @UserId,
+                    (@Id, @PaymentId, @StripeRefundId, @Amount, @Reason, @Status, @RequestedBy,
                      CASE WHEN @Status = 'succeeded' THEN UTC_TIMESTAMP(6) ELSE NULL END,
                      UTC_TIMESTAMP(6))
                 """,
@@ -5313,8 +5421,9 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                     write.PaymentId,
                     write.StripeRefundId,
                     Amount = write.RefundAmount,
+                    Reason = string.IsNullOrWhiteSpace(write.CancelReason) ? "Friend cancelled" : write.CancelReason,
                     Status = write.RefundStatus,
-                    write.UserId,
+                    RequestedBy = write.CancelledBy ?? write.UserId,
                 },
                 tx,
                 cancellationToken: cancellationToken));
@@ -5562,57 +5671,11 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         await tx.CommitAsync(cancellationToken);
     }
 
-    private static decimal[] SplitMoney(decimal[] weights, decimal total)
-    {
-        var shares = new decimal[weights.Length];
-        if (weights.Length == 0)
-        {
-            return shares;
-        }
+    private static decimal[] SplitMoney(decimal[] weights, decimal total) =>
+        ProportionalShares.SplitMoney(weights, total);
 
-        var sum = weights.Sum();
-        decimal assigned = 0;
-        for (var index = 0; index < weights.Length; index++)
-        {
-            if (index == weights.Length - 1)
-            {
-                shares[index] = decimal.Round(total - assigned, 2, MidpointRounding.AwayFromZero);
-                continue;
-            }
-
-            var share = sum <= 0 ? 0 : decimal.Round(total * weights[index] / sum, 2, MidpointRounding.AwayFromZero);
-            shares[index] = share;
-            assigned += share;
-        }
-
-        return shares;
-    }
-
-    private static int[] SplitInt(decimal[] weights, int total)
-    {
-        var shares = new int[weights.Length];
-        if (weights.Length == 0)
-        {
-            return shares;
-        }
-
-        var sum = weights.Sum();
-        var assigned = 0;
-        for (var index = 0; index < weights.Length; index++)
-        {
-            if (index == weights.Length - 1)
-            {
-                shares[index] = total - assigned;
-                continue;
-            }
-
-            var share = sum <= 0 ? 0 : (int)decimal.Round(total * weights[index] / sum, 0, MidpointRounding.AwayFromZero);
-            shares[index] = share;
-            assigned += share;
-        }
-
-        return shares;
-    }
+    private static int[] SplitInt(decimal[] weights, int total) =>
+        ProportionalShares.SplitInt(weights, total);
 
     public async Task AttachSocialPaymentAsync(
         Guid registrationId,
@@ -6042,10 +6105,15 @@ public sealed partial class BookingRepository(IConfiguration configuration)
             JOIN PublicSocials s ON s.Id = r.SocialId
             WHERE r.Id = @Id AND r.UserId = @UserId
               AND r.Status IN ('pending', 'confirmed', 'waitlist')
-              AND s.StartTime > UTC_TIMESTAMP(6)
+              AND (@WaiveFeeAndStart = 1 OR s.StartTime > UTC_TIMESTAMP(6))
             FOR UPDATE
             """,
-            write,
+            new
+            {
+                write.Id,
+                write.UserId,
+                WaiveFeeAndStart = write.WaiveFeeAndStart ? 1 : 0,
+            },
             tx,
             cancellationToken: cancellationToken));
         if (locked is null)
@@ -6066,9 +6134,15 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                 r.CancelFeePercent = @FeePercent
             WHERE r.Id = @Id AND r.UserId = @UserId
               AND r.Status IN ('pending', 'confirmed', 'waitlist')
-              AND s.StartTime > UTC_TIMESTAMP(6)
+              AND (@WaiveFeeAndStart = 1 OR s.StartTime > UTC_TIMESTAMP(6))
             """,
-            write,
+            new
+            {
+                write.Id,
+                write.UserId,
+                write.FeePercent,
+                WaiveFeeAndStart = write.WaiveFeeAndStart ? 1 : 0,
+            },
             tx,
             cancellationToken: cancellationToken));
         if (changed != 1)
@@ -6169,7 +6243,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                 INSERT INTO PublicSocialRefunds
                     (Id, PaymentId, StripeRefundId, Amount, Reason, Status, RequestedBy, ProcessedAt, CreatedAt)
                 VALUES
-                    (@Id, @PaymentId, @StripeRefundId, @Amount, 'Drop-in social cancelled', @Status, @UserId,
+                    (@Id, @PaymentId, @StripeRefundId, @Amount, @Reason, @Status, @RequestedBy,
                      CASE WHEN @Status = 'succeeded' THEN UTC_TIMESTAMP(6) ELSE NULL END,
                      UTC_TIMESTAMP(6))
                 """,
@@ -6179,8 +6253,9 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                     write.PaymentId,
                     write.StripeRefundId,
                     Amount = write.RefundAmount,
+                    Reason = string.IsNullOrWhiteSpace(write.CancelReason) ? "Drop-in social cancelled" : write.CancelReason,
                     Status = write.RefundStatus,
-                    write.UserId,
+                    RequestedBy = write.CancelledBy ?? write.UserId,
                 },
                 tx,
                 cancellationToken: cancellationToken));
@@ -6593,22 +6668,8 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         }
     }
 
-    private async Task<MySqlConnection> OpenAsync(CancellationToken cancellationToken)
-    {
-        var connectionString = configuration.GetConnectionString("Default");
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new InvalidOperationException("The MySQL connection string is not configured.");
-        }
-
-        var builder = new MySqlConnectionStringBuilder(connectionString)
-        {
-            GuidFormat = MySqlGuidFormat.Char36,
-        };
-        var connection = new MySqlConnection(builder.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        return connection;
-    }
+    private Task<MySqlConnection> OpenAsync(CancellationToken cancellationToken) =>
+        DbConnectionFactory.OpenAsync(configuration, cancellationToken);
 
     private static async Task<int> SocialIncentivePointsAsync(
         MySqlConnection connection,
@@ -7643,7 +7704,10 @@ public sealed record SocialCancelWrite(
     string? PaymentStatus,
     string? StripeRefundId,
     decimal RefundAmount,
-    string RefundStatus);
+    string RefundStatus,
+    Guid? CancelledBy = null,
+    bool WaiveFeeAndStart = false,
+    string? CancelReason = null);
 
 public sealed class PromotionRow
 {

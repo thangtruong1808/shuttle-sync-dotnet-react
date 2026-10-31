@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using ShuttleSync.Api.Booking;
 using ShuttleSync.Api.Data;
 
 namespace ShuttleSync.Api.Support;
@@ -28,7 +29,7 @@ public static class SupportEndpoints
             return Form("Support chat is not configured yet.", StatusCodes.Status503ServiceUnavailable);
         }
 
-        var address = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var address = ClientIpHelper.GetClientIp(http);
         if (!limiter.Permit(address))
         {
             return Form("Please wait a moment and try again.", StatusCodes.Status429TooManyRequests);
@@ -255,8 +256,8 @@ public static class SupportEndpoints
             return string.Join('\n', lines);
         }
 
-        var minutes = (decimal)(endUtc - startUtc).TotalMinutes;
-        var estimate = decimal.Round(venue.HourlyRate * minutes / 60m, 2, MidpointRounding.AwayFromZero);
+        var rates = await repository.ListRateWindowsAsync(venue.Id, cancellationToken);
+        var estimate = decimal.Round(CourtRates.Quote(venue.TimeZone, venue.HourlyRate, startUtc, endUtc, rates), 2, MidpointRounding.AwayFromZero);
         var available = new List<string>();
         var blocked = new List<string>();
         foreach (var court in courts)
@@ -271,7 +272,7 @@ public static class SupportEndpoints
                     && SameInstant(session.StartTime, startUtc)
                     && SameInstant(session.EndTime, endUtc));
                 var price = exact is null ? estimate : exact.Price;
-                available.Add(venue.HourlyRate <= 0 && exact is null
+                available.Add(price <= 0 && exact is null
                     ? label
                     : $"{label} (about {venue.Currency} ${price:0.00} before points or a promotion code)");
             }
@@ -364,7 +365,7 @@ public static class SupportEndpoints
         return null;
     }
 
-    private static bool TryReadWindow(string question, out TimeOnly start, out TimeOnly end)
+    public static bool TryReadWindow(string question, out TimeOnly start, out TimeOnly end)
     {
         start = default;
         end = default;
@@ -377,9 +378,26 @@ public static class SupportEndpoints
             return false;
         }
 
-        var shared = startMeridian ?? endMeridian;
-        var startResolved = ResolveHour(startHour, startMeridian ?? shared);
-        var endResolved = ResolveHour(endHour, endMeridian ?? shared);
+        var effectiveStartMeridian = startMeridian;
+        var effectiveEndMeridian = endMeridian;
+        if (effectiveStartMeridian is null && effectiveEndMeridian == "pm" && startHour is >= 6 and <= 11 && endHour is >= 1 and <= 5)
+        {
+            effectiveStartMeridian = "am";
+        }
+        else
+        {
+            var shared = startMeridian ?? endMeridian;
+            effectiveStartMeridian ??= shared;
+            effectiveEndMeridian ??= shared;
+        }
+
+        var startResolved = ResolveHour(startHour, effectiveStartMeridian);
+        var endResolved = ResolveHour(endHour, effectiveEndMeridian);
+        if (startResolved is >= 12 && endMeridian is null && endResolved is >= 1 and <= 11)
+        {
+            endResolved += 12;
+        }
+
         if (endResolved == 12 && startResolved > 12)
         {
             endResolved = 0;
@@ -424,7 +442,17 @@ public static class SupportEndpoints
     {
         if (meridian is null)
         {
-            return hour <= 23 ? hour == 12 || hour > 12 ? hour : hour + 12 : null;
+            if (hour is < 0 or > 23)
+            {
+                return null;
+            }
+
+            if (hour is >= 6 and <= 11)
+            {
+                return hour;
+            }
+
+            return hour is >= 1 and <= 5 ? hour + 12 : hour;
         }
 
         if (hour is < 1 or > 12)
@@ -514,15 +542,54 @@ public static class SupportEndpoints
 
 public sealed class SupportChatLimiter
 {
-    private readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> _hits = new();
+    private const int MaxKeys = 4096;
+    private readonly Dictionary<string, Queue<DateTimeOffset>> _hits = new(StringComparer.Ordinal);
+    private readonly Lock _gate = new();
 
     public bool Permit(string key)
     {
         var now = DateTimeOffset.UtcNow;
-        var hits = _hits.GetOrAdd(key, _ => new Queue<DateTimeOffset>());
-        lock (hits)
+        var cutoff = now.AddMinutes(-1);
+        lock (_gate)
         {
-            while (hits.Count > 0 && hits.Peek() < now.AddMinutes(-1))
+            if (_hits.Count >= MaxKeys && !_hits.ContainsKey(key))
+            {
+                var emptyKeys = new List<string>();
+                foreach (var (existingKey, queue) in _hits)
+                {
+                    while (queue.Count > 0 && queue.Peek() < cutoff)
+                    {
+                        queue.Dequeue();
+                    }
+
+                    if (queue.Count == 0)
+                    {
+                        emptyKeys.Add(existingKey);
+                    }
+                }
+
+                foreach (var emptyKey in emptyKeys)
+                {
+                    _hits.Remove(emptyKey);
+                }
+
+                if (_hits.Count >= MaxKeys)
+                {
+                    var oldestKey = _hits.Keys.FirstOrDefault();
+                    if (oldestKey is not null)
+                    {
+                        _hits.Remove(oldestKey);
+                    }
+                }
+            }
+
+            if (!_hits.TryGetValue(key, out var hits))
+            {
+                hits = new Queue<DateTimeOffset>();
+                _hits[key] = hits;
+            }
+
+            while (hits.Count > 0 && hits.Peek() < cutoff)
             {
                 hits.Dequeue();
             }

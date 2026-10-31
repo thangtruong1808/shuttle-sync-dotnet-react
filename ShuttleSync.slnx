@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/backend.Tests/">
+    <Project Path="backend.Tests/ShuttleSync.Api.Tests.csproj" />
+  </Folder>
   <Folder Name="/backend/">
     <Project Path="backend/ShuttleSync.Api.csproj" />
   </Folder>

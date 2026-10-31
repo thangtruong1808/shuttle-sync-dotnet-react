@@ -4,7 +4,7 @@ import { LogOut } from "lucide-react";
 import type { AppDispatch, RootState } from "../../app/store";
 import { Button, Card, PageHeader, Skeleton } from "../../components/ui";
 import { EmptyState, ErrorState, formatVenueDateTime } from "../../components/format";
-import { externalLogins, type ExternalLogin } from "../auth/authApi";
+import { externalLogins, providerStartUrl, type ExternalLogin } from "../auth/authApi";
 import { fetchSessions, logoutOthers, revokeSession } from "../auth/authSlice";
 
 export function SecuritySection() {
@@ -54,6 +54,21 @@ export function SecuritySection() {
             </li>
           ))}
         </ul>
+        {logins ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {(["google", "github"] as const)
+              .filter((provider) => !logins.some((item) => item.provider.toLowerCase() === provider))
+              .map((provider) => (
+                <a
+                  key={provider}
+                  href={providerStartUrl(provider)}
+                  className="inline-flex items-center rounded-xl border border-border bg-inset px-3 py-1.5 text-sm font-medium text-fg transition hover:border-brand/50"
+                >
+                  Connect {provider === "github" ? "GitHub" : "Google"}
+                </a>
+              ))}
+          </div>
+        ) : null}
         </Card>
       </div>
       <Card

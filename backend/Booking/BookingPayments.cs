@@ -129,9 +129,17 @@ public sealed class BookingPayments(
     }
 
     private static readonly SemaphoreSlim ReleaseGate = new(1, 1);
+    private static readonly long SweepCooldownTicks = TimeSpan.FromSeconds(30).Ticks;
+    private static long _lastReleaseSweepTicks;
 
-    public async Task ReleaseExpiredCourtHoldsAsync(CancellationToken cancellationToken)
+    public async Task ReleaseExpiredCourtHoldsAsync(CancellationToken cancellationToken, bool force = false)
     {
+        var nowTicks = DateTime.UtcNow.Ticks;
+        if (!force && nowTicks - Interlocked.Read(ref _lastReleaseSweepTicks) < SweepCooldownTicks)
+        {
+            return;
+        }
+
         // Concurrent sweeps lock the same pending rows in different orders and deadlock.
         if (!await ReleaseGate.WaitAsync(0, cancellationToken))
         {
@@ -140,6 +148,7 @@ public sealed class BookingPayments(
 
         try
         {
+            Interlocked.Exchange(ref _lastReleaseSweepTicks, DateTime.UtcNow.Ticks);
             try
             {
                 await CancelIntentsAsync(await payments.ReleaseExpiredHoldsAsync(cancellationToken), cancellationToken);
@@ -186,7 +195,7 @@ public sealed class BookingPayments(
 
         if (releaseFirst)
         {
-            await ReleaseExpiredCourtHoldsAsync(cancellationToken);
+            await ReleaseExpiredCourtHoldsAsync(cancellationToken, force: true);
         }
 
         var prepared = await payments.PrepareGroupCheckoutAsync(venueId, groupId, userId, bookingIds, points, promotionCode, cancellationToken);
@@ -413,7 +422,13 @@ public sealed class BookingPayments(
         return preview;
     }
 
-    public async Task<CancelResponse> CancelAsync(Guid userId, Guid bookingId, CancellationToken cancellationToken)
+    public async Task<CancelResponse> CancelAsync(
+        Guid userId,
+        Guid bookingId,
+        CancellationToken cancellationToken,
+        bool waiveFeeAndStart = false,
+        Guid? cancelledBy = null,
+        string? cancelReason = null)
     {
         var context = await payments.LoadCancelAsync(userId, bookingId, cancellationToken);
         if (context is null)
@@ -421,12 +436,12 @@ public sealed class BookingPayments(
             return CancelResponse.Fail("That booking was not found.", StatusCodes.Status404NotFound);
         }
 
-        if (context.Status is not ("pending" or "confirmed") || context.StartTime <= DateTime.UtcNow)
+        if (context.Status is not ("pending" or "confirmed") || (!waiveFeeAndStart && context.StartTime <= DateTime.UtcNow))
         {
             return CancelResponse.Fail("This booking can no longer be cancelled.", StatusCodes.Status409Conflict);
         }
 
-        var late = DateTime.SpecifyKind(context.StartTime, DateTimeKind.Utc) <= DateTime.UtcNow.AddHours(24);
+        var late = !waiveFeeAndStart && DateTime.SpecifyKind(context.StartTime, DateTimeKind.Utc) <= DateTime.UtcNow.AddHours(24);
         var fee = context.PaymentStatus == "succeeded" && late ? context.LateCancelFeePercent : 0m;
         string? refundId = null;
         var refundStatus = "succeeded";
@@ -489,7 +504,7 @@ public sealed class BookingPayments(
             _ => null,
         };
         var saved = await payments.CompleteCancelAsync(
-            new CancelWrite(context.Id, userId, fee, restore, context.PaymentId, paymentStatus, refundId, refundAmount, refundStatus),
+            new CancelWrite(context.Id, userId, fee, restore, context.PaymentId, paymentStatus, refundId, refundAmount, refundStatus, cancelledBy, waiveFeeAndStart, cancelReason),
             cancellationToken);
         if (!saved)
         {
@@ -1021,7 +1036,7 @@ public sealed class BookingPayments(
             StripeConfiguration.ApiKey = settings.SecretKey;
         }
 
-        await bookings.ExpirePublicSocialHoldsAsync(cancellationToken);
+        await bookings.ExpirePublicSocialHoldsAsync(cancellationToken, force: true);
         var hold = waitlist
             ? await bookings.BeginSocialWaitlistCheckoutAsync(venueId, socialId, userId, currency, requestedPoints, promotionCode, cancellationToken)
             : await bookings.BeginPublicSocialCheckoutAsync(venueId, socialId, userId, currency, requestedPoints, promotionCode, cancellationToken);
@@ -1120,7 +1135,7 @@ public sealed class BookingPayments(
             StripeConfiguration.ApiKey = settings.SecretKey;
         }
 
-        await bookings.ExpirePublicSocialHoldsAsync(cancellationToken);
+        await bookings.ExpirePublicSocialHoldsAsync(cancellationToken, force: true);
         var hold = await bookings.BeginPublicSocialBatchCheckoutAsync(venueId, socialIds, userId, currency, requestedPoints, promotionCode, cancellationToken);
         if (hold.Error is not null)
         {
@@ -1205,7 +1220,7 @@ public sealed class BookingPayments(
             StripeConfiguration.ApiKey = settings.SecretKey;
         }
 
-        await bookings.ExpirePublicSocialHoldsAsync(cancellationToken);
+        await bookings.ExpirePublicSocialHoldsAsync(cancellationToken, force: true);
         var hold = await bookings.BeginFriendCheckoutAsync(venueId, socialId, userId, currency, requestedPoints, promotionCode, names, cancellationToken);
         if (hold.Error is not null)
         {
@@ -1274,7 +1289,13 @@ public sealed class BookingPayments(
         return SocialCheckoutResponse.From(hold, session.Url) with { FriendGroupId = hold.CheckoutGroupId };
     }
 
-    public async Task<CancelResponse> CancelFriendAsync(Guid userId, Guid friendId, CancellationToken cancellationToken)
+    public async Task<CancelResponse> CancelFriendAsync(
+        Guid userId,
+        Guid friendId,
+        CancellationToken cancellationToken,
+        bool waiveFeeAndStart = false,
+        Guid? cancelledBy = null,
+        string? cancelReason = null)
     {
         var context = await bookings.LoadFriendCancelAsync(userId, friendId, cancellationToken);
         if (context is null)
@@ -1282,12 +1303,13 @@ public sealed class BookingPayments(
             return CancelResponse.Fail("That friend was not found.", StatusCodes.Status404NotFound);
         }
 
-        if (context.Status is not ("confirmed" or "waitlist") || context.StartTime <= DateTime.UtcNow)
+        var validStatus = context.Status is "confirmed" or "waitlist" || (waiveFeeAndStart && context.Status == "pending");
+        if (!validStatus || (!waiveFeeAndStart && context.StartTime <= DateTime.UtcNow))
         {
             return CancelResponse.Fail("This friend can no longer be cancelled.", StatusCodes.Status409Conflict);
         }
 
-        var late = DateTime.SpecifyKind(context.StartTime, DateTimeKind.Utc) <= DateTime.UtcNow.AddHours(24);
+        var late = !waiveFeeAndStart && DateTime.SpecifyKind(context.StartTime, DateTimeKind.Utc) <= DateTime.UtcNow.AddHours(24);
         var fee = context.PaymentStatus == "succeeded" && late ? context.LateCancelFeePercent : 0m;
         string? refundId = null;
         var refundStatus = "succeeded";
@@ -1343,16 +1365,25 @@ public sealed class BookingPayments(
                 }
             }
         }
+        else if (context.PaymentStatus == "pending" && !string.IsNullOrWhiteSpace(context.StripePaymentIntentId))
+        {
+            if (settings.IsConfigured)
+            {
+                StripeConfiguration.ApiKey = settings.SecretKey;
+                await CancelIntentsAsync([context.StripePaymentIntentId], cancellationToken);
+            }
+        }
 
         string? paymentStatus = context.PaymentStatus switch
         {
             "succeeded" when refundAmount <= 0 => null,
             "succeeded" when refundAmount >= context.ChargedAmount => "refunded",
             "succeeded" => "partially_refunded",
+            "pending" => "cancelled",
             _ => null,
         };
         var restored = await bookings.CompleteFriendCancelAsync(
-            new SocialCancelWrite(context.Id, userId, fee, context.PaymentId, paymentStatus, refundId, refundAmount, refundStatus),
+            new SocialCancelWrite(context.Id, userId, fee, context.PaymentId, paymentStatus, refundId, refundAmount, refundStatus, cancelledBy, waiveFeeAndStart, cancelReason),
             cancellationToken);
         if (restored is null)
         {
@@ -1362,7 +1393,13 @@ public sealed class BookingPayments(
         return new CancelResponse(StatusCodes.Status200OK, null, refundAmount, fee, restored.Value, context.Currency);
     }
 
-    public async Task<CancelResponse> CancelSocialAsync(Guid userId, Guid registrationId, CancellationToken cancellationToken)
+    public async Task<CancelResponse> CancelSocialAsync(
+        Guid userId,
+        Guid registrationId,
+        CancellationToken cancellationToken,
+        bool waiveFeeAndStart = false,
+        Guid? cancelledBy = null,
+        string? cancelReason = null)
     {
         var context = await bookings.LoadSocialCancelAsync(userId, registrationId, cancellationToken);
         if (context is null)
@@ -1370,12 +1407,25 @@ public sealed class BookingPayments(
             return CancelResponse.Fail("That booking was not found.", StatusCodes.Status404NotFound);
         }
 
-        if (context.Status is not ("pending" or "confirmed" or "waitlist") || context.StartTime <= DateTime.UtcNow)
+        if (context.Status is not ("pending" or "confirmed" or "waitlist") || (!waiveFeeAndStart && context.StartTime <= DateTime.UtcNow))
         {
             return CancelResponse.Fail("This booking can no longer be cancelled.", StatusCodes.Status409Conflict);
         }
 
-        var late = DateTime.SpecifyKind(context.StartTime, DateTimeKind.Utc) <= DateTime.UtcNow.AddHours(24);
+        if (waiveFeeAndStart)
+        {
+            var friendIds = await bookings.ListActiveRegistrationFriendIdsAsync(registrationId, cancellationToken);
+            foreach (var friendId in friendIds)
+            {
+                var friendCancel = await CancelFriendAsync(userId, friendId, cancellationToken, waiveFeeAndStart: true, cancelledBy: cancelledBy, cancelReason: cancelReason);
+                if (friendCancel.Error is not null && friendCancel.StatusCode is not (StatusCodes.Status404NotFound or StatusCodes.Status409Conflict))
+                {
+                    return friendCancel;
+                }
+            }
+        }
+
+        var late = !waiveFeeAndStart && DateTime.SpecifyKind(context.StartTime, DateTimeKind.Utc) <= DateTime.UtcNow.AddHours(24);
         var fee = context.PaymentStatus == "succeeded" && late ? context.LateCancelFeePercent : 0m;
         string? refundId = null;
         var refundStatus = "succeeded";
@@ -1436,7 +1486,7 @@ public sealed class BookingPayments(
             _ => null,
         };
         var saved = await bookings.CompleteSocialCancelAsync(
-            new SocialCancelWrite(context.Id, userId, fee, context.PaymentId, paymentStatus, refundId, refundAmount, refundStatus),
+            new SocialCancelWrite(context.Id, userId, fee, context.PaymentId, paymentStatus, refundId, refundAmount, refundStatus, cancelledBy, waiveFeeAndStart, cancelReason),
             cancellationToken);
         if (!saved)
         {
@@ -1548,77 +1598,99 @@ public sealed class BookingPayments(
         return true;
     }
 
-    public async Task RefundStartedWaitlistsAsync(CancellationToken cancellationToken)
+    private static readonly SemaphoreSlim WaitlistRefundGate = new(1, 1);
+    private static long _lastWaitlistSweepTicks;
+
+    public async Task RefundStartedWaitlistsAsync(CancellationToken cancellationToken, bool force = false)
     {
-        if (settings.IsConfigured)
+        var nowTicks = DateTime.UtcNow.Ticks;
+        if (!force && nowTicks - Interlocked.Read(ref _lastWaitlistSweepTicks) < SweepCooldownTicks)
         {
-            StripeConfiguration.ApiKey = settings.SecretKey;
+            return;
         }
 
-        var rows = await bookings.ListStartedWaitlistsAsync(cancellationToken);
-        foreach (var row in rows)
+        if (!await WaitlistRefundGate.WaitAsync(0, cancellationToken))
         {
-            var cardPaid = row.Amount > 0
-                && row.PaymentStatus == "succeeded"
-                && !string.IsNullOrWhiteSpace(row.StripePaymentIntentId)
-                && !row.StripePaymentIntentId.StartsWith("cs_", StringComparison.Ordinal);
-            if (cardPaid)
+            return;
+        }
+
+        try
+        {
+            Interlocked.Exchange(ref _lastWaitlistSweepTicks, DateTime.UtcNow.Ticks);
+            if (settings.IsConfigured)
             {
-                if (!settings.IsConfigured)
+                StripeConfiguration.ApiKey = settings.SecretKey;
+            }
+
+            var rows = await bookings.ListStartedWaitlistsAsync(cancellationToken);
+            foreach (var row in rows)
+            {
+                var cardPaid = row.Amount > 0
+                    && row.PaymentStatus == "succeeded"
+                    && !string.IsNullOrWhiteSpace(row.StripePaymentIntentId)
+                    && !row.StripePaymentIntentId.StartsWith("cs_", StringComparison.Ordinal);
+                if (cardPaid)
                 {
+                    if (!settings.IsConfigured)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        var refund = await new RefundService().CreateAsync(
+                            new RefundCreateOptions { PaymentIntent = row.StripePaymentIntentId, Amount = Cents(row.Amount) },
+                            new RequestOptions { IdempotencyKey = "refund-waitlist-start-" + row.Id.ToString("N") },
+                            cancellationToken);
+                        await bookings.CompleteStartedWaitlistAsync(row.Id, refund.Id, MapRefundStatus(refund.Status), cancellationToken);
+                    }
+                    catch (StripeException)
+                    {
+                        // Leave the waitlist row so the next sweep can try the refund again.
+                    }
+
                     continue;
                 }
 
-                try
-                {
-                    var refund = await new RefundService().CreateAsync(
-                        new RefundCreateOptions { PaymentIntent = row.StripePaymentIntentId, Amount = Cents(row.Amount) },
-                        new RequestOptions { IdempotencyKey = "refund-waitlist-start-" + row.Id.ToString("N") },
-                        cancellationToken);
-                    await bookings.CompleteStartedWaitlistAsync(row.Id, refund.Id, MapRefundStatus(refund.Status), cancellationToken);
-                }
-                catch (StripeException)
-                {
-                    // Leave the waitlist row so the next page load can try the refund again.
-                }
-
-                continue;
+                await bookings.CompleteStartedWaitlistAsync(row.Id, null, "succeeded", cancellationToken);
             }
 
-            await bookings.CompleteStartedWaitlistAsync(row.Id, null, "succeeded", cancellationToken);
-        }
-
-        var friends = await bookings.ListStartedFriendWaitlistsAsync(cancellationToken);
-        foreach (var row in friends)
-        {
-            var cardPaid = row.Amount > 0
-                && row.PaymentStatus is "succeeded" or "partially_refunded"
-                && !string.IsNullOrWhiteSpace(row.StripePaymentIntentId)
-                && !row.StripePaymentIntentId.StartsWith("cs_", StringComparison.Ordinal);
-            if (cardPaid)
+            var friends = await bookings.ListStartedFriendWaitlistsAsync(cancellationToken);
+            foreach (var row in friends)
             {
-                if (!settings.IsConfigured)
+                var cardPaid = row.Amount > 0
+                    && row.PaymentStatus is "succeeded" or "partially_refunded"
+                    && !string.IsNullOrWhiteSpace(row.StripePaymentIntentId)
+                    && !row.StripePaymentIntentId.StartsWith("cs_", StringComparison.Ordinal);
+                if (cardPaid)
                 {
+                    if (!settings.IsConfigured)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        var refund = await new RefundService().CreateAsync(
+                            new RefundCreateOptions { PaymentIntent = row.StripePaymentIntentId, Amount = Cents(row.Amount) },
+                            new RequestOptions { IdempotencyKey = "refund-friend-waitlist-start-" + row.Id.ToString("N") },
+                            cancellationToken);
+                        await bookings.CompleteStartedFriendWaitlistAsync(row.Id, refund.Id, MapRefundStatus(refund.Status), cancellationToken);
+                    }
+                    catch (StripeException)
+                    {
+                        // Leave the friend on the waitlist so the next sweep can try the refund again.
+                    }
+
                     continue;
                 }
 
-                try
-                {
-                    var refund = await new RefundService().CreateAsync(
-                        new RefundCreateOptions { PaymentIntent = row.StripePaymentIntentId, Amount = Cents(row.Amount) },
-                        new RequestOptions { IdempotencyKey = "refund-friend-waitlist-start-" + row.Id.ToString("N") },
-                        cancellationToken);
-                    await bookings.CompleteStartedFriendWaitlistAsync(row.Id, refund.Id, MapRefundStatus(refund.Status), cancellationToken);
-                }
-                catch (StripeException)
-                {
-                    // Leave the friend on the waitlist so the next page load can try the refund again.
-                }
-
-                continue;
+                await bookings.CompleteStartedFriendWaitlistAsync(row.Id, null, "succeeded", cancellationToken);
             }
-
-            await bookings.CompleteStartedFriendWaitlistAsync(row.Id, null, "succeeded", cancellationToken);
+        }
+        finally
+        {
+            WaitlistRefundGate.Release();
         }
     }
 

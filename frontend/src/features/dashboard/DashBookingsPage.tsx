@@ -52,8 +52,9 @@ export function BookingsPage() {
 function BookingActions({ row, onChanged }: { row: DashBooking; onChanged: (message: string) => void }) {
   const [message, setMessage] = useState<string | null>(null);
   const { busy, run } = useBusy();
-  const courtBooking = (row.kind || "Court") === "Court";
-  const next = courtBooking && (row.status === "pending" || row.status === "confirmed")
+  const isSocial = row.kind === "Drop-in social";
+  const canCancel = row.status === "pending" || row.status === "confirmed" || (isSocial && row.status === "waitlist");
+  const next = canCancel
     ? ["cancelled", ...(row.status === "confirmed" ? ["completed", "no_show"] : [])]
     : [];
   if (next.length === 0) return <span className="text-fg/50">—</span>;

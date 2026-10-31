@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using ShuttleSync.Api.Auth;
@@ -49,6 +50,7 @@ builder.Services.AddSingleton<ComebackCopy>();
 builder.Services.AddSingleton<WeekChangeCopy>();
 builder.Services.AddScoped<PaymentRepository>();
 builder.Services.AddScoped<BookingPayments>();
+builder.Services.AddHostedService<BookingMaintenanceService>();
 builder.Services.AddHttpClient("oauth", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHttpClient("cloudinary", client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient("gemini", client => client.Timeout = TimeSpan.FromSeconds(45));
@@ -56,6 +58,13 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new LenientNullableDecimalConverter());
     options.SerializerOptions.Converters.Add(new LenientNullableIntConverter());
+});
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 2;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
 });
 
 // Add authentication services to the container.
@@ -112,7 +121,30 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // Use the application.
+app.UseForwardedHeaders();
+app.UseExceptionHandler(exceptionApp =>
+{
+    exceptionApp.Run(async context =>
+    {
+        var feature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+        if (feature?.Error is BadHttpRequestException)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsJsonAsync(new { message = "The request payload was not valid." });
+            return;
+        }
 
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        await context.Response.WriteAsJsonAsync(new { message = "An unexpected error occurred." });
+    });
+});
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    await next();
+});
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();

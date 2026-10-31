@@ -500,6 +500,23 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return null;
     }
 
+    public async Task<DashCancelTargetRow[]> ListActiveSocialRegistrationsAsync(Guid venueId, Guid socialId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<DashCancelTargetRow>(new CommandDefinition(
+            """
+            SELECT r.Id, r.UserId
+            FROM PublicSocialRegistrations r
+            JOIN PublicSocials s ON s.Id = r.SocialId
+            WHERE r.SocialId = @SocialId AND r.VenueId = @VenueId AND s.IsDeleted = 0
+              AND r.Status IN ('pending', 'confirmed', 'waitlist')
+            ORDER BY r.CreatedAt
+            """,
+            new { SocialId = socialId, VenueId = venueId },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
     public async Task<string?> DeleteSocialAsync(Guid venueId, Guid socialId, Guid actorId, string? ip, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -607,6 +624,22 @@ public sealed class DashboardRepository(IConfiguration configuration)
         await AuditAsync(connection, tx, actorId, venueId, "update", "CourtSession", sessionId, new { courtId, start, end, price }, ip, cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return null;
+    }
+
+    public async Task<DashCancelTargetRow[]> ListActiveSessionBookingsAsync(Guid venueId, Guid sessionId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<DashCancelTargetRow>(new CommandDefinition(
+            """
+            SELECT Id, UserId
+            FROM Bookings
+            WHERE CourtSessionId = @SessionId AND VenueId = @VenueId AND IsDeleted = 0
+              AND Status IN ('pending', 'confirmed')
+            ORDER BY CreatedAt
+            """,
+            new { SessionId = sessionId, VenueId = venueId },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
     }
 
     public async Task<string?> SoftDeleteSessionAsync(Guid venueId, Guid sessionId, Guid actorId, string? ip, CancellationToken cancellationToken)
@@ -809,21 +842,25 @@ public sealed class DashboardRepository(IConfiguration configuration)
 
     public async Task<string?> CreateClosureAsync(Guid venueId, Guid? courtId, DateTime start, DateTime end, string? reason, Guid actorId, string? ip, CancellationToken cancellationToken)
     {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         if (courtId is not null)
         {
-            await using var check = await OpenAsync(cancellationToken);
-            var court = await check.ExecuteScalarAsync<int>(new CommandDefinition(
-                "SELECT COUNT(*) FROM Courts WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0",
-                new { Id = courtId, VenueId = venueId }, cancellationToken: cancellationToken));
+            var court = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT COUNT(*) FROM Courts WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0 FOR UPDATE",
+                new { Id = courtId, VenueId = venueId }, tx, cancellationToken: cancellationToken));
             if (court == 0)
             {
                 return "That court was not found.";
             }
         }
 
+        if (await CheckClosureConflictsAsync(connection, tx, venueId, courtId, start, end, cancellationToken) is string conflictError)
+        {
+            return conflictError;
+        }
+
         var id = Guid.NewGuid();
-        await using var connection = await OpenAsync(cancellationToken);
-        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         await connection.ExecuteAsync(new CommandDefinition(
             """
             INSERT INTO CourtClosures (Id, VenueId, CourtId, StartTime, EndTime, Reason, CreatedBy, CreatedAt)
@@ -838,20 +875,24 @@ public sealed class DashboardRepository(IConfiguration configuration)
 
     public async Task<string?> UpdateClosureAsync(Guid venueId, Guid closureId, Guid? courtId, DateTime start, DateTime end, string? reason, Guid actorId, string? ip, CancellationToken cancellationToken)
     {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         if (courtId is not null)
         {
-            await using var check = await OpenAsync(cancellationToken);
-            var court = await check.ExecuteScalarAsync<int>(new CommandDefinition(
-                "SELECT COUNT(*) FROM Courts WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0",
-                new { Id = courtId, VenueId = venueId }, cancellationToken: cancellationToken));
+            var court = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT COUNT(*) FROM Courts WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0 FOR UPDATE",
+                new { Id = courtId, VenueId = venueId }, tx, cancellationToken: cancellationToken));
             if (court == 0)
             {
                 return "That court was not found.";
             }
         }
 
-        await using var connection = await OpenAsync(cancellationToken);
-        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        if (await CheckClosureConflictsAsync(connection, tx, venueId, courtId, start, end, cancellationToken) is string conflictError)
+        {
+            return conflictError;
+        }
+
         var changed = await connection.ExecuteAsync(new CommandDefinition(
             """
             UPDATE CourtClosures
@@ -867,6 +908,70 @@ public sealed class DashboardRepository(IConfiguration configuration)
 
         await AuditAsync(connection, tx, actorId, venueId, "update", "CourtClosure", closureId, new { courtId, start, end, reason }, ip, cancellationToken);
         await tx.CommitAsync(cancellationToken);
+        return null;
+    }
+
+    private static async Task<string?> CheckClosureConflictsAsync(
+        MySqlConnection connection,
+        MySqlTransaction tx,
+        Guid venueId,
+        Guid? courtId,
+        DateTime start,
+        DateTime end,
+        CancellationToken cancellationToken)
+    {
+        var activeBookings = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT COUNT(*)
+            FROM Bookings b
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId
+            WHERE b.VenueId = @VenueId AND b.IsDeleted = 0 AND cs.IsDeleted = 0
+              AND (@CourtId IS NULL OR cs.CourtId = @CourtId)
+              AND cs.StartTime < @End AND cs.EndTime > @Start
+              AND (
+                  b.Status = 'confirmed'
+                  OR (b.Status = 'pending' AND (b.HoldExpiresAt IS NULL OR b.HoldExpiresAt > UTC_TIMESTAMP(6)))
+              )
+            """,
+            new { VenueId = venueId, CourtId = courtId, Start = start, End = end },
+            tx,
+            cancellationToken: cancellationToken));
+        if (activeBookings > 0)
+        {
+            return courtId is null
+                ? "Cancel or move existing bookings in this window before closing the venue."
+                : "Cancel or move existing bookings on this court before adding a closure.";
+        }
+
+        var activeSocials = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT COUNT(*)
+            FROM PublicSocials s
+            WHERE s.VenueId = @VenueId AND s.IsDeleted = 0
+              AND s.StartTime < @End AND s.EndTime > @Start
+              AND (
+                  @CourtId IS NULL
+                  OR s.MaxCourts IS NULL
+                  OR EXISTS (
+                      SELECT 1 FROM PublicSocialRegistrations r
+                      WHERE r.SocialId = s.Id AND r.CourtId = @CourtId
+                        AND r.Status IN ('pending', 'confirmed')
+                  )
+                  OR EXISTS (
+                      SELECT 1 FROM PublicSocialFriends f
+                      WHERE f.SocialId = s.Id AND f.CourtId = @CourtId
+                        AND f.Status IN ('pending', 'confirmed')
+                  )
+              )
+            """,
+            new { VenueId = venueId, CourtId = courtId, Start = start, End = end },
+            tx,
+            cancellationToken: cancellationToken));
+        if (activeSocials > 0)
+        {
+            return "Cancel or reschedule the drop-in social in this window before adding a closure.";
+        }
+
         return null;
     }
 
@@ -1328,40 +1433,89 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return new DashPage<DashBookingRow>(rows.ToArray(), pageNumber, size, total);
     }
 
-    public async Task<string?> UpdateBookingStatusAsync(Guid bookingId, string status, Guid actorId, string role, string? ip, CancellationToken cancellationToken)
+    public async Task<(BookingHead? Row, string? Error)> FindOperationalBookingAsync(Guid bookingId, Guid actorId, string role, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
         var row = await connection.QuerySingleOrDefaultAsync<BookingHead>(new CommandDefinition(
-            "SELECT VenueId, Status FROM Bookings WHERE Id = @Id AND IsDeleted = 0",
+            """
+            SELECT VenueId, UserId, Status, 'Court' AS Kind
+            FROM Bookings
+            WHERE Id = @Id AND IsDeleted = 0
+            """,
+            new { Id = bookingId }, cancellationToken: cancellationToken));
+        row ??= await connection.QuerySingleOrDefaultAsync<BookingHead>(new CommandDefinition(
+            """
+            SELECT r.VenueId, r.UserId, r.Status, 'Drop-in social' AS Kind
+            FROM PublicSocialRegistrations r
+            JOIN PublicSocials s ON s.Id = r.SocialId
+            WHERE r.Id = @Id AND s.IsDeleted = 0
+            """,
             new { Id = bookingId }, cancellationToken: cancellationToken));
         if (row is null)
         {
-            return "That booking was not found.";
+            return (null, "That booking was not found.");
         }
 
         if (role != "admin" && !await CanAccessVenueAsync(actorId, role, row.VenueId, cancellationToken))
         {
-            return "That booking was not found.";
+            return (null, "That booking was not found.");
         }
 
-        var allowedChange = status == "cancelled" && row.Status is "pending" or "confirmed"
-            || status is "completed" or "no_show" && row.Status == "confirmed";
+        return (row, null);
+    }
+
+    public async Task AuditBookingStatusAsync(Guid venueId, string entity, Guid bookingId, string status, Guid actorId, string? ip, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        await AuditAsync(connection, tx, actorId, venueId, "update", entity, bookingId, new { status }, ip, cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    public async Task<string?> UpdateBookingStatusAsync(Guid bookingId, string status, Guid actorId, string role, string? ip, CancellationToken cancellationToken)
+    {
+        var (row, findError) = await FindOperationalBookingAsync(bookingId, actorId, role, cancellationToken);
+        if (findError is not null || row is null)
+        {
+            return findError ?? "That booking was not found.";
+        }
+
+        var isSocial = row.Kind == "Drop-in social";
+        var allowedChange = (status == "cancelled" && (row.Status is "pending" or "confirmed" || (isSocial && row.Status == "waitlist")))
+            || (status is "completed" or "no_show" && row.Status == "confirmed");
         if (!allowedChange)
         {
             return "That status change is not available for this booking.";
         }
 
+        await using var connection = await OpenAsync(cancellationToken);
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
-        await connection.ExecuteAsync(new CommandDefinition(
-            """
-            UPDATE Bookings
-            SET Status = @Status, UpdatedAt = UTC_TIMESTAMP(6),
-                CancelledAt = CASE WHEN @Status = 'cancelled' THEN UTC_TIMESTAMP(6) ELSE CancelledAt END,
-                CancelledBy = CASE WHEN @Status = 'cancelled' THEN @ActorId ELSE CancelledBy END
-            WHERE Id = @Id
-            """,
-            new { Id = bookingId, Status = status, ActorId = actorId }, tx, cancellationToken: cancellationToken));
-        await AuditAsync(connection, tx, actorId, row.VenueId, "update", "Booking", bookingId, new { status }, ip, cancellationToken);
+        if (isSocial)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE PublicSocialRegistrations
+                SET Status = @Status,
+                    CancelledAt = CASE WHEN @Status = 'cancelled' THEN UTC_TIMESTAMP(6) ELSE CancelledAt END
+                WHERE Id = @Id
+                """,
+                new { Id = bookingId, Status = status }, tx, cancellationToken: cancellationToken));
+            await AuditAsync(connection, tx, actorId, row.VenueId, "update", "PublicSocialRegistration", bookingId, new { status }, ip, cancellationToken);
+        }
+        else
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Bookings
+                SET Status = @Status, UpdatedAt = UTC_TIMESTAMP(6),
+                    CancelledAt = CASE WHEN @Status = 'cancelled' THEN UTC_TIMESTAMP(6) ELSE CancelledAt END,
+                    CancelledBy = CASE WHEN @Status = 'cancelled' THEN @ActorId ELSE CancelledBy END
+                WHERE Id = @Id
+                """,
+                new { Id = bookingId, Status = status, ActorId = actorId }, tx, cancellationToken: cancellationToken));
+            await AuditAsync(connection, tx, actorId, row.VenueId, "update", "Booking", bookingId, new { status }, ip, cancellationToken);
+        }
+
         await tx.CommitAsync(cancellationToken);
         return null;
     }
@@ -1745,20 +1899,21 @@ public sealed class DashboardRepository(IConfiguration configuration)
             $"SELECT COUNT(*) FROM AuditLogs a {where}", filter, cancellationToken: cancellationToken));
         var rows = await connection.QueryAsync<DashAuditRow>(new CommandDefinition(
             $"""
-            SELECT a.Id, a.UserId, u.Email AS UserEmail, u.DisplayName, a.Action, a.Entity, a.NewValues, a.CreatedAt,
-                   COALESCE(v.Name, NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.NewValues, '$.venueNames')), 'null')) AS VenueName,
-                   u.Role AS UserRole, a.IpAddress,
-                   JSON_UNQUOTE(JSON_EXTRACT(a.NewValues, '$.path')) AS PagePath,
-                   JSON_UNQUOTE(JSON_EXTRACT(a.NewValues, '$.title')) AS PageTitle,
-                   (
-                       SELECT MIN(n.CreatedAt) FROM AuditLogs n
-                       WHERE n.UserId = a.UserId AND n.Action = 'page.view' AND n.CreatedAt > a.CreatedAt
-                   ) AS NextViewAt
-            FROM AuditLogs a
-            LEFT JOIN Users u ON u.Id = a.UserId
-            LEFT JOIN Venues v ON v.Id = a.VenueId
-            {where}
-            ORDER BY a.CreatedAt DESC
+            SELECT paged.Id, paged.UserId, u.Email AS UserEmail, u.DisplayName, paged.Action, paged.Entity, paged.NewValues, paged.CreatedAt,
+                   COALESCE(v.Name, NULLIF(JSON_UNQUOTE(JSON_EXTRACT(paged.NewValues, '$.venueNames')), 'null')) AS VenueName,
+                   u.Role AS UserRole, paged.IpAddress,
+                   JSON_UNQUOTE(JSON_EXTRACT(paged.NewValues, '$.path')) AS PagePath,
+                   JSON_UNQUOTE(JSON_EXTRACT(paged.NewValues, '$.title')) AS PageTitle,
+                   paged.NextViewAt
+            FROM (
+                SELECT a.Id, a.UserId, a.VenueId, a.Action, a.Entity, a.NewValues, a.CreatedAt, a.IpAddress,
+                       LEAD(a.CreatedAt) OVER (PARTITION BY a.UserId ORDER BY a.CreatedAt, a.Id) AS NextViewAt
+                FROM AuditLogs a
+                {where}
+            ) paged
+            LEFT JOIN Users u ON u.Id = paged.UserId
+            LEFT JOIN Venues v ON v.Id = paged.VenueId
+            ORDER BY paged.CreatedAt DESC, paged.Id DESC
             LIMIT @Take OFFSET @Skip
             """,
             filter, cancellationToken: cancellationToken));
@@ -2082,19 +2237,8 @@ public sealed class DashboardRepository(IConfiguration configuration)
         return (number, size, (number - 1) * size);
     }
 
-    private async Task<MySqlConnection> OpenAsync(CancellationToken cancellationToken)
-    {
-        var connectionString = configuration.GetConnectionString("Default");
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new InvalidOperationException("The MySQL connection string is not configured.");
-        }
-
-        var builder = new MySqlConnectionStringBuilder(connectionString) { GuidFormat = MySqlGuidFormat.Char36 };
-        var connection = new MySqlConnection(builder.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        return connection;
-    }
+    private Task<MySqlConnection> OpenAsync(CancellationToken cancellationToken) =>
+        DbConnectionFactory.OpenAsync(configuration, cancellationToken);
 }
 
 public sealed record DashPage<T>(T[] Items, int Page, int PageSize, int Total);
@@ -2357,7 +2501,15 @@ public sealed class DashRecommendationRow
 public sealed class BookingHead
 {
     public Guid VenueId { get; init; }
+    public Guid UserId { get; init; }
     public string Status { get; init; } = "";
+    public string Kind { get; init; } = "Court";
+}
+
+public sealed class DashCancelTargetRow
+{
+    public Guid Id { get; init; }
+    public Guid UserId { get; init; }
 }
 
 public sealed class DashSocialRow

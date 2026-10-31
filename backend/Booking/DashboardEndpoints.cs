@@ -290,10 +290,20 @@ public static class DashboardEndpoints
         return null;
     }
 
-    private static async Task<IResult> DeleteSocialAsync(Guid venueId, Guid socialId, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> DeleteSocialAsync(Guid venueId, Guid socialId, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingPayments payments, CancellationToken cancellationToken)
     {
         var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
         if (gate.Error is not null) return gate.Error;
+        var registrations = await repo.ListActiveSocialRegistrationsAsync(venueId, socialId, cancellationToken);
+        foreach (var reg in registrations)
+        {
+            var cancel = await payments.CancelSocialAsync(reg.UserId, reg.Id, cancellationToken, waiveFeeAndStart: true, cancelledBy: gate.Actor!.UserId, cancelReason: "removed by staff");
+            if (cancel.Error is not null && cancel.StatusCode is not (StatusCodes.Status404NotFound or StatusCodes.Status409Conflict))
+            {
+                return Form(cancel.Error);
+            }
+        }
+
         var error = await repo.DeleteSocialAsync(venueId, socialId, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
     }
@@ -310,10 +320,20 @@ public static class DashboardEndpoints
         return error is null ? Results.NoContent() : Form(error);
     }
 
-    private static async Task<IResult> DeleteSessionAsync(Guid venueId, Guid sessionId, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> DeleteSessionAsync(Guid venueId, Guid sessionId, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingPayments payments, CancellationToken cancellationToken)
     {
         var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
         if (gate.Error is not null) return gate.Error;
+        var activeBookings = await repo.ListActiveSessionBookingsAsync(venueId, sessionId, cancellationToken);
+        foreach (var booking in activeBookings)
+        {
+            var cancel = await payments.CancelAsync(booking.UserId, booking.Id, cancellationToken, waiveFeeAndStart: true, cancelledBy: gate.Actor!.UserId, cancelReason: "removed by staff");
+            if (cancel.Error is not null && cancel.StatusCode is not (StatusCodes.Status404NotFound or StatusCodes.Status409Conflict))
+            {
+                return Form(cancel.Error);
+            }
+        }
+
         var error = await repo.SoftDeleteSessionAsync(venueId, sessionId, gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
     }
@@ -624,12 +644,35 @@ public static class DashboardEndpoints
         }));
     }
 
-    private static async Task<IResult> UpdateBookingAsync(Guid bookingId, StatusBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
+    private static async Task<IResult> UpdateBookingAsync(Guid bookingId, StatusBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingPayments payments, CancellationToken cancellationToken)
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
         if (!actor.IsStaff) return Forbidden();
-        var error = await repo.UpdateBookingStatusAsync(bookingId, body.Status ?? "", actor.UserId, actor.Role, actor.Ip, cancellationToken);
+        var status = body.Status ?? "";
+        if (status == "cancelled")
+        {
+            var (row, findError) = await repo.FindOperationalBookingAsync(bookingId, actor.UserId, actor.Role, cancellationToken);
+            if (findError is not null || row is null) return Form(findError ?? "That booking was not found.");
+            var isSocial = row.Kind == "Drop-in social";
+            if (!(row.Status is "pending" or "confirmed" || (isSocial && row.Status == "waitlist")))
+            {
+                return Form("That status change is not available for this booking.");
+            }
+
+            var cancel = isSocial
+                ? await payments.CancelSocialAsync(row.UserId, bookingId, cancellationToken, waiveFeeAndStart: true, cancelledBy: actor.UserId, cancelReason: "cancelled by staff")
+                : await payments.CancelAsync(row.UserId, bookingId, cancellationToken, waiveFeeAndStart: true, cancelledBy: actor.UserId, cancelReason: "cancelled by staff");
+            if (cancel.Error is not null)
+            {
+                return Form(cancel.Error);
+            }
+
+            await repo.AuditBookingStatusAsync(row.VenueId, isSocial ? "PublicSocialRegistration" : "Booking", bookingId, "cancelled", actor.UserId, actor.Ip, cancellationToken);
+            return Results.NoContent();
+        }
+
+        var error = await repo.UpdateBookingStatusAsync(bookingId, status, actor.UserId, actor.Role, actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
     }
 
@@ -742,6 +785,9 @@ public static class DashboardEndpoints
         }));
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> PageViewWindow = new(StringComparer.Ordinal);
+    private static readonly long PageViewCooldownTicks = TimeSpan.FromSeconds(10).Ticks;
+
     private static async Task<IResult> PageViewAsync(PageViewBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, CancellationToken cancellationToken)
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
@@ -752,6 +798,26 @@ public static class DashboardEndpoints
         {
             return Form("That page cannot be recorded.");
         }
+
+        var nowTicks = DateTime.UtcNow.Ticks;
+        var throttleKey = $"{actor.UserId:N}:{body.VenueId?.ToString("N") ?? "none"}:{path}";
+        if (PageViewWindow.TryGetValue(throttleKey, out var lastTicks) && nowTicks - lastTicks < PageViewCooldownTicks)
+        {
+            return Results.NoContent();
+        }
+
+        if (PageViewWindow.Count > 4096)
+        {
+            foreach (var entry in PageViewWindow)
+            {
+                if (nowTicks - entry.Value >= PageViewCooldownTicks)
+                {
+                    PageViewWindow.TryRemove(entry.Key, out _);
+                }
+            }
+        }
+
+        PageViewWindow[throttleKey] = nowTicks;
 
         if (body.VenueId is not null && !await repo.CanAccessVenueAsync(actor.UserId, actor.Role, body.VenueId.Value, cancellationToken))
         {
@@ -778,7 +844,9 @@ public static class DashboardEndpoints
         try
         {
             await using var stream = file.OpenReadStream();
-            var url = await images.UploadAsync(stream, contentType, folder, Guid.NewGuid().ToString("D"), cancellationToken);
+            var detectedType = await CloudinaryImages.DetectImageContentTypeAsync(stream, cancellationToken);
+            if (detectedType is null) return Form("Use a JPEG, PNG, or WebP image.");
+            var url = await images.UploadAsync(stream, detectedType, folder, Guid.NewGuid().ToString("D"), cancellationToken);
             return Results.Ok(new { url });
         }
         catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
@@ -811,9 +879,7 @@ public static class DashboardEndpoints
         if (session is null) return null;
         var user = await auth.FindUserByIdAsync(session.UserId, cancellationToken);
         if (user is null) return null;
-        var ip = http.Connection.RemoteIpAddress?.ToString();
-        if (ip is { Length: > 64 }) ip = ip[..64];
-        return new DashActor(user.Id, user.Role, ip);
+        return new DashActor(user.Id, user.Role, ClientIpHelper.GetOptionalClientIp(http));
     }
 
     private static bool TryVenue(VenueBody body, Guid id, out DashVenueWrite write, out string error)
