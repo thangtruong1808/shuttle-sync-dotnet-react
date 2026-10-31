@@ -10,6 +10,7 @@ import {
   uploadDashboardImage,
   type DashCourt,
 } from "./dashboardApi";
+
 export function Courts({ venueId }: { venueId: string }) {
   const [courts, setCourts] = useState<DashCourt[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +78,9 @@ export function Courts({ venueId }: { venueId: string }) {
         <Field label="Surface">
           <input className={control} value={draft.surfaceType} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, surfaceType: event.target.value })} />
         </Field>
+        <Field label="Description">
+          <input className={control} value={draft.description} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
+        </Field>
         <Field label="Photo URL">
           <input className={control} value={draft.imageUrl} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, imageUrl: event.target.value })} />
         </Field>
@@ -136,51 +140,97 @@ export function Courts({ venueId }: { venueId: string }) {
   );
 }
 
+function courtForm(court: DashCourt) {
+  return {
+    courtName: court.courtName,
+    courtNumber: String(court.courtNumber),
+    surfaceType: court.surfaceType ?? "",
+    description: court.description ?? "",
+    imageUrl: court.imageUrl ?? "",
+    isActive: court.isActive,
+  };
+}
+
 function CourtRow({ venueId, court, onChanged }: { venueId: string; court: DashCourt; onChanged: (message: string) => void }) {
-  const [name, setName] = useState(court.courtName);
+  const [form, setForm] = useState(() => courtForm(court));
+  const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  useEffect(() => setName(court.courtName), [court.courtName]);
+  useEffect(() => setForm(courtForm(court)), [court]);
   const { busy, run } = useBusy();
   return (
     <li className="grid gap-3 rounded-2xl border border-fg/10 p-3">
       <CourtImage src={court.imageUrl} alt={`${court.courtName} court`} />
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Field label="Court name">
+          <input className={control} value={form.courtName} disabled={busy !== null} onChange={(event) => setForm({ ...form, courtName: event.target.value })} required />
+        </Field>
+        <Field label="Number">
+          <input className={control} type="number" min={1} value={form.courtNumber} disabled={busy !== null} onChange={(event) => setForm({ ...form, courtNumber: event.target.value })} />
+        </Field>
+        <Field label="Surface">
+          <input className={control} value={form.surfaceType} disabled={busy !== null} onChange={(event) => setForm({ ...form, surfaceType: event.target.value })} />
+        </Field>
+        <Field label="Description">
+          <input className={control} value={form.description} disabled={busy !== null} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+        </Field>
+      </div>
+      <Check label="Active" checked={form.isActive} disabled={busy !== null} onChange={(isActive) => setForm({ ...form, isActive })} />
       <div className="flex flex-wrap items-center gap-2">
-      <input className={`${control} max-w-xs`} value={name} disabled={busy !== null} onChange={(event) => setName(event.target.value)} />
-      <span className="text-sm text-fg/65">#{court.courtNumber}</span>
-      <Button
-        variant="secondary"
-        loading={busy === "save"}
-        disabled={busy !== null && busy !== "save"}
-        onClick={() => {
-          void run("save", async () => {
-            try {
-              await saveCourt(venueId, { ...court, courtName: name }, court.id);
-              onChanged("Court saved.");
-            } catch (reason) {
-              setMessage(reason instanceof DashError ? reason.message : "The court could not be saved.");
-            }
-          });
-        }}
-      >
-        Save
-      </Button>
-      <Button
-        variant="danger"
-        loading={busy === "delete"}
-        disabled={busy !== null && busy !== "delete"}
-        onClick={() => {
-          void run("delete", async () => {
-            try {
-              await deleteCourt(venueId, court.id);
-              onChanged("Court removed.");
-            } catch (reason) {
-              setMessage(reason instanceof DashError ? reason.message : "The court could not be deleted.");
-            }
-          });
-        }}
-      >
-        Delete
-      </Button>
+        <Button
+          variant="secondary"
+          loading={busy === "save"}
+          disabled={busy !== null && busy !== "save"}
+          onClick={() => {
+            setMessage(null);
+            void run("save", async () => {
+              try {
+                await saveCourt(venueId, {
+                  courtName: form.courtName,
+                  courtNumber: Number(form.courtNumber),
+                  surfaceType: form.surfaceType || null,
+                  description: form.description || null,
+                  imageUrl: form.imageUrl || null,
+                  isActive: form.isActive,
+                }, court.id);
+                onChanged("Court saved.");
+              } catch (reason) {
+                setMessage(reason instanceof DashError ? reason.message : "The court could not be saved.");
+              }
+            });
+          }}
+        >
+          Save
+        </Button>
+        {confirming ? (
+          <>
+            <Button
+              variant="danger"
+              loading={busy === "delete"}
+              disabled={busy !== null && busy !== "delete"}
+              onClick={() => {
+                setMessage(null);
+                void run("delete", async () => {
+                  try {
+                    await deleteCourt(venueId, court.id);
+                    onChanged("Court removed.");
+                  } catch (reason) {
+                    setMessage(reason instanceof DashError ? reason.message : "The court could not be deleted.");
+                    setConfirming(false);
+                  }
+                });
+              }}
+            >
+              Confirm delete
+            </Button>
+            <Button variant="secondary" disabled={busy !== null} onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <Button variant="danger" disabled={busy !== null} onClick={() => { setMessage(null); setConfirming(true); }}>
+            Delete
+          </Button>
+        )}
       </div>
       <label className="text-sm text-fg/80">
         <span className="inline-flex items-center gap-2">
@@ -200,7 +250,14 @@ function CourtRow({ venueId, court, onChanged }: { venueId: string; court: DashC
             void run("upload", async () => {
               try {
                 const url = await uploadDashboardImage(file, "courts");
-                await saveCourt(venueId, { ...court, courtName: name, imageUrl: url }, court.id);
+                await saveCourt(venueId, {
+                  courtName: form.courtName,
+                  courtNumber: Number(form.courtNumber),
+                  surfaceType: form.surfaceType || null,
+                  description: form.description || null,
+                  imageUrl: url,
+                  isActive: form.isActive,
+                }, court.id);
                 onChanged("Photo saved. It now shows on this court and the homepage.");
               } catch (reason) {
                 setMessage(reason instanceof DashError ? reason.message : "The photo could not be saved.");
@@ -213,4 +270,3 @@ function CourtRow({ venueId, court, onChanged }: { venueId: string; court: DashC
     </li>
   );
 }
-

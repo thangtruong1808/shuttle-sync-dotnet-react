@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { ErrorState } from "../../components/format";
 import { Button, controlClass, Field, PickerInput, Spinner } from "../../components/ui";
 import { PayBar, summaryAside, summaryLines } from "./checkoutUi";
 import { applyWeekChange, weekAvailability, weekOpenTimes, WeekChangeError, type WeekFacts, type WeekSlot } from "../profile/profileApi";
@@ -22,11 +23,13 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
   const [picked, setPicked] = useState<WeekSlot | null>(null);
   const [block, setBlock] = useState<{ fallback: string; facts: WeekFacts } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const selected = courts ? [...locked, ...extra.filter((id) => courts.some((court) => court.id === id))] : locked;
 
   useEffect(() => {
     let live = true;
     setLoadingCourts(true);
+    setLoadError(null);
     weekAvailability(groupId, startTime)
       .then((result) => {
         if (live) setCourts(result.courts);
@@ -40,12 +43,13 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
     return () => {
       live = false;
     };
-  }, [groupId, startTime]);
+  }, [groupId, startTime, attempt]);
 
   useEffect(() => {
     if (!date || selected.length === 0) return;
     let live = true;
     setLoadingTimes(true);
+    setLoadError(null);
     weekOpenTimes(groupId, startTime, date, selected)
       .then((result) => {
         if (!live) return;
@@ -62,7 +66,7 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
     return () => {
       live = false;
     };
-  }, [date, groupId, startTime, selected.join(",")]);
+  }, [date, groupId, startTime, selected.join(","), attempt]);
 
   async function confirm(slot: WeekSlot, acceptPriceIncrease = false) {
     if (acceptPriceIncrease) setAccepting(true);
@@ -102,10 +106,18 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
       <Link to={`/profile/bookings?venue=${encodeURIComponent(slug)}`} className="text-sm text-accent-text hover:underline">Back to my bookings</Link>
       <h1 className="mt-3 font-display text-3xl text-fg">Add a court</h1>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg/75">Courts already on this week stay ticked. Tick another free court, then pick a time that works for every ticked court. This updates the same week.</p>
-      {loadError ? <p className="mt-3 text-sm text-rose-800 dark:text-rose-100" role="alert">{loadError}</p> : null}
-      {loadingCourts || !courts ? (
+      {loadError ? (
+        <div className="mt-4">
+          <ErrorState
+            message={loadError}
+            loading={loadingCourts || loadingTimes}
+            onRetry={() => setAttempt((value) => value + 1)}
+          />
+        </div>
+      ) : null}
+      {loadingCourts && !courts ? (
         <p className="mt-4 flex items-center gap-2 text-sm text-fg" aria-busy="true"><Spinner className="h-4 w-4" /> Loading courts</p>
-      ) : (
+      ) : courts ? (
         <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <form id="week-extend" className="grid gap-4" onSubmit={(event) => { event.preventDefault(); if (picked) void confirm(picked); }}>
           <fieldset>
@@ -170,7 +182,7 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
           </PayBar>
         </aside>
         </div>
-      )}
+      ) : null}
     </main>
   );
 }

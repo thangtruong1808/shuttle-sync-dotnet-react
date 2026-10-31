@@ -84,7 +84,7 @@ export default function DashboardLayout() {
   }
 
   if (status !== "authenticated" || !user) {
-    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+    return <Navigate to={`/login?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`} replace />;
   }
 
   if (user.role !== "staff" && user.role !== "admin") {

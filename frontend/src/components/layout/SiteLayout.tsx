@@ -10,6 +10,7 @@ import { Navbar } from "./Navbar";
 type VenueState = {
   venues: Venue[] | null;
   error: string | null;
+  retrying: boolean;
   reload: () => void;
   defaultSlug: string | null;
   setDefaultVenue: (slug: string | null) => void;
@@ -18,6 +19,7 @@ type VenueState = {
 const VenueContext = createContext<VenueState>({
   venues: null,
   error: null,
+  retrying: false,
   reload: () => undefined,
   defaultSlug: null,
   setDefaultVenue: () => undefined,
@@ -31,6 +33,7 @@ export function SiteLayout() {
   const dispatch = useDispatch<AppDispatch>();
   const [venues, setVenues] = useState<Venue[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [defaultSlug, setDefaultSlug] = useState<string | null>(() => readDefaultVenueSlug());
 
@@ -45,17 +48,22 @@ export function SiteLayout() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setError(null);
     listVenues()
       .then((items) => {
         if (!controller.signal.aborted) {
           setVenues(items);
+          setError(null);
         }
       })
       .catch(() => {
         if (!controller.signal.aborted) {
-          setVenues([]);
+          setVenues((current) => current ?? []);
           setError("Venues could not be loaded.");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setRetrying(false);
         }
       });
     return () => controller.abort();
@@ -73,8 +81,13 @@ export function SiteLayout() {
     }
   }, [venues, defaultSlug]);
 
+  function reload() {
+    setRetrying(true);
+    setAttempt((value) => value + 1);
+  }
+
   return (
-    <VenueContext.Provider value={{ venues, error, reload: () => setAttempt((value) => value + 1), defaultSlug, setDefaultVenue }}>
+    <VenueContext.Provider value={{ venues, error, retrying, reload, defaultSlug, setDefaultVenue }}>
       <div className="flex min-h-screen flex-col bg-canvas text-fg">
         <Navbar />
         <div id="main-content" tabIndex={-1} className="flex-1 outline-none">

@@ -11,10 +11,12 @@ import {
   updateVenueIncentive,
   type DashVenueIncentive,
 } from "./dashboardApi";
+
 export function Incentives({ venueId }: { venueId: string }) {
   const [form, setForm] = useState({ startsOn: today(), endsOn: today(), points: "10", isActive: true });
   const [rows, setRows] = useState<DashVenueIncentive[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);
@@ -24,7 +26,9 @@ export function Incentives({ venueId }: { venueId: string }) {
     let active = true;
     listVenueIncentives(venueId)
       .then((incentives) => {
-        if (active) setRows(incentives);
+        if (!active) return;
+        setRows(incentives);
+        setError(null);
       })
       .catch((reason: unknown) => {
         if (active) setError(reason instanceof DashError ? reason.message : "Incentives could not be loaded.");
@@ -42,13 +46,15 @@ export function Incentives({ venueId }: { venueId: string }) {
       <p className="text-sm text-fg/75">Set the dates and points before anyone books. Every court at this venue uses the same points. A booking whose start date falls in an active range earns those points. Bookings already made keep the points they were given.</p>
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => {
         event.preventDefault();
+        setFormError(null);
+        setSuccess(null);
         void run("create", async () => {
           try {
             await createVenueIncentive(venueId, { startsOn: form.startsOn, endsOn: form.endsOn, points: Number(form.points), isActive: form.isActive });
             setSuccess("Incentive saved. New bookings in these dates earn the points.");
             setAttempt((value) => value + 1);
           } catch (reason) {
-            setError(reason instanceof DashError ? reason.message : "The incentive could not be saved.");
+            setFormError(reason instanceof DashError ? reason.message : "The incentive could not be saved.");
           }
         });
       }}>
@@ -64,14 +70,15 @@ export function Incentives({ venueId }: { venueId: string }) {
         <div className="flex items-end">
           <Check label="Active" checked={form.isActive} disabled={busy !== null} onChange={(isActive) => setForm({ ...form, isActive })} />
         </div>
-        <div className="sm:col-span-2">
+        <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
           <Button type="submit" loading={busy === "create"} disabled={busy !== null && busy !== "create"}>Add incentive</Button>
+          <Notice message={formError} />
         </div>
       </form>
       <Success message={success} />
       {error ? <ErrorState message={error} loading={retrying} onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }} /> : rows === null ? <Skeleton className="h-24" /> : rows.length === 0 ? <EmptyState title="No incentives" body="Add a date range so bookings in those dates earn points." /> : (
         <ul className="grid gap-2 sm:grid-cols-2">
-          {rows.map((row) => <IncentiveRow key={row.id} venueId={venueId} row={row} onChanged={(note) => { setSuccess(note); setError(null); setAttempt((value) => value + 1); }} />)}
+          {rows.map((row) => <IncentiveRow key={row.id} venueId={venueId} row={row} onChanged={(note) => { setSuccess(note); setFormError(null); setAttempt((value) => value + 1); }} />)}
         </ul>
       )}
     </div>
@@ -134,4 +141,3 @@ function IncentiveRow({ venueId, row, onChanged }: { venueId: string; row: DashV
     </li>
   );
 }
-

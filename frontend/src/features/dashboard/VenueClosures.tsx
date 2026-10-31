@@ -31,6 +31,7 @@ export function Closures({ venueId }: { venueId: string }) {
         if (!active) return;
         setCourts(courtRows);
         setRows(closures);
+        setError(null);
       })
       .catch((reason: unknown) => {
         if (active) setError(reason instanceof DashError ? reason.message : "Closures could not be loaded.");

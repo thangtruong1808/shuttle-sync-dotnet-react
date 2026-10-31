@@ -56,6 +56,7 @@ export default function BookingStubPage() {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [retrying, setRetrying] = useState(false);
   const [points, setPoints] = useState(0);
   const [paying, setPaying] = useState(false);
   const [outcome, setOutcome] = useState<BookingPayment | null>(null);
@@ -69,7 +70,8 @@ export default function BookingStubPage() {
     setSlot(null);
     venueSlot(slug, sessionId)
       .then(setSlot)
-      .catch(() => setError("This slot could not be loaded."));
+      .catch(() => setError("This slot could not be loaded."))
+      .finally(() => setRetrying(false));
   }, [slug, sessionId, attempt]);
 
   useEffect(() => {
@@ -113,7 +115,7 @@ export default function BookingStubPage() {
   useCleanReturnUrl(waiting, outcome);
 
   if (status === "anonymous") {
-    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+    return <Navigate to={`/login?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`} replace />;
   }
 
   const rate = slot?.venue.pointsPerDollar || 100;
@@ -196,7 +198,7 @@ export default function BookingStubPage() {
           <Skeleton className="h-28" />
         </div>
       ) : error ? (
-        <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
+        <div className="mt-6"><ErrorState message={error} loading={retrying} onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }} /></div>
       ) : slot && preview ? (
         <div className="mt-6 grid items-start gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
           <section className="rounded-3xl border border-fg/10 bg-surface/80 p-4 sm:p-5">

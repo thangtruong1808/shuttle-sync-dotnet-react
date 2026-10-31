@@ -82,32 +82,14 @@ type PickerProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
   type: PickerType;
 };
 
-export function PickerInput({ type, className = "", iconClassName = "text-fg-muted", onKeyDown, onPaste, onBeforeInput, onClick, disabled, ...props }: PickerProps & { iconClassName?: string }) {
+export function PickerInput({ type, className = "", iconClassName = "text-fg-muted", onClick, disabled, ...props }: PickerProps & { iconClassName?: string }) {
   return (
     <span className="relative block">
       <input
         {...props}
         type={type}
         disabled={disabled}
-        inputMode="none"
         className={`picker-input pr-9 ${className}`}
-        onKeyDown={(event) => {
-          if (event.key !== "Tab" && event.key !== "Escape") {
-            event.preventDefault();
-          }
-          onKeyDown?.(event);
-        }}
-        onPaste={(event) => {
-          event.preventDefault();
-          onPaste?.(event);
-        }}
-        onBeforeInput={(event) => {
-          event.preventDefault();
-          onBeforeInput?.(event);
-        }}
-        onDrop={(event) => {
-          event.preventDefault();
-        }}
         onClick={(event) => {
           const field = event.currentTarget;
           if (!disabled && typeof field.showPicker === "function") {

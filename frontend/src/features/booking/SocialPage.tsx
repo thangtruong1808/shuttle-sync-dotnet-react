@@ -59,7 +59,7 @@ export default function SocialPage() {
   }, [slug, attempt, status]);
 
   if (status === "anonymous") {
-    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+    return <Navigate to={`/login?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`} replace />;
   }
 
   const open = (socials ?? []).filter((social) => new Date(social.endTime).getTime() > now);

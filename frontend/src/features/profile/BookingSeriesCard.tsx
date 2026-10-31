@@ -164,14 +164,14 @@ export function SeriesCard({ weeks, topUps = [], open, onToggle, openWeek, onOpe
               <span>Keep weeks ahead is turned off, so no week is added back.</span>
             </li>
           </ul>
-          <Button type="button" variant="secondary" className="mt-3 w-full sm:w-auto" onClick={() => { setConfirmSeries(false); setSeriesPreview(null); }}>Keep all weeks</Button>
+          <Button type="button" variant="secondary" className="mt-3 w-full sm:w-auto" disabled={seriesBusy} onClick={() => { setConfirmSeries(false); setSeriesPreview(null); }}>Keep all weeks</Button>
         </div>
       ) : null}
       {seriesError ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-800 dark:text-rose-100" role="alert">{seriesError}</p> : null}
       {open ? (
         <div className="mt-4">
           <label className="flex items-start gap-2 text-sm text-fg">
-            <input type="checkbox" className="mt-1 accent-accent-text" checked={Boolean(sample.repeatHold)} disabled={repeatBusy} onChange={(event) => void onRepeat(event.target.checked)} />
+            <input type="checkbox" className="mt-1 accent-accent-text" checked={Boolean(sample.repeatHold)} disabled={repeatBusy || seriesBusy} onChange={(event) => void onRepeat(event.target.checked)} />
             <span>Keep {horizon} {horizon === 1 ? "week" : "weeks"} ahead. When one week starts, the next free week is held for you. You still pay each week before 24 hours of that session.</span>
           </label>
           {repeatBusy ? <span className="mt-2 inline-flex items-center gap-2 text-sm text-fg" role="status"><Spinner className="h-3.5 w-3.5" /> Saving repeat</span> : null}

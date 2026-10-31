@@ -23,7 +23,7 @@ function openHours(availability: Availability | null): string {
 
 export default function HomePage() {
   const { slug = "" } = useParams();
-  const { venues, error: venueError, reload, defaultSlug, setDefaultVenue } = useVenues();
+  const { venues, error: venueError, retrying: venueRetrying, reload, defaultSlug, setDefaultVenue } = useVenues();
   const dispatch = useDispatch<AppDispatch>();
   const status = useSelector((state: RootState) => state.auth.status);
   const venue = venues?.find((item) => item.slug === slug) ?? null;
@@ -178,6 +178,7 @@ export default function HomePage() {
           loading={loading || !applied.date}
           error={error}
           venueError={venueError}
+          venueRetrying={venueRetrying}
           onRetryVenue={reload}
           retrying={retrying}
           onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }}

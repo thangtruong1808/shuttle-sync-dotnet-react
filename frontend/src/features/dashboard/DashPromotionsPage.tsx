@@ -37,6 +37,7 @@ export function PromotionsPage() {
   const [venueId, setVenueId] = useState("");
   const [applied, setApplied] = useState("");
   const [revision, setRevision] = useState(0);
+  const [filtering, setFiltering] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -56,15 +57,17 @@ export function PromotionsPage() {
     <Shell
       title="Promotions"
       refreshKey={`${applied}:${revision}`}
-      load={(page) => listPromotions(applied, page)}
+      load={(page, pageSize) => listPromotions(applied, page, pageSize)}
+      locked={filtering}
+      onSettled={() => setFiltering(false)}
       extra={
         <div className="mt-4 grid gap-4">
-          <form className="flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); void run("filter", async () => { setApplied(venueId); setNote("Filters applied."); }); }}>
-            <select className={`${control} max-w-xs`} value={venueId} onChange={(event) => setVenueId(event.target.value)}>
+          <form className="flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); setFiltering(true); setApplied(venueId); setRevision((value) => value + 1); setNote("Filters applied."); }}>
+            <select className={`${control} max-w-xs`} value={venueId} disabled={filtering} onChange={(event) => setVenueId(event.target.value)}>
               <option value="">All codes</option>
               {venues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
             </select>
-            <Button type="submit" variant="secondary" loading={busy === "filter"}>Filter</Button>
+            <Button type="submit" variant="secondary" loading={filtering}>Filter</Button>
             <Success message={note} />
           </form>
           <form

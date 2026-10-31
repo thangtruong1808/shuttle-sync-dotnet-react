@@ -24,11 +24,17 @@ export default function VenueDesk() {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    let active = true;
     setVenue(null);
+    setError(null);
+  }, [venueId]);
+
+  useEffect(() => {
+    let active = true;
     venueDetail(venueId)
       .then((row) => {
-        if (active) setVenue(row);
+        if (!active) return;
+        setVenue(row);
+        setError(null);
       })
       .catch((reason: unknown) => {
         if (active) setError(reason instanceof DashError ? reason.message : "That venue could not be loaded.");
@@ -84,4 +90,3 @@ export default function VenueDesk() {
     </div>
   );
 }
-

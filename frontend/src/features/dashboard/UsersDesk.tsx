@@ -145,6 +145,7 @@ export function UserDesk() {
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [venueId, setVenueId] = useState("");
+  const [confirming, setConfirming] = useState(false);
   const { busy, run } = useBusy();
 
   useEffect(() => {
@@ -154,6 +155,7 @@ export function UserDesk() {
         if (!active) return;
         setDetail(user);
         setVenues(list);
+        setError(null);
       })
       .catch((reason: unknown) => {
         if (active) setError(reason instanceof DashError ? reason.message : "That user could not be loaded.");
@@ -215,16 +217,24 @@ export function UserDesk() {
         </Field>
         <div className="flex flex-wrap items-end gap-2">
           <Button type="submit" loading={busy === "save"} disabled={busy !== null && busy !== "save"}>Save</Button>
-          <Button variant="danger" loading={busy === "delete"} disabled={busy !== null && busy !== "delete"} onClick={() => {
-            void run("delete", async () => {
-              try {
-                await deleteUser(user.id);
-                navigate("/dashboard/users", { state: { success: "User deleted." } });
-              } catch (reason) {
-                setMessage(reason instanceof DashError ? reason.message : "The user could not be deleted.");
-              }
-            });
-          }}>Delete</Button>
+          {confirming ? (
+            <>
+              <Button variant="danger" loading={busy === "delete"} disabled={busy !== null && busy !== "delete"} onClick={() => {
+                void run("delete", async () => {
+                  try {
+                    await deleteUser(user.id);
+                    navigate("/dashboard/users", { state: { success: "User deleted." } });
+                  } catch (reason) {
+                    setMessage(reason instanceof DashError ? reason.message : "The user could not be deleted.");
+                    setConfirming(false);
+                  }
+                });
+              }}>Confirm delete</Button>
+              <Button variant="secondary" disabled={busy !== null} onClick={() => setConfirming(false)}>Cancel</Button>
+            </>
+          ) : (
+            <Button variant="danger" disabled={busy !== null} onClick={() => { setMessage(null); setSuccess(null); setConfirming(true); }}>Delete</Button>
+          )}
         </div>
         <div className="sm:col-span-2 flex flex-wrap gap-2"><Notice message={message} /><Success message={success} /></div>
       </form>
@@ -253,7 +263,7 @@ export function UserDesk() {
         </ul>
         <form className="mt-3 flex flex-wrap gap-2" onSubmit={(event) => {
           event.preventDefault();
-          if (!venueId) return;
+          if (!venueId || user.role !== "staff") return;
           setMessage(null);
           setSuccess(null);
           void run("assign", async () => {
@@ -266,11 +276,11 @@ export function UserDesk() {
             }
           });
         }}>
-          <select className={`${control} max-w-sm`} value={venueId} disabled={busy !== null} onChange={(event) => setVenueId(event.target.value)}>
+          <select className={`${control} max-w-sm`} value={venueId} disabled={user.role !== "staff" || busy !== null} onChange={(event) => setVenueId(event.target.value)}>
             <option value="">Choose a venue</option>
             {venues.filter((venue) => !assigned.has(venue.id)).map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
           </select>
-          <Button type="submit" loading={busy === "assign"} disabled={!venueId || (busy !== null && busy !== "assign")}>Assign</Button>
+          <Button type="submit" loading={busy === "assign"} disabled={user.role !== "staff" || !venueId || (busy !== null && busy !== "assign")}>Assign</Button>
         </form>
       </section>
       <section>

@@ -30,18 +30,18 @@ export function PaymentsPage() {
           <Success message={note} />
         </form>
       ) : null}
-      {tab === "payments" ? <MoneyList key={`${applied}:${tick}`} title="Payments" locked={filtering} onSettled={() => setFiltering(false)} load={(page, pageSize) => listPayments(applied, page, pageSize)} /> : null}
-      {tab === "refunds" ? <MoneyList key={`r-${applied}:${tick}`} title="Refunds" locked={filtering} onSettled={() => setFiltering(false)} load={(page, pageSize) => listRefunds(applied, page, pageSize)} /> : null}
+      {tab === "payments" ? <MoneyList title="Payments" refreshKey={`payments:${applied}:${tick}`} locked={filtering} onSettled={() => setFiltering(false)} load={(page, pageSize) => listPayments(applied, page, pageSize)} /> : null}
+      {tab === "refunds" ? <MoneyList title="Refunds" refreshKey={`refunds:${applied}:${tick}`} locked={filtering} onSettled={() => setFiltering(false)} load={(page, pageSize) => listRefunds(applied, page, pageSize)} /> : null}
       {tab === "webhooks" ? <WebhookList /> : null}
     </div>
   );
 }
 
-function MoneyList({ title, load, locked = false, onSettled }: { title: string; load: (page: number, pageSize: number) => Promise<DashPage<DashPayment>>; locked?: boolean; onSettled?: () => void }) {
+function MoneyList({ title, refreshKey, load, locked = false, onSettled }: { title: string; refreshKey: string; load: (page: number, pageSize: number) => Promise<DashPage<DashPayment>>; locked?: boolean; onSettled?: () => void }) {
   return (
     <Shell
       title={title}
-      refreshKey={title}
+      refreshKey={refreshKey}
       load={load}
       locked={locked}
       onSettled={onSettled}

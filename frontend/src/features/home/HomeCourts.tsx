@@ -10,6 +10,7 @@ export function HomeCourts({
   loading,
   error,
   venueError,
+  venueRetrying = false,
   onRetryVenue,
   retrying,
   onRetry,
@@ -23,6 +24,7 @@ export function HomeCourts({
   loading: boolean;
   error: string | null;
   venueError: string | null;
+  venueRetrying?: boolean;
   onRetryVenue: () => void;
   retrying: boolean;
   onRetry: () => void;
@@ -35,7 +37,7 @@ export function HomeCourts({
   return (
     <section className="mt-10" aria-labelledby="available-courts">
       <h2 id="available-courts" className="font-display text-2xl text-fg">Courts</h2>
-      {venueError ? <div className="mt-4"><ErrorState message={venueError} onRetry={onRetryVenue} /></div> : null}
+      {venueError ? <div className="mt-4"><ErrorState message={venueError} loading={venueRetrying} onRetry={onRetryVenue} /></div> : null}
       {loading ? (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
           <span className="sr-only">Loading courts</span>

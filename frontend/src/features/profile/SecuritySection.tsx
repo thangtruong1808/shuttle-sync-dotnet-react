@@ -3,7 +3,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { LogOut } from "lucide-react";
 import type { AppDispatch, RootState } from "../../app/store";
 import { Button, Card, PageHeader, Skeleton } from "../../components/ui";
-import { EmptyState, ErrorState } from "../../components/format";
+import { EmptyState, ErrorState, formatVenueDateTime } from "../../components/format";
 import { externalLogins, type ExternalLogin } from "../auth/authApi";
 import { fetchSessions, logoutOthers, revokeSession } from "../auth/authSlice";
 
@@ -83,7 +83,7 @@ export function SecuritySection() {
               <li key={session.id} className="rounded-2xl border border-border bg-inset px-4 py-3 text-sm">
                 <p className="font-medium text-fg">{session.isCurrent ? "This device" : "Other device"}</p>
                 <p className="mt-1 text-fg/65">{session.userAgent ?? "Unknown browser"}</p>
-                <p className="text-fg/65">{session.ipAddress ?? "Unknown address"} · {new Date(session.lastUsedAt).toLocaleString()}</p>
+                <p className="text-fg/65">{session.ipAddress ?? "Unknown address"} · {formatVenueDateTime(session.lastUsedAt, "Australia/Melbourne")}</p>
                 <Button
                   className="mt-3"
                   variant="danger"

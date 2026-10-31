@@ -56,7 +56,7 @@ export default function ProfileLayout() {
   }
 
   if (status !== "authenticated" || !user) {
-    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+    return <Navigate to={`/login?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`} replace />;
   }
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>

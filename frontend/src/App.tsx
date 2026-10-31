@@ -30,7 +30,7 @@ import { venueForPage } from "./features/venues/venueApi";
 import VenueGate from "./features/venues/VenueGate";
 
 function HomeRedirect() {
-  const { venues, error, reload, defaultSlug } = useVenues();
+  const { venues, error, retrying, reload, defaultSlug } = useVenues();
   const [params] = useSearchParams();
   const authError = params.get("authError");
   if (authError) {
@@ -39,7 +39,7 @@ function HomeRedirect() {
   if (error) {
     return (
       <PageSection>
-        <ErrorState message={error} onRetry={reload} />
+        <ErrorState message={error} loading={retrying} onRetry={reload} />
       </PageSection>
     );
   }

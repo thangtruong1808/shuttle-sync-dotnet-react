@@ -58,6 +58,7 @@ export default function SocialPayPage() {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [retrying, setRetrying] = useState(false);
   const [points, setPoints] = useState(0);
   const [paying, setPaying] = useState(false);
   const [outcome, setOutcome] = useState<SocialRegistration | null>(null);
@@ -85,7 +86,8 @@ export default function SocialPayPage() {
           });
         }
       })
-      .catch(() => setError("This drop-in social could not be loaded."));
+      .catch(() => setError("This drop-in social could not be loaded."))
+      .finally(() => setRetrying(false));
   }, [slug, socialId, attempt]);
 
   useEffect(() => {
@@ -229,7 +231,7 @@ export default function SocialPayPage() {
             <Skeleton className="h-6 w-40" />
           </div>
         ) : error ? (
-          <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
+          <div className="mt-6"><ErrorState message={error} loading={retrying} onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }} /></div>
         ) : offer && preview ? (
           <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <section className="rounded-2xl border border-border bg-surface p-4 shadow-card dark:shadow-none sm:p-5">

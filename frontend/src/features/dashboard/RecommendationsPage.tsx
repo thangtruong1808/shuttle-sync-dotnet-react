@@ -117,7 +117,7 @@ export function RecommendationsPage() {
     <Shell
       title="Recommendations"
       refreshKey={`recommendations:${tick}`}
-      load={(page) => listRecommendations(page)}
+      load={(page, pageSize) => listRecommendations(page, pageSize)}
       rowKey={(row: DashRecommendation) => row.id}
       extra={
         <div className="mt-4 grid gap-3">

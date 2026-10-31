@@ -162,7 +162,7 @@ function FreshCourtBooking() {
   }, [slug, date, form.start, form.end, form.weeks]);
 
   if (status === "anonymous") {
-    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+    return <Navigate to={`/login?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`} replace />;
   }
 
   const rate = venue?.hourlyRate ?? 0;
@@ -358,7 +358,7 @@ function FreshCourtBooking() {
                 <Spinner className="h-4 w-4" /> You left the Stripe page before paying. Releasing that payment so you can book again.
               </p>
             ) : null}
-            {error ? <ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /> : null}
+            {error ? <ErrorState message={error} loading={loading} onRetry={() => setAttempt((value) => value + 1)} /> : null}
           </form>
           <aside className={summaryAside}>
             <h2 className="font-display text-lg font-semibold text-fg">Order summary</h2>

@@ -3,10 +3,10 @@ import { useSelector } from "react-redux";
 import { Link, useLocation } from "react-router-dom";
 import type { RootState } from "../../app/store";
 import { EmptyState, ErrorState } from "../../components/format";
-import { Button, PageHeader, Skeleton } from "../../components/ui";
+import { Button, PageHeader, Skeleton, Spinner } from "../../components/ui";
 import { dashboardVenues, type Venue } from "../venues/venueApi";
 import { DashError, saveVenue, uploadDashboardImage } from "./dashboardApi";
-import { slugError, slugify } from "../venues/slug";
+import { currencyError, slugError, slugify, timeZoneError } from "../venues/slug";
 import { Check, control, Field, Notice, Success, useBusy } from "./dashboardUi";
 import { SlugField } from "./SlugField";
 
@@ -91,6 +91,16 @@ export default function VenuesPage() {
             setFormError(null);
             setSuccess(null);
             const invalidSlug = slugError(form.slug);
+            const invalidTimeZone = timeZoneError(form.timeZone);
+            const invalidCurrency = currencyError(form.currency);
+            if (invalidTimeZone) {
+              setFormError(invalidTimeZone);
+              return;
+            }
+            if (invalidCurrency) {
+              setFormError(invalidCurrency);
+              return;
+            }
             if (invalidSlug) {
               setSlugTouched(true);
               setFormError(invalidSlug);
@@ -153,7 +163,10 @@ export default function VenuesPage() {
             <input className={control} value={form.imageUrl} disabled={busy !== null} onChange={(event) => set("imageUrl", event.target.value)} />
           </Field>
           <label className="block text-sm text-fg/80">
-            Upload photo
+            <span className="inline-flex items-center gap-2">
+              Upload photo
+              {busy === "upload" ? <Spinner className="h-4 w-4" /> : null}
+            </span>
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
@@ -182,7 +195,7 @@ export default function VenuesPage() {
           <Notice message={formError} />
           <Success message={success} />
           <div className="sm:col-span-2">
-            <Button type="submit" loading={busy === "save"} disabled={busy !== null && busy !== "save"}>
+            <Button type="submit" loading={busy === "save" || busy === "upload"} disabled={busy !== null && busy !== "save"}>
               {busy === "upload" ? "Uploading" : "Create venue"}
             </Button>
           </div>

@@ -132,6 +132,14 @@ export function DetailsSection() {
   const [uploading, setUploading] = useState(false);
   const busy = saving || uploading;
 
+  useEffect(() => {
+    if (!user) return;
+    setDisplayName(user.displayName ?? "");
+    setFirstName(user.firstName ?? "");
+    setLastName(user.lastName ?? "");
+    setMobile(user.mobile ?? "");
+  }, [user?.id, user?.displayName, user?.firstName, user?.lastName, user?.mobile]);
+
   if (!user) {
     return null;
   }

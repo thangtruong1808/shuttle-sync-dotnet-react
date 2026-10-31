@@ -57,6 +57,7 @@ export default function SocialCheckoutPage() {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [retrying, setRetrying] = useState(false);
   const [points, setPoints] = useState(0);
   const [paying, setPaying] = useState(false);
   const [outcome, setOutcome] = useState<SocialRegistration | null>(null);
@@ -71,7 +72,8 @@ export default function SocialCheckoutPage() {
     setOffers(null);
     Promise.all(ids.map((id) => socialOffer(slug, id)))
       .then(setOffers)
-      .catch(() => setError("These drop-in times could not be loaded."));
+      .catch(() => setError("These drop-in times could not be loaded."))
+      .finally(() => setRetrying(false));
   }, [slug, params, attempt, ids.length]);
 
   useEffect(() => {
@@ -203,7 +205,7 @@ export default function SocialCheckoutPage() {
           <Skeleton className="h-28" />
         </div>
       ) : error ? (
-        <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
+        <div className="mt-6"><ErrorState message={error} loading={retrying} onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }} /></div>
       ) : offers && preview ? (
         <div className="mt-6 grid items-start gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
           <section className="rounded-3xl border border-fg/10 bg-surface/80 p-4 sm:p-5">

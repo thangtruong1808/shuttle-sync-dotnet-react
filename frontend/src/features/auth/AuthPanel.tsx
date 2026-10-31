@@ -69,7 +69,7 @@ export default function AuthPanel({
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const errors = validateCredentials(email, password);
+    const errors = validateCredentials(email, password, mode);
     setFieldErrors(errors);
     setFormMessage(null);
     if (Object.keys(errors).length > 0) {
@@ -231,7 +231,11 @@ export default function AuthPanel({
             type="button"
             aria-pressed={mode === value}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-medium transition-colors ${mode === value ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
-            onClick={() => setMode(value)}
+            onClick={() => {
+              setMode(value);
+              setFieldErrors({});
+              setFormMessage(null);
+            }}
           >
             {value === "login" ? <LogIn className="h-4 w-4" aria-hidden="true" /> : <UserPlus className="h-4 w-4" aria-hidden="true" />}
             {value === "login" ? "Sign in" : "Create account"}
@@ -271,7 +275,7 @@ export default function AuthPanel({
               aria-describedby={describedBy}
               onChange={(event) => setPassword(event.target.value)}
               className="pl-10"
-              placeholder="At least 12 characters"
+              placeholder={mode === "register" ? "At least 12 characters" : "Enter your password"}
             />
           </span>
         )}

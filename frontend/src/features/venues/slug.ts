@@ -37,3 +37,25 @@ export function slugError(slug: string): string | null {
 export function venueAddress(slug: string): string {
   return `${window.location.host}/${slug || "your-venue"}`;
 }
+
+export function timeZoneError(timeZone: string): string | null {
+  const value = timeZone.trim();
+  if (!value) return "Enter an IANA timezone, such as Australia/Melbourne.";
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: value });
+    return null;
+  } catch {
+    return "Enter a valid IANA timezone, such as Australia/Melbourne.";
+  }
+}
+
+export function currencyError(currency: string): string | null {
+  const value = currency.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(value)) return "Enter a 3-letter ISO currency code, such as AUD.";
+  try {
+    new Intl.NumberFormat(undefined, { style: "currency", currency: value });
+    return null;
+  } catch {
+    return "Enter a valid 3-letter ISO currency code, such as AUD.";
+  }
+}

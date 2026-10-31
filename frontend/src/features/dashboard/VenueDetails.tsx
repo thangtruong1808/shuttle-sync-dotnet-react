@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button, Spinner } from "../../components/ui";
-import { slugError } from "../venues/slug";
+import { currencyError, slugError, timeZoneError } from "../venues/slug";
 import { Check, control, Field, Notice, Success, useBusy } from "./dashboardUi";
 import { SlugField } from "./SlugField";
 import {
@@ -33,6 +33,16 @@ export function Details({ venue, admin, onSaved }: { venue: DashVenue; admin: bo
         setMessage(null);
         setSuccess(null);
         const invalidSlug = slugError(form.slug);
+        const invalidTimeZone = timeZoneError(form.timeZone);
+        const invalidCurrency = currencyError(form.currency);
+        if (invalidTimeZone) {
+          setMessage(invalidTimeZone);
+          return;
+        }
+        if (invalidCurrency) {
+          setMessage(invalidCurrency);
+          return;
+        }
         if (invalidSlug) {
           setMessage(invalidSlug);
           return;

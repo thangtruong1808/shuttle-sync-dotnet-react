@@ -71,6 +71,7 @@ export default function CourtGroupPage() {
   const [released, setReleased] = useState<{ message: string; retry: ReleasedRetry | null } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [retrying, setRetrying] = useState(false);
   const [carried] = useState(() => (location.state as { promotionCode?: string; points?: number } | null) ?? null);
   const [points, setPoints] = useState(carried?.points ?? 0);
   const [paying, setPaying] = useState(false);
@@ -105,6 +106,8 @@ export default function CourtGroupPage() {
     load
       .then((hold) => {
         if (!active) return;
+        setRetrying(false);
+        if (!active) return;
         if (hold.released) {
           setSessions([]);
           setReleased({
@@ -127,6 +130,7 @@ export default function CourtGroupPage() {
       })
       .catch(() => {
         if (active) setError("This court hold could not be loaded.");
+        if (active) setRetrying(false);
       });
     return () => {
       active = false;
@@ -305,7 +309,7 @@ export default function CourtGroupPage() {
           <Skeleton className="h-28" />
         </div>
       ) : error ? (
-        <div className="mt-6"><ErrorState message={error} onRetry={() => setAttempt((value) => value + 1)} /></div>
+        <div className="mt-6"><ErrorState message={error} loading={retrying} onRetry={() => { setRetrying(true); setAttempt((value) => value + 1); }} /></div>
       ) : sessions && preview ? (
         <div className={paidView ? "mt-6 space-y-4" : "mt-6 grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]"}>
           {paidView && !waiting && !paymentProcessing ? (

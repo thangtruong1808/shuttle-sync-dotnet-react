@@ -13,13 +13,13 @@ function mapHref(venue: Venue): string | null {
 }
 
 export function ContactPage() {
-  const { venues, error, reload } = useVenues();
+  const { venues, error, retrying, reload } = useVenues();
   return (
     <main>
       <PageSection>
         <PageHeader title="Contact" description="Use the phone or email for the venue you selected. Those details come from that venue's record." />
         {error ? (
-          <ErrorState message={error} onRetry={reload} />
+          <ErrorState message={error} loading={retrying} onRetry={reload} />
         ) : venues === null ? (
           <div className="grid gap-4 sm:grid-cols-2" aria-busy="true">
             <span className="sr-only">Loading venues</span>

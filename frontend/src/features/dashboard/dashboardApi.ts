@@ -378,8 +378,8 @@ export function deleteClosure(venueId: string, closureId: string): Promise<void>
   return send(`/api/dashboard/venues/${venueId}/closures/${closureId}`, "DELETE");
 }
 
-export function listPromotions(venueId: string, page: number): Promise<DashPage<DashPromo>> {
-  const params = new URLSearchParams({ page: String(page) });
+export function listPromotions(venueId: string, page: number, pageSize = 10): Promise<DashPage<DashPromo>> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (venueId) params.set("venueId", venueId);
   return read(`/api/dashboard/promotions?${params}`);
 }
@@ -461,8 +461,8 @@ export function listRedemptions(venueId: string, page: number, pageSize: number)
   return read(`/api/dashboard/redemptions?${params}`);
 }
 
-export function listRecommendations(page: number): Promise<DashPage<DashRecommendation>> {
-  return read(`/api/dashboard/recommendations?page=${page}`);
+export function listRecommendations(page: number, pageSize = 10): Promise<DashPage<DashRecommendation>> {
+  return read(`/api/dashboard/recommendations?page=${page}&pageSize=${pageSize}`);
 }
 
 export function listVenuePlayers(venueId: string): Promise<DashPlayer[]> {

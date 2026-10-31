@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { formatVenueDateTime, formatVenueDay, formatVenueRange } from "../../components/format";
+import { formatVenueDateTime, formatVenueDay, formatVenueRange, Money } from "../../components/format";
 import { Button } from "../../components/ui";
 import { listAwards, listRedemptions, type DashAward, type DashRedemption } from "./dashboardApi";
 import { control, Success } from "./dashboardUi";
@@ -46,9 +46,9 @@ export function RewardsPage() {
       </form>
       {tab === "awards" ? (
         <Shell
-          key={`${applied}:${tick}`}
+          key="awards"
           title="Reward awards"
-          refreshKey={applied}
+          refreshKey={`${applied}:${tick}`}
           load={(page, pageSize) => listAwards(applied, page, pageSize)}
           locked={filtering}
           onSettled={() => setFiltering(false)}
@@ -72,9 +72,9 @@ export function RewardsPage() {
         />
       ) : (
         <Shell
-          key={`red-${applied}:${tick}`}
+          key="redemptions"
           title="Redemptions"
-          refreshKey={applied}
+          refreshKey={`${applied}:${tick}`}
           load={(page, pageSize) => listRedemptions(applied, page, pageSize)}
           locked={filtering}
           onSettled={() => setFiltering(false)}
@@ -83,7 +83,7 @@ export function RewardsPage() {
             { label: "Code", cell: (row) => <span className="text-fg">{row.code}</span> },
             { label: "Player", cell: (row) => row.userEmail },
             { label: "Venue", cell: (row) => row.venueName },
-            { label: "Discount", className: "whitespace-nowrap", cell: (row) => row.discountAmount },
+            { label: "Discount", className: "whitespace-nowrap", cell: (row) => <Money amount={row.discountAmount} currency="AUD" /> },
             { label: "When", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.createdAt, "UTC") },
           ]}
         />
