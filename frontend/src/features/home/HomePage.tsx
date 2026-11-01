@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { CalendarDays, SlidersHorizontal, Users, X } from "lucide-react";
+import { SlidersHorizontal, X } from "lucide-react";
 import type { AppDispatch, RootState } from "../../app/store";
 import { Button, Card, controlClass, Field, PickerInput, Skeleton } from "../../components/ui";
 import { CourtImage, EmptyState, addDays, formatVenueRange, venueToday } from "../../components/format";
@@ -11,7 +11,6 @@ import { loadCurrentUser } from "../auth/authSlice";
 import { openSocials, rememberVenueSlug, venueAvailability, venuePromotions, type Availability, type Promotion } from "../venues/venueApi";
 import { HomeCourts } from "./HomeCourts";
 import { HomeHero } from "./HomeHero";
-import { HomePromos } from "./HomePromos";
 import { SupportChat } from "./SupportChat";
 
 function openHours(availability: Availability | null): string {
@@ -37,7 +36,6 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [hasSocials, setHasSocials] = useState(false);
-  const navigate = useNavigate();
   const now = useNow();
 
   useEffect(() => {
@@ -138,6 +136,8 @@ export default function HomePage() {
             hours={hours}
             courts={availability ? String(availability.courts.length) : "—"}
             cancelPercent={cancelPercent}
+            promotions={promotions}
+            promotionsLoading={loading}
           />
         ) : (
           <Skeleton className="h-80 rounded-3xl" />
@@ -162,16 +162,12 @@ export default function HomePage() {
             </Field>
             <div className="flex flex-wrap items-center gap-2 sm:col-span-2 lg:col-span-3">
               <Button type="submit" className="w-full sm:w-auto" icon={<SlidersHorizontal className="h-4 w-4" aria-hidden="true" />} loading={busy === "filter"} disabled={!draft.date || (busy !== null && busy !== "filter")}>Filter</Button>
-              <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<CalendarDays className="h-4 w-4" aria-hidden="true" />} onClick={() => navigate(`/${slug}/book`)}>Book a court</Button>
-              {hasSocials ? <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<Users className="h-4 w-4" aria-hidden="true" />} onClick={() => navigate(`/${slug}/social`)}>Register for public social</Button> : null}
               {filtered || busy === "clear" ? (
                 <Button type="button" variant="secondary" className="w-full sm:w-auto" icon={<X className="h-4 w-4" aria-hidden="true" />} loading={busy === "clear"} disabled={busy !== null && busy !== "clear"} onClick={onClear}>Clear</Button>
               ) : null}
             </div>
           </form>
         </Card>
-
-        <HomePromos promotions={promotions} loading={loading} currency={venue?.currency ?? "AUD"} timeZone={venue?.timeZone ?? "Australia/Melbourne"} />
 
         <HomeCourts
           availability={availability}

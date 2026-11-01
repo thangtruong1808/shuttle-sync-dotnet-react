@@ -166,12 +166,11 @@ function prettyDate(iso: string): string {
 
 export function IncentiveNote({ points, startsOn, endsOn }: { points: number; startsOn: string; endsOn: string }) {
   return (
-    <p className="mt-2 text-sm leading-snug text-accent-text">
-      <span className="font-semibold">+{points} pts</span>
-      <span className="mt-0.5 block font-normal text-fg/80">
-        Book a court or join a public social from {prettyDate(startsOn)} to {prettyDate(endsOn)}. These points are added after that session ends.
-      </span>
-    </p>
+    <span className="ml-2 inline text-sm leading-snug text-fg/80 sm:ml-3">
+      <span className="font-semibold text-accent-text">+{points} pts</span>
+      {" "}
+      Book a court or join a public social from {prettyDate(startsOn)} to {prettyDate(endsOn)}. These points are added after that session ends.
+    </span>
   );
 }
 

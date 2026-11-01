@@ -1,7 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { Button, Skeleton } from "../../components/ui";
 import { EmptyState, ErrorState } from "../../components/format";
-import { BookedTime, DayChart, IncentiveNote, SessionClock, SocialTimes, upcomingBookings } from "../courts/CourtSchedule";
+import { BookedTime, IncentiveNote, SessionClock, SocialTimes, upcomingBookings } from "../courts/CourtSchedule";
 import { CourtCard } from "../courts/CourtCard";
 import type { Availability } from "../venues/venueApi";
 
@@ -36,7 +36,14 @@ export function HomeCourts({
 }) {
   return (
     <section className="mt-10" aria-labelledby="available-courts">
-      <h2 id="available-courts" className="font-display text-2xl text-fg">Courts</h2>
+      <div className="leading-snug">
+        <h2 id="available-courts" className="inline align-baseline font-display text-2xl text-fg">Courts</h2>
+        {!loading && !error && availability
+          ? (availability.incentives ?? []).map((incentive) => (
+            <IncentiveNote key={incentive.id} points={incentive.points} startsOn={incentive.startsOn} endsOn={incentive.endsOn} />
+          ))
+          : null}
+      </div>
       {venueError ? <div className="mt-4"><ErrorState message={venueError} loading={venueRetrying} onRetry={onRetryVenue} /></div> : null}
       {loading ? (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
@@ -49,14 +56,6 @@ export function HomeCourts({
         <div className="mt-4"><ErrorState message={error} loading={retrying} onRetry={onRetry} /></div>
       ) : availability && availability.courts.length > 0 ? (
         <>
-          <DayChart schedule={availability} now={now} compact collapsible />
-          {(availability.incentives ?? []).length > 0 ? (
-            <div className="mt-4">
-              {(availability.incentives ?? []).map((incentive) => (
-                <IncentiveNote key={incentive.id} points={incentive.points} startsOn={incentive.startsOn} endsOn={incentive.endsOn} />
-              ))}
-            </div>
-          ) : null}
           <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {availability.courts.map((court) => {
               const bookings = upcomingBookings(court.bookings, now);

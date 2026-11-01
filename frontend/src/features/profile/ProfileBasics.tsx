@@ -5,7 +5,7 @@ import { venueForPage } from "../venues/venueApi";
 import { CalendarDays, Gift, Save, Users, Wallet } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../app/store";
-import { formatVenueDay, formatVenueRange } from "../../components/format";
+import { formatVenueDay, formatVenueRange, initials } from "../../components/format";
 import { Alert, Button, Card, Field, Input, PageHeader, Skeleton, Spinner, StatCard } from "../../components/ui";
 import { AuthRequestError, updateProfile, uploadAvatar } from "../auth/authApi";
 import { loadCurrentUser, signedIn } from "../auth/authSlice";
@@ -181,41 +181,56 @@ export function DetailsSection() {
   }
 
   return (
-    <form className="max-w-xl space-y-4" onSubmit={onSubmit}>
-      <PageHeader title="Personal info" />
+    <form className="max-w-3xl" onSubmit={onSubmit}>
+      <PageHeader title="Personal info" description="Update the name, phone number, and photo on your account." />
       <Card>
-      <div className="text-sm">
-        <span className="mb-1 block text-fg/70" id="profile-photo-label">Photo</span>
-        <label className={`group relative inline-flex max-w-full rounded-xl focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent-text ${busy ? "cursor-not-allowed" : "cursor-pointer"}`}>
-          <span className={`pointer-events-none inline-flex items-center justify-center gap-2 rounded-xl border border-fg/15 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg ${busy ? "opacity-60" : "group-hover:bg-fg/10"}`} aria-hidden="true">
-            {uploading ? <Spinner /> : null}
-            Upload photo
-          </span>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-            disabled={busy}
-            aria-labelledby="profile-photo-label"
-            aria-busy={uploading}
-            className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0];
-              event.currentTarget.value = "";
-              void onAvatar(file);
-            }}
-          />
-        </label>
-      </div>
-      <Field label="Display name">{({ id }) => <Input id={id} value={displayName} disabled={busy} onChange={(event) => setDisplayName(event.target.value)} />}</Field>
-      <Field label="First name">{({ id }) => <Input id={id} value={firstName} disabled={busy} onChange={(event) => setFirstName(event.target.value)} />}</Field>
-      <Field label="Last name">{({ id }) => <Input id={id} value={lastName} disabled={busy} onChange={(event) => setLastName(event.target.value)} />}</Field>
-      <Field label="Mobile">{({ id }) => <Input id={id} value={mobile} disabled={busy} onChange={(event) => setMobile(event.target.value)} />}</Field>
-      <p className="text-sm text-fg/70">
-        Email <span className="text-fg">{user.email}</span>
-        {user.emailVerified ? <span className="ml-2 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent-text">Verified</span> : <span className="ml-2 text-xs text-fg/50">Not verified</span>}
-      </p>
-      {message ? <Alert tone={message.tone === "ok" ? "success" : "danger"}>{message.text}</Alert> : null}
-      <Button type="submit" icon={<Save className="h-4 w-4" aria-hidden="true" />} loading={saving} disabled={uploading}>Save</Button>
+        <div className="flex flex-col gap-8">
+          <div className="flex flex-col gap-4 border-b border-border pb-8 sm:flex-row sm:items-center">
+            {user.userAvatar ? (
+              <img src={user.userAvatar} alt="" className="h-20 w-20 shrink-0 rounded-full object-cover" />
+            ) : (
+              <span className="grid h-20 w-20 shrink-0 place-items-center rounded-full bg-fg/10 text-lg font-semibold text-fg">{initials(user.displayName, user.email)}</span>
+            )}
+            <div>
+              <span className="block text-sm font-medium text-fg" id="profile-photo-label">Photo</span>
+              <p className="mt-1 text-sm text-fg-muted">JPEG, PNG, or WebP, up to 2 MB.</p>
+              <label className={`group relative mt-3 inline-flex max-w-full rounded-xl focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent-text ${busy ? "cursor-not-allowed" : "cursor-pointer"}`}>
+                <span className={`pointer-events-none inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-fg shadow-sm ${busy ? "opacity-60" : "group-hover:bg-surface-2"}`} aria-hidden="true">
+                  {uploading ? <Spinner /> : null}
+                  Upload photo
+                </span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                  disabled={busy}
+                  aria-labelledby="profile-photo-label"
+                  aria-busy={uploading}
+                  className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    void onAvatar(file);
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field className="sm:col-span-2" label="Display name">{({ id }) => <Input id={id} value={displayName} disabled={busy} onChange={(event) => setDisplayName(event.target.value)} />}</Field>
+            <Field label="First name">{({ id }) => <Input id={id} value={firstName} disabled={busy} onChange={(event) => setFirstName(event.target.value)} />}</Field>
+            <Field label="Last name">{({ id }) => <Input id={id} value={lastName} disabled={busy} onChange={(event) => setLastName(event.target.value)} />}</Field>
+            <Field className="sm:col-span-2" label="Mobile">{({ id }) => <Input id={id} value={mobile} disabled={busy} onChange={(event) => setMobile(event.target.value)} />}</Field>
+          </div>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-muted">
+            <span>Email</span>
+            <span className="font-medium text-fg">{user.email}</span>
+            {user.emailVerified ? <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent-text">Verified</span> : <span className="text-xs text-fg/50">Not verified</span>}
+          </p>
+          {message ? <Alert tone={message.tone === "ok" ? "success" : "danger"}>{message.text}</Alert> : null}
+          <div>
+            <Button type="submit" className="w-full sm:w-auto" icon={<Save className="h-4 w-4" aria-hidden="true" />} loading={saving} disabled={uploading}>Save</Button>
+          </div>
+        </div>
       </Card>
     </form>
   );
