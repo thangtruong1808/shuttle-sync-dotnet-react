@@ -156,7 +156,9 @@ public static class ProfileEndpoints
         {
             items = rows.Select(row => new
             {
+                kind = row.Kind,
                 groupId = row.GroupId,
+                socialId = row.SocialId,
                 venueName = row.VenueName,
                 venueSlug = row.VenueSlug,
                 timeZone = row.TimeZone,

@@ -4,6 +4,7 @@ import { CalendarClock, CalendarDays, ChevronDown, CircleAlert, CircleCheck, Clo
 import { Alert, Button, PickerInput, Spinner, buttonClass, controlClass } from "../../components/ui";
 import { Money, formatVenueRange } from "../../components/format";
 import { AuthRequestError } from "../auth/authApi";
+import { withSavedPromo } from "../venues/venueApi";
 import { applyWeekChange, cancelBooking, deleteUnpaidHold, refreshUnpaidHolds, setCourtRepeat, weekAvailability, weekOpenTimes, WeekChangeError, type CourtWeekCourt, type WeekFacts, type WeekSlot } from "./profileApi";
 import { ConfirmTimeDialog } from "./ConfirmTimeDialog";
 import { ChangeHours } from "./ChangeHours";
@@ -186,7 +187,7 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
       setChosenTime(null);
       const payIds = saved.payNow ? saved.payBookingIds : saved.addedBookingIds;
       if ((saved.payNow || saved.topUpAmount > 0) && payIds.length > 0) {
-        navigate(`/${first.venueSlug}/book/group/${first.groupId}?bookings=${payIds.join(",")}`);
+        navigate(withSavedPromo(`/${first.venueSlug}/book/group/${first.groupId}?bookings=${payIds.join(",")}`, first.groupId));
         return;
       }
       setNotice("This week moved.");
@@ -439,7 +440,7 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
           <Link to={`/${first.venueSlug}/book?${addParams}`} className="inline-flex w-full items-center justify-center rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-fg hover:bg-surface-2 sm:w-auto">Add another court</Link>
         )}
         {pendingTopUp.length > 0 ? (
-          <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pendingTopUp.map((court) => court.bookingId).join(",")}`} className={buttonClass("primary", "md", "w-full sm:w-auto")}>
+          <Link to={withSavedPromo(`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pendingTopUp.map((court) => court.bookingId).join(",")}`, first.groupId)} className={buttonClass("primary", "md", "w-full sm:w-auto")}>
             <CreditCard className="h-4 w-4" aria-hidden="true" />
             Pay the difference
           </Link>
@@ -450,7 +451,7 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
             <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={locked} icon={<Undo2 className="h-4 w-4" aria-hidden="true" />} onClick={undoChanges}>Cancel changes</Button>
           </>
         ) : pending.length > 0 ? (
-          <Link to={`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pending.map((court) => court.bookingId).join(",")}`} className={buttonClass("primary", "md", "w-full sm:w-auto")}>
+          <Link to={withSavedPromo(`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pending.map((court) => court.bookingId).join(",")}`, first.groupId)} className={buttonClass("primary", "md", "w-full sm:w-auto")}>
             <CreditCard className="h-4 w-4" aria-hidden="true" />
             Pay this week
           </Link>

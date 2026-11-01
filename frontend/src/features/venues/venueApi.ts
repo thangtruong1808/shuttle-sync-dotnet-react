@@ -363,6 +363,76 @@ export function courtHold(slug: string, groupId: string): Promise<{ currency: st
   return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/${groupId}`, "no-store");
 }
 
+export function rememberCourtPromo(code: string) {
+  const trimmed = code.trim();
+  if (!trimmed) return;
+  try {
+    sessionStorage.setItem("shuttle-sync-promo-latest", trimmed.toUpperCase());
+  } catch {
+    // Private browsing can block storage. The pay link still carries the code.
+  }
+}
+
+export function savedCourtPromo(groupId?: string) {
+  try {
+    return (groupId ? sessionStorage.getItem(`shuttle-sync-promo-${groupId}`) : null) || sessionStorage.getItem("shuttle-sync-promo-latest");
+  } catch {
+    return null;
+  }
+}
+
+export function rememberCourtPromoLink(actions: { href?: string | null; promoCode?: string | null }[]) {
+  for (const action of actions) {
+    const fromField = action.promoCode?.trim();
+    let fromHref: string | null = null;
+    let group: string | null = null;
+    if (action.href) {
+      try {
+        const url = new URL(action.href, window.location.origin);
+        fromHref = url.searchParams.get("promo");
+        group = url.pathname.match(/\/book\/group\/([0-9a-f-]{36})/i)?.[1] ?? null;
+      } catch {
+        fromHref = null;
+      }
+    }
+    const promo = fromHref || fromField;
+    if (!promo) continue;
+    rememberCourtPromo(promo);
+    if (group) {
+      try {
+        sessionStorage.setItem(`shuttle-sync-promo-${group}`, promo.toUpperCase());
+      } catch {
+        // The latest code is already stored.
+      }
+    }
+  }
+}
+
+export function rememberPointShare(share: 100 | null) {
+  try {
+    if (share === 100) sessionStorage.setItem("shuttle-sync-points-share", "100");
+    else sessionStorage.removeItem("shuttle-sync-points-share");
+  } catch {
+    // The pay link can still carry points=100.
+  }
+}
+
+export function savedPointShare() {
+  try {
+    return sessionStorage.getItem("shuttle-sync-points-share") === "100" ? 100 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function withSavedPromo(href: string, groupId: string) {
+  let next = href;
+  const promo = savedCourtPromo(groupId);
+  if (promo && !next.includes("promo=")) next += `${next.includes("?") ? "&" : "?"}promo=${encodeURIComponent(promo)}`;
+  if (savedPointShare() === 100 && !next.includes("points=")) next += `${next.includes("?") ? "&" : "?"}points=100`;
+  return next;
+}
+
 export function startGroupCheckout(slug: string, groupId: string, points: number, promotionCode: string, bookingIds: string[]): Promise<CheckoutResult> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/${groupId}/checkout`, "no-store", {
     method: "POST",

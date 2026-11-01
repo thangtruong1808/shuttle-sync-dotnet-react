@@ -716,7 +716,7 @@ public sealed class PaymentRepository(IConfiguration configuration)
             cancellationToken: cancellationToken));
     }
 
-    public async Task<bool> FailPendingAsync(string intentId, string paymentStatus, string? code, string? message, CancellationToken cancellationToken)
+    public async Task<bool> FailPendingAsync(string intentId, string paymentStatus, string? code, string? message, CancellationToken cancellationToken, bool expireHold = true)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
@@ -740,6 +740,21 @@ public sealed class PaymentRepository(IConfiguration configuration)
         if (row is null)
         {
             return false;
+        }
+
+        if (!expireHold)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Payments
+                SET Status = @Status, FailureCode = @Code, FailureMessage = @Message, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE StripePaymentIntentId = @IntentId AND Status = 'pending'
+                """,
+                new { IntentId = intentId, Status = paymentStatus, Code = Trim(code, 100), Message = Trim(message, 500) },
+                tx,
+                cancellationToken: cancellationToken));
+            await tx.CommitAsync(cancellationToken);
+            return true;
         }
 
         if (row.PayGroupId is not null)
@@ -1477,7 +1492,7 @@ public sealed class PaymentRepository(IConfiguration configuration)
             return;
         }
 
-        await ReleasePayGroupAttemptAsync(connection, tx, payGroupId.Value, "cancelled", null, null, cancellationToken, expireWithin24Hours: true);
+        await ReleasePayGroupAttemptAsync(connection, tx, payGroupId.Value, "cancelled", null, null, cancellationToken);
         await tx.CommitAsync(cancellationToken);
     }
 

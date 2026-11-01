@@ -15,6 +15,12 @@ internal sealed class SupportReplyProgress
     public string? PromoCode { get; private set; }
     public string? PromoDetail { get; private set; }
     public bool HoldSaved { get; private set; }
+    public bool NeedsDuration { get; private set; }
+    public string? Recommendation { get; private set; }
+    public List<SocialChoice> Socials { get; } = [];
+    public bool SocialJoined { get; private set; }
+    public bool SocialNeedsPayment { get; private set; }
+    public bool SocialAlreadyJoined { get; private set; }
 
     public void Note(string tool, SupportToolExecutionResult result)
     {
@@ -40,8 +46,13 @@ internal sealed class SupportReplyProgress
 
         if (tool is "check_court_availability" or "suggest_alternative_slots")
         {
+            NeedsDuration = Has(result.Response, "needsDuration");
+            Recommendation = Text(JsonSerializer.SerializeToElement(result.Response), "recommendation");
             Slots.Clear();
-            Slots.AddRange(ReadSlots(result.Response));
+            if (!NeedsDuration)
+            {
+                Slots.AddRange(ReadSlots(result.Response));
+            }
         }
 
         if (tool == "list_active_promotions_and_socials")
@@ -55,6 +66,15 @@ internal sealed class SupportReplyProgress
             }
 
             NotePromo(result.Response);
+            Socials.Clear();
+            Socials.AddRange(SupportSocialSteps.Read(result.Response));
+        }
+
+        if (tool == "join_public_social" && Has(result.Response, "registrationId") && !Has(result.Response, "error"))
+        {
+            SocialJoined = true;
+            SocialNeedsPayment = Has(result.Response, "needsPayment");
+            SocialAlreadyJoined = Has(result.Response, "alreadyJoined");
         }
     }
 
@@ -137,10 +157,18 @@ internal sealed class SupportReplyProgress
             && courts.ValueKind == JsonValueKind.Array)
         {
             var choices = courts.EnumerateArray()
-                .Select(court => Text(court, "courtName"))
-                .Where(name => !string.IsNullOrWhiteSpace(name))
-                .Select(name => SlotChoice.Create(name!, when, window))
-                .Take(6)
+                .Select(court =>
+                {
+                    var name = Text(court, "courtName");
+                    var courtWindow = Text(court, "windowFormatted") ?? window;
+                    var courtWhen = Text(court, "dateFormatted") ?? when;
+                    return string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(courtWindow)
+                        ? null
+                        : SlotChoice.Create(name, courtWhen, courtWindow);
+                })
+                .Where(choice => choice is not null)
+                .Select(choice => choice!)
+                .Take(12)
                 .ToArray();
             if (choices.Length > 0)
             {
@@ -167,7 +195,7 @@ internal sealed class SupportReplyProgress
                 })
                 .Where(choice => choice is not null)
                 .Select(choice => choice!)
-                .Take(6)
+                .Take(12)
                 .ToArray();
             if (choices.Length > 0)
             {
@@ -242,18 +270,32 @@ internal static class SupportReplyChips
         DateTime? nowLocal = null)
     {
         var said = string.Join('\n', turns.Where(turn => turn.Role == "user").Select(turn => turn.Text));
-        var pickedSlot = PickedSlot(said);
-        if ((!progress.Booking && !pickedSlot) || actions.Any(action => action.Kind == "stripe_checkout"))
+        var lastUser = turns.LastOrDefault(turn => turn.Role == "user").Text ?? "";
+        if (AsksHowPointsWork(lastUser))
         {
-            return new SupportReplyPlan(actions, null);
+            return new SupportReplyPlan([], PointsExplanation());
+        }
+
+        var pickedSlot = PickedSlot(said);
+        var waitingForDuration = !pickedSlot && ChosenDuration(said) is null && AskedForCourts(said);
+        var socialFlow = SupportSocialSteps.InFlow(said);
+        if (!progress.Booking && !pickedSlot && !waitingForDuration && !socialFlow)
+        {
+            return new SupportReplyPlan(StampPromo(actions, said, progress), null);
+        }
+
+        if (actions.Any(action => action.Kind == "stripe_checkout"))
+        {
+            var social = SupportSocialSteps.Guide(said, progress, nowLocal);
+            return new SupportReplyPlan(StampPromo(actions, said, progress), social.Handled ? social.Reply : null);
         }
 
         var next = Next(said, progress, nowLocal);
         var kept = next.Any(action => action.Kind == "close_chat")
-            ? actions.Where(action => action.Kind != "my_bookings_link").ToArray()
+            ? actions.Where(action => action.Kind != "my_bookings_link" || action.Href?.Contains("/social/", StringComparison.Ordinal) == true).ToArray()
             : actions;
         var combined = next.Count == 0 ? kept : kept.Concat(next).ToArray();
-        return new SupportReplyPlan(combined, GuidedReply(said, progress, nowLocal));
+        return new SupportReplyPlan(StampPromo(combined, said, progress, actions), GuidedReply(said, progress, nowLocal));
     }
 
     private static IReadOnlyList<SupportChatAction> Next(string said, SupportReplyProgress progress, DateTime? nowLocal)
@@ -263,6 +305,12 @@ internal static class SupportReplyChips
             || Has(said, "apply the promotion code and redeem")
             || Has(said, "redeem my reward points")
             || Regex.IsMatch(said, @"\bApply promotion code\b", RegexOptions.IgnoreCase);
+        var social = SupportSocialSteps.Actions(said, progress, nowLocal);
+        if (social is not null)
+        {
+            return social;
+        }
+
         var payingHere = Has(said, "pay from this chat");
         var chosePay = Has(said, "pay now") || (Has(said, "pay later") && !payingHere);
         var pickedSlot = PickedSlot(said);
@@ -276,9 +324,14 @@ internal static class SupportReplyChips
                 new SupportChatAction(Kind: "close_chat", Label: "Finish chat"),
             ];
         }
+        if (!pickedSlot && ChosenDuration(said) is null && (progress.NeedsDuration || progress.Slots.Count > 0 || AskedForCourts(said)))
+        {
+            return DurationChips();
+        }
+
         if (progress.Slots.Count > 0 && !pickedSlot)
         {
-            return progress.Slots.Select(slot => Chip(slot.Label, slot.Prompt)).ToArray();
+            return OpenSlots(progress, nowLocal).Select(slot => Chip(slot.Label, slot.Prompt)).ToArray();
         }
 
         if (!pickedSlot)
@@ -335,12 +388,48 @@ internal static class SupportReplyChips
             || Has(said, "apply the promotion code and redeem")
             || Has(said, "redeem my reward points")
             || Regex.IsMatch(said, @"\bApply promotion code\b", RegexOptions.IgnoreCase);
-        if (progress.HoldSaved && Has(said, "pay later") && !Has(said, "pay from this chat"))
+        var social = SupportSocialSteps.Guide(said, progress, nowLocal);
+        if (social.Handled)
         {
-            return "Your booking is held. You can pay later in My Bookings, pay from this chat, or finish chatting. Pay at least 24 hours before play, or the court is released.";
+            return social.Reply;
         }
 
-        if (!pickedSlot || progress.PayNowOnly)
+        if (progress.HoldSaved && Has(said, "pay later") && !Has(said, "pay from this chat"))
+        {
+            return "Your booking is held. Please pay later in My Bookings, pay from this chat, or finish chatting. Pay at least 24 hours before play, or the court is released.";
+        }
+
+        if (!pickedSlot)
+        {
+            if (ChosenDuration(said) is null && (progress.NeedsDuration || progress.Slots.Count > 0 || AskedForCourts(said)))
+            {
+                return "Please tell me how long you would like to play.";
+            }
+
+            if (progress.Slots.Count == 0)
+            {
+                return string.IsNullOrWhiteSpace(progress.Recommendation) || progress.PayNowOnly
+                    ? null
+                    : progress.Recommendation;
+            }
+
+            if (progress.PayNowOnly)
+            {
+                return null;
+            }
+
+            var open = OpenSlots(progress, nowLocal);
+            if (open.Count == 0)
+            {
+                return "Please choose a later time today, or look at tomorrow. Those times have already started.";
+            }
+
+            return string.IsNullOrWhiteSpace(progress.Recommendation)
+                ? "Please choose one of these times."
+                : progress.Recommendation;
+        }
+
+        if (progress.PayNowOnly)
         {
             return null;
         }
@@ -348,8 +437,8 @@ internal static class SupportReplyChips
         if (!choseSchedule)
         {
             return StartsWithin24Hours(said, nowLocal)
-                ? "Would you like one session, a hold for 1 week, or a weekly repeat? This session starts within 24 hours, so it must be paid now. An unpaid hold lasts 30 minutes."
-                : "Would you like one session, a hold for 1 week, or a weekly repeat?";
+                ? "Please choose one session, a hold for 1 week, or a weekly repeat. This session starts within 24 hours, so it must be paid now. An unpaid hold lasts 30 minutes."
+                : "Please choose one session, a hold for 1 week, or a weekly repeat.";
         }
 
         if (!promoSettled)
@@ -360,22 +449,138 @@ internal static class SupportReplyChips
         return null;
     }
 
+    internal static string? SelectedPromo(string said, SupportReplyProgress progress) => ChosenPromo(said, progress);
+
     private static string PromoQuestion(SupportReplyProgress progress)
     {
         var code = progress.PromoCode;
         var detail = progress.PromoDetail ?? "a discount";
         if (code is null)
         {
-            return "Would you like to apply a promotion code, redeem reward points, or use both?";
+            return "Please choose whether to apply a promotion code, redeem reward points, or use both.";
         }
 
         return progress.KnowsPoints
-            ? $"Would you like to apply the promotion code {code} for {detail}, redeem any of your {progress.RewardPoints.ToString(CultureInfo.InvariantCulture)} reward points ✨, or use both?"
-            : $"Would you like to apply the promotion code {code} for {detail}, redeem reward points, or use both?";
+            ? $"Please choose whether to apply the promotion code {code} for {detail}, redeem any of your {progress.RewardPoints.ToString(CultureInfo.InvariantCulture)} reward points ✨, or use both."
+            : $"Please choose whether to apply the promotion code {code} for {detail}, redeem reward points, or use both.";
     }
+
+    private static string? ChosenPromo(string said, SupportReplyProgress progress)
+    {
+        var match = Regex.Match(said, @"\bApply promotion code\s+([A-Za-z0-9]+)", RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            return match.Groups[1].Value.ToUpperInvariant();
+        }
+
+        if (Has(said, "apply the promotion code and redeem"))
+        {
+            return progress.PromoCode?.ToUpperInvariant();
+        }
+
+        return null;
+    }
+
+    private static SupportChatAction[] StampPromo(IReadOnlyList<SupportChatAction> actions, string said, SupportReplyProgress progress, IReadOnlyList<SupportChatAction>? links = null)
+    {
+        var code = ChosenPromo(said, progress);
+        var groupHref = (links ?? actions).Select(action => action.Href).FirstOrDefault(href => href?.Contains("/book/group/", StringComparison.Ordinal) == true);
+        return actions
+            .Select(action => action.Href == "/profile/bookings" && groupHref is not null ? action with { Href = groupHref } : action)
+            .Select(action => WithPromo(action, code))
+            .Select(action => WithPoints(action, WantsAllPoints(said)))
+            .ToArray();
+    }
+
+    internal static bool WantsAllPoints(string said)
+    {
+        var redeem = Math.Max(said.LastIndexOf("redeem my reward points", StringComparison.OrdinalIgnoreCase), said.LastIndexOf("apply the promotion code and redeem", StringComparison.OrdinalIgnoreCase));
+        var decline = said.LastIndexOf("without a promotion code or reward points", StringComparison.OrdinalIgnoreCase);
+        return redeem >= 0 && redeem > decline;
+    }
+
+    private static SupportChatAction WithPromo(SupportChatAction action, string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code) || action.Kind != "my_bookings_link" || string.IsNullOrWhiteSpace(action.Href) || action.Href.Contains("promo=", StringComparison.OrdinalIgnoreCase))
+        {
+            return action;
+        }
+
+        var join = action.Href.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+        return action with { Href = $"{action.Href}{join}promo={Uri.EscapeDataString(code)}", PromoCode = code };
+    }
+
+    private static SupportChatAction WithPoints(SupportChatAction action, bool allPoints)
+    {
+        if (!allPoints || action.Kind != "my_bookings_link" || string.IsNullOrWhiteSpace(action.Href) || action.Href.Contains("points=", StringComparison.OrdinalIgnoreCase))
+        {
+            return action;
+        }
+
+        var join = action.Href.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+        return action with { Href = $"{action.Href}{join}points=100" };
+    }
+
+    private static int? ChosenDuration(string said)
+    {
+        if (Has(said, "3 hours")) return 180;
+        if (Has(said, "2 hours 30") || Has(said, "2 hour 30")) return 150;
+        if (Has(said, "2 hours")) return 120;
+        if (Has(said, "1 hour 30") || Has(said, "90 minutes")) return 90;
+        if (Has(said, "1 hour") || Has(said, "60 minutes")) return 60;
+        if (Has(said, "30 minutes")) return 30;
+        return null;
+    }
+
+    private static bool AsksHowPointsWork(string said) =>
+        Has(said, "pending to available");
+
+    private static string PointsExplanation() =>
+        "Available points are ready to spend on the pay page. Pending points are set aside when you book a court, join a public social, or add friends, and an incentive is on for that date. They are not ready to spend yet. After that session ends, they join your available balance. A cancelled place, a waitlist place that never opens, or a payment that does not finish does not earn the incentive. A promotion code is applied first, and points come off what is left.";
+
+    private static bool AskedForCourts(string said) =>
+        Has(said, "free today") || Has(said, "free tomorrow") || Has(said, "free on") || Has(said, "courts are free") || Has(said, "what is free") || Has(said, "book a court") || Has(said, "which courts");
+
+    private static SupportChatAction[] DurationChips() =>
+    [
+        Chip("30 minutes", "Book for 30 minutes"),
+        Chip("1 hour", "Book for 1 hour"),
+        Chip("1 hour 30 minutes", "Book for 1 hour 30 minutes"),
+        Chip("2 hours", "Book for 2 hours"),
+        Chip("2 hours 30 minutes", "Book for 2 hours 30 minutes"),
+        Chip("3 hours", "Book for 3 hours"),
+    ];
 
     private static bool PickedSlot(string said) =>
         Regex.IsMatch(said, @"\bSelect\b.+\d{1,2}:\d{2}", RegexOptions.IgnoreCase);
+
+    private static IReadOnlyList<SlotChoice> OpenSlots(SupportReplyProgress progress, DateTime? nowLocal) =>
+        progress.Slots.Where(slot => SlotIsAhead(slot, nowLocal)).Take(6).ToArray();
+
+    private static bool SlotIsAhead(SlotChoice slot, DateTime? nowLocal)
+    {
+        if (nowLocal is null)
+        {
+            return true;
+        }
+
+        var match = Regex.Match(
+            slot.Prompt,
+            @"\bon\s+([A-Za-z]+,\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}),\s*(\d{1,2}:\d{2}\s*[AP]M)",
+            RegexOptions.IgnoreCase);
+        if (!match.Success
+            || !DateTime.TryParseExact(
+                $"{match.Groups[1].Value} {match.Groups[2].Value}",
+                "dddd, d MMMM yyyy h:mm tt",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var start))
+        {
+            return true;
+        }
+
+        return start > nowLocal.Value.AddMinutes(5);
+    }
 
     private static bool StartsWithin24Hours(string said, DateTime? nowLocal)
     {

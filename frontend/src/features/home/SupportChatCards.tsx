@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Money } from "../../components/format";
 import { Button, buttonClass } from "../../components/ui";
+import { rememberCourtPromo, rememberPointShare } from "../venues/venueApi";
 
 export type SupportChatAction = {
   kind: string;
@@ -18,13 +19,14 @@ export type SupportChatAction = {
   cashAmount?: number | null;
   promoCode?: string | null;
   canPayLater?: boolean | null;
+  socialId?: string | null;
 };
 
 export const openingChoices: SupportChatAction[] = [
   { kind: "quick_replies", label: "Courts free today", prompt: "Which courts are free today?" },
   { kind: "quick_replies", label: "Courts free tomorrow", prompt: "Which courts are free tomorrow?" },
-  { kind: "quick_replies", label: "Book a court", prompt: "I want to book a court" },
   { kind: "quick_replies", label: "Join a social", prompt: "What public socials can I join?" },
+  { kind: "quick_replies", label: "How points work", prompt: "Please explain how reward points go from pending to available to spend." },
   { kind: "quick_replies", label: "Cancellation policy", prompt: "What is the cancellation policy?" },
   { kind: "quick_replies", label: "My points", prompt: "How many reward points do I have?" },
 ];
@@ -115,7 +117,7 @@ function BookingCard({ actions }: { actions: SupportChatAction[] }) {
           </Button>
         ) : null}
         <Link to={bookingsHref} className={buttonClass("secondary", "md")}>
-          {confirmed ? "View in My Bookings" : "View in My Bookings (Pay later)"}
+          {bookings?.label || (confirmed ? "View in My Bookings" : "Pay in My Bookings")}
         </Link>
       </div>
     </div>
@@ -132,6 +134,8 @@ function QuickReplies({ actions, sending, onPrompt }: { actions: SupportChatActi
     <>
       {actions.map((action) => {
         const text = (action.prompt || action.label).trim();
+        const named = text.match(/\bApply promotion code\s+([A-Za-z0-9]+)/i)?.[1] ?? action.label.match(/^Apply\s+([A-Za-z0-9]+)$/i)?.[1];
+        const both = /apply the promotion code and redeem/i.test(text) ? actions.find((item) => /^Apply\s+[A-Za-z0-9]+$/i.test(item.label))?.label.match(/^Apply\s+([A-Za-z0-9]+)$/i)?.[1] : null;
         return (
           <Button
             key={`${action.label}-${text}`}
@@ -141,6 +145,17 @@ function QuickReplies({ actions, sending, onPrompt }: { actions: SupportChatActi
             loading={sending && pending === text}
             disabled={sending}
             onClick={() => {
+              const code = named || both;
+              if (code) rememberCourtPromo(code);
+              if (/redeem my reward points/i.test(text)) rememberPointShare(100);
+              if (/without a promotion code/i.test(text)) {
+                rememberPointShare(null);
+                try {
+                  sessionStorage.removeItem("shuttle-sync-promo-latest");
+                } catch {
+                  // Storage can be unavailable. The pay page then leaves the code unset.
+                }
+              }
               setPending(text);
               onPrompt(text);
             }}

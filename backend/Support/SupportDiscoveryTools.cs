@@ -44,6 +44,7 @@ public static class SupportDiscoveryTools
                 properties = new Dictionary<string, object>
                 {
                     ["date"] = new { type = "STRING", description = "Target date in YYYY-MM-DD, or 'today' / 'tomorrow'." },
+                    ["durationMinutes"] = new { type = "INTEGER", description = "How long they want to play: 30, 60, 90, 120, 150, or 180. Required before listing free courts." },
                     ["startTime"] = new { type = "STRING", description = "Optional start time in HH:mm (24h) or e.g. '6:00 pm'." },
                     ["endTime"] = new { type = "STRING", description = "Optional end time in HH:mm (24h) or e.g. '8:00 pm'." },
                     ["weeks"] = new { type = "INTEGER", description = "Optional number of weeks (1 to 12) if checking a multi-week hold." },
@@ -95,7 +96,7 @@ public static class SupportDiscoveryTools
                     ["courtCount"] = new { type = "INTEGER", description = "Number of courts (default 1)." },
                     ["weeks"] = new { type = "INTEGER", description = "Number of weeks (1 to 12, default 1)." },
                     ["promotionCode"] = new { type = "STRING", description = "Optional promotion code to apply." },
-                    ["pointsToRedeem"] = new { type = "INTEGER", description = "Optional reward points to redeem." },
+                    ["pointsToRedeem"] = new { type = "INTEGER", description = "Reward points to redeem. Use the full balance when they choose their points or both the code and points." },
                 },
                 required = new[] { "date", "startTime", "endTime" },
             },
@@ -109,15 +110,17 @@ public static class SupportDiscoveryTools
         BookingRepository bookingRepository,
         VenueRow? venue,
         string? pageDate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool redeemAllPoints = false,
+        string? playerText = null)
     {
         return call.Name switch
         {
             "get_user_booking_context" => await GetUserBookingContextAsync(http, authRepository, venue, cancellationToken),
-            "check_court_availability" => await CheckCourtAvailabilityAsync(call.Args, bookingRepository, venue, pageDate, cancellationToken),
-            "suggest_alternative_slots" => await SuggestAlternativeSlotsAsync(call.Args, bookingRepository, venue, pageDate, cancellationToken),
-            "list_active_promotions_and_socials" => await ListPromotionsAndSocialsAsync(call.Args, bookingRepository, venue, pageDate, cancellationToken),
-            "preview_booking_quote" => await SupportQuotePreview.PreviewAsync(call.Args, http, authRepository, bookingRepository, venue, pageDate, cancellationToken),
+            "check_court_availability" => await CheckCourtAvailabilityAsync(call.Args, bookingRepository, venue, pageDate, cancellationToken, playerText),
+            "suggest_alternative_slots" => await SuggestAlternativeSlotsAsync(call.Args, bookingRepository, venue, pageDate, cancellationToken, playerText),
+            "list_active_promotions_and_socials" => await ListPromotionsAndSocialsAsync(call.Args, http, authRepository, bookingRepository, venue, pageDate, cancellationToken),
+            "preview_booking_quote" => await SupportQuotePreview.PreviewAsync(call.Args, http, authRepository, bookingRepository, venue, pageDate, cancellationToken, redeemAllPoints),
             _ => null,
         };
     }
@@ -176,7 +179,8 @@ public static class SupportDiscoveryTools
         BookingRepository repository,
         VenueRow? venue,
         string? pageDate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? playerText = null)
     {
         if (venue is null)
         {
@@ -188,7 +192,7 @@ public static class SupportDiscoveryTools
             return new SupportToolExecutionResult(new { error = "Venue timezone is invalid." });
         }
 
-        var date = ResolveDate(ReadString(args, "date") ?? pageDate, zone);
+        var date = DateChosenByPlayer(playerText, zone) ?? ResolveDate(ReadString(args, "date") ?? pageDate, zone);
         var startRaw = ReadString(args, "startTime");
         var endRaw = ReadString(args, "endTime");
         var weeks = Math.Clamp(ReadInt(args, "weeks") ?? 1, 1, 12);
@@ -198,6 +202,7 @@ public static class SupportDiscoveryTools
         var courts = await repository.ListPublicCourtsAsync(venue.Id, cancellationToken);
         var sessions = await repository.ListSupportSessionsAsync(venue.Id, dayStartUtc, dayEndUtc, cancellationToken);
         var closures = await repository.ListPublicClosuresAsync(venue.Id, dayStartUtc, dayEndUtc, cancellationToken);
+        var socials = await repository.ListSocialBlocksAsync(venue.Id, dayStartUtc, dayEndUtc, cancellationToken);
         var rates = await repository.ListRateWindowsAsync(venue.Id, cancellationToken);
         var incentives = await repository.ListPublicIncentivesAsync(venue.Id, date, cancellationToken);
 
@@ -205,34 +210,40 @@ public static class SupportDiscoveryTools
             || !TryParseClockFlexible(startRaw, out var startClock)
             || !TryParseClockFlexible(endRaw, out var endClock))
         {
-            var openSuggestions = FindOpenWindowsForDay(courts, sessions, closures, rates, zone, date, venue.HourlyRate, 60, null);
+            var minutes = ReadInt(args, "durationMinutes") ?? 0;
+            if (minutes is not (30 or 60 or 90 or 120 or 150 or 180))
+            {
+                return new SupportToolExecutionResult(new
+                {
+                    needsDuration = true,
+                    venueName = venue.Name,
+                    dateFormatted = date.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture),
+                    localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone).ToString("dddd, d MMMM yyyy, h:mm tt", CultureInfo.InvariantCulture),
+                    message = "Ask how long they want to play before naming any court or time.",
+                });
+            }
+
+            var anchored = CourtsAfterLastBooking(courts, sessions, closures, socials, rates, zone, venue.TimeZone, date, venue.HourlyRate, minutes);
             return new SupportToolExecutionResult(new
             {
                 venueName = venue.Name,
                 currency = venue.Currency,
                 date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 dateFormatted = date.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture),
+                localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone).ToString("dddd, d MMMM yyyy, h:mm tt", CultureInfo.InvariantCulture),
+                durationMinutes = minutes,
+                lastBookingEnds = anchored.LastBookingEnds,
+                windowFormatted = anchored.Window,
+                recommendation = anchored.Recommendation,
+                availableCourts = anchored.Slots.Select(slot => new { courtName = slot.CourtName, courtNumber = slot.CourtNumber, pricePerSession = slot.Price, windowFormatted = slot.WindowLabel, dateFormatted = slot.DateLabel }).ToArray(),
+                sampleAvailableWindows = anchored.Slots,
                 incentivePoints = incentives.FirstOrDefault()?.Points ?? 0,
-                courts = courts.Select(c => new
-                {
-                    courtId = c.Id,
-                    courtName = string.IsNullOrWhiteSpace(c.CourtName) ? $"Court {c.CourtNumber}" : c.CourtName,
-                    courtNumber = c.CourtNumber,
-                    surfaceType = c.SurfaceType,
-                    occupiedBlocks = sessions
-                        .Where(s => s.CourtId == c.Id && s.Taken > 0)
-                        .Select(s => $"{FormatClock(s.StartTime, zone)}–{FormatClock(s.EndTime, zone)}")
-                        .Concat(closures
-                            .Where(cl => cl.CourtId is null || cl.CourtId == c.Id)
-                            .Select(cl => $"Closed {FormatClock(cl.StartTime, zone)}–{FormatClock(cl.EndTime, zone)}"))
-                        .ToArray(),
-                }),
-                sampleAvailableWindows = openSuggestions.Take(8).ToArray(),
             });
         }
 
         var startLocal = date.ToDateTime(startClock);
         var endLocal = date.ToDateTime(endClock);
+        var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone);
         if (endLocal <= startLocal)
         {
             endLocal = endLocal.AddDays(1);
@@ -245,7 +256,7 @@ public static class SupportDiscoveryTools
             return new SupportToolExecutionResult(new { error = "The minimum booking duration is 30 minutes." });
         }
 
-        if (startUtc <= DateTime.UtcNow)
+        if (startLocal <= nowLocal.AddMinutes(5) || startUtc <= DateTime.UtcNow)
         {
             var alternatives = FindOpenWindowsForDay(courts, sessions, closures, rates, zone, date, venue.HourlyRate, (int)(endUtc - startUtc).TotalMinutes, startClock);
             return new SupportToolExecutionResult(new
@@ -262,7 +273,10 @@ public static class SupportDiscoveryTools
         var unavailableCourts = new List<object>();
         foreach (var court in courts)
         {
-            var blockReason = GetBlockReason(court.Id, startUtc, endUtc, sessions, closures, zone);
+            var socialEnd = BookingRepository.SocialReserveEndUtc(socials, courts, court.Id, venue.TimeZone, startUtc, endUtc);
+            var blockReason = socialEnd is not null
+                ? "Booked for a drop-in social"
+                : GetBlockReason(court.Id, startUtc, endUtc, sessions, closures, zone);
             var name = string.IsNullOrWhiteSpace(court.CourtName) ? $"Court {court.CourtNumber}" : court.CourtName;
             if (blockReason is null)
             {
@@ -316,14 +330,15 @@ public static class SupportDiscoveryTools
         BookingRepository repository,
         VenueRow? venue,
         string? pageDate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? playerText = null)
     {
         if (venue is null || !TryGetZone(venue.TimeZone, out var zone))
         {
             return new SupportToolExecutionResult(new { error = "Venue schedule could not be loaded." });
         }
 
-        var date = ResolveDate(ReadString(args, "date") ?? pageDate, zone);
+        var date = DateChosenByPlayer(playerText, zone) ?? ResolveDate(ReadString(args, "date") ?? pageDate, zone);
         var duration = Math.Clamp(ReadInt(args, "durationMinutes") ?? 60, 30, 240);
         TimeOnly? preferred = TryParseClockFlexible(ReadString(args, "preferredStartTime"), out var parsedClock) ? parsedClock : null;
 
@@ -334,6 +349,24 @@ public static class SupportDiscoveryTools
         var dayEndUtc = TimeZoneInfo.ConvertTimeToUtc(date.AddDays(1).ToDateTime(TimeOnly.MinValue), zone);
         var sessions = await repository.ListSupportSessionsAsync(venue.Id, dayStartUtc, dayEndUtc, cancellationToken);
         var closures = await repository.ListPublicClosuresAsync(venue.Id, dayStartUtc, dayEndUtc, cancellationToken);
+        var socials = await repository.ListSocialBlocksAsync(venue.Id, dayStartUtc, dayEndUtc, cancellationToken);
+
+        if (preferred is null)
+        {
+            var minutes = duration is 30 or 60 or 90 or 120 or 150 or 180 ? duration : 60;
+            var anchored = CourtsAfterLastBooking(courts, sessions, closures, socials, rates, zone, venue.TimeZone, date, venue.HourlyRate, minutes);
+            return new SupportToolExecutionResult(new
+            {
+                venueName = venue.Name,
+                currency = venue.Currency,
+                requestedDate = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                dateFormatted = date.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture),
+                durationMinutes = minutes,
+                windowFormatted = anchored.Window,
+                recommendation = anchored.Recommendation,
+                suggestions = anchored.Slots,
+            });
+        }
 
         var suggestions = FindOpenWindowsForDay(courts, sessions, closures, rates, zone, date, venue.HourlyRate, duration, preferred).ToList();
         if (suggestions.Count < 4)
@@ -358,6 +391,8 @@ public static class SupportDiscoveryTools
 
     private static async Task<SupportToolExecutionResult> ListPromotionsAndSocialsAsync(
         JsonElement args,
+        HttpContext http,
+        AuthRepository authRepository,
         BookingRepository repository,
         VenueRow? venue,
         string? pageDate,
@@ -376,6 +411,11 @@ public static class SupportDiscoveryTools
         var socials = await repository.ListPublicSocialsAsync(venue.Id, dayStartUtc, weekEndUtc, cancellationToken);
         var courts = await repository.ListPublicCourtsAsync(venue.Id, cancellationToken);
         var seats = await repository.ListPublicSocialSeatsAsync(socials.Select(s => s.Id).ToArray(), cancellationToken);
+        var session = await AuthEndpoints.CurrentSessionAsync(http, authRepository, cancellationToken);
+        var mine = session is null
+            ? []
+            : await repository.ListMySocialStatesAsync(session.UserId, socials.Select(s => s.Id).ToArray(), cancellationToken);
+        var mineById = mine.GroupBy(row => row.SocialId).ToDictionary(group => group.Key, group => group.First().Status);
 
         return new SupportToolExecutionResult(new
         {
@@ -401,6 +441,7 @@ public static class SupportDiscoveryTools
                 return new
                 {
                     socialId = s.Id,
+                    startTime = DateTime.SpecifyKind(s.StartTime, DateTimeKind.Utc),
                     date = localStart.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                     dateFormatted = localStart.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture),
                     windowFormatted = $"{FormatClock(s.StartTime, zone)}–{FormatClock(s.EndTime, zone)}",
@@ -409,6 +450,8 @@ public static class SupportDiscoveryTools
                     capacity = Math.Max(0, courtLimit - s.BlockedCourts) * s.PlayersPerCourt,
                     isFull,
                     waitlistCount = s.WaitlistCount,
+                    yourStatus = mineById.GetValueOrDefault(s.Id),
+                    payHref = $"/{venue.Slug}/social/{s.Id:D}",
                 };
             }).ToArray(),
         });

@@ -32,6 +32,7 @@ public static class SupportBookingTools
                     ["weeks"] = new { type = "INTEGER", description = "How many weekly sessions to hold, from 1 to 12." },
                     ["repeatWeekly"] = new { type = "BOOLEAN", description = "Keep one week ahead after each week passes." },
                     ["payTiming"] = new { type = "STRING", description = "pay_now or pay_later. Required before a hold is saved." },
+                    ["promotionCode"] = new { type = "STRING", description = "Promotion code the player already chose, such as RIVER10. Pass it when they asked to apply a code." },
                 },
                 required = new[] { "date", "start", "end", "payTiming" },
             },
@@ -81,13 +82,14 @@ public static class SupportBookingTools
         AuthSettings authSettings,
         VenueRow? venue,
         string? pageDate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool redeemAllPoints = false)
     {
         return call.Name switch
         {
             "create_court_hold" => await CreateCourtHoldAsync(call.Args, http, authRepository, bookingRepository, dashboardRepository, venue, pageDate, cancellationToken),
-            "join_public_social" => await JoinPublicSocialAsync(call.Args, http, authRepository, bookingRepository, venue, cancellationToken),
-            "create_stripe_checkout" => await SupportCheckoutTool.CreateAsync(call.Args, http, authRepository, payments, authSettings, venue, cancellationToken),
+            "join_public_social" => await JoinPublicSocialAsync(call.Args, http, authRepository, bookingRepository, venue, cancellationToken, redeemAllPoints),
+            "create_stripe_checkout" => await SupportCheckoutTool.CreateAsync(call.Args, http, authRepository, payments, authSettings, venue, cancellationToken, redeemAllPoints),
             _ => null,
         };
     }
@@ -198,13 +200,22 @@ public static class SupportBookingTools
         }
 
         var dueNow = opened.Rows.Where(row => row.StartTime <= DateTime.UtcNow.AddHours(24)).ToArray();
+        var payNowHold = dueNow.Length > 0;
+        var promo = ReadString(args, "promotionCode");
+        var payHref = $"/{venue.Slug}/book/group/{opened.GroupId:D}";
+        if (!string.IsNullOrWhiteSpace(promo))
+        {
+            payHref += "?promo=" + Uri.EscapeDataString(promo.Trim());
+        }
+
         var actions = new List<SupportChatAction>
         {
             new(
                 Kind: "my_bookings_link",
-                Label: "View in My Bookings",
-                Href: "/profile/bookings",
-                GroupId: opened.GroupId.ToString("D")),
+                Label: payNowHold ? "Pay now" : "View in My Bookings",
+                Href: payHref,
+                GroupId: opened.GroupId.ToString("D"),
+                PromoCode: string.IsNullOrWhiteSpace(promo) ? null : promo.Trim()),
         };
         return new SupportToolExecutionResult(
             new
@@ -241,7 +252,8 @@ public static class SupportBookingTools
         AuthRepository authRepository,
         BookingRepository repository,
         VenueRow? venue,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool redeemAllPoints = false)
     {
         var session = await AuthEndpoints.CurrentSessionAsync(http, authRepository, cancellationToken);
         if (session is null)
@@ -264,7 +276,7 @@ public static class SupportBookingTools
             socialId,
             session.UserId,
             venue.Currency,
-            Math.Max(0, ReadInt(args, "pointsToRedeem") ?? 0),
+            RedeemPoints(args, redeemAllPoints),
             ReadString(args, "promotionCode"),
             cancellationToken);
         if (hold.Error is not null)
@@ -290,7 +302,14 @@ public static class SupportBookingTools
             paymentRule = hold.NeedsPayment
                 ? "This place is held for 30 minutes. Pay before then or it is released."
                 : "This place is confirmed.",
-        });
+        },
+        [
+            new SupportChatAction(
+                Kind: "my_bookings_link",
+                Label: hold.NeedsPayment ? "Pay for this social" : "View this social",
+                Href: $"/{venue.Slug}/social/{socialId:D}",
+                SocialId: socialId.ToString("D")),
+        ]);
     }
 
     internal static HoldPayDecision DecideHoldPay(string? payTiming, DateTime startUtc, DateTime nowUtc)
@@ -310,6 +329,12 @@ public static class SupportBookingTools
         }
 
         return new HoldPayDecision(true, payNow, moreThan24HoursAway, false, null);
+    }
+
+    private static int RedeemPoints(JsonElement args, bool redeemAllPoints)
+    {
+        var points = Math.Max(0, ReadInt(args, "pointsToRedeem") ?? 0);
+        return points == 0 && redeemAllPoints ? int.MaxValue : points;
     }
 
     internal static SupportToolExecutionResult SignInRequired(VenueRow? venue, string? message = null)

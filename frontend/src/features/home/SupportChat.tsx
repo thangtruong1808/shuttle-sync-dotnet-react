@@ -1,13 +1,30 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Mic, Send, Sparkles } from "lucide-react";
-import { Button, Spinner } from "../../components/ui";
+import { Mic, RotateCcw, Send, Sparkles } from "lucide-react";
+import { Button, PickerInput, Spinner } from "../../components/ui";
 import { apiFetch, AuthRequestError } from "../auth/authApi";
+import { rememberCourtPromoLink } from "../venues/venueApi";
+import { refreshUnpaidHolds } from "../profile/profileApi";
 import { openingChoices, SupportChatActions, type SupportChatAction } from "./SupportChatCards";
 
 type ChatMessage = { role: "user" | "assistant"; text: string; actions?: SupportChatAction[] };
 
+function localIso(value = new Date()) {
+  const month = `${value.getMonth() + 1}`.padStart(2, "0");
+  const day = `${value.getDate()}`.padStart(2, "0");
+  return `${value.getFullYear()}-${month}-${day}`;
+}
+
+function englishDate(iso: string) {
+  const [year, month, day] = iso.split("-").map(Number);
+  const value = new Date(year, (month ?? 1) - 1, day);
+  const weekday = value.toLocaleDateString("en-GB", { weekday: "long" });
+  const monthName = value.toLocaleDateString("en-GB", { month: "long" });
+  return `${weekday}, ${day} ${monthName} ${year}`;
+}
+
 export function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueSlug: string; date: string }) {
   const [open, setOpen] = useState(false);
+  const [otherDate, setOtherDate] = useState("");
   const [mode, setMode] = useState<"text" | "voice">("text");
   const [replyMode, setReplyMode] = useState<"text" | "voice">("text");
   const replyModeRef = useRef(replyMode);
@@ -40,6 +57,16 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
     if (!thread) return;
     thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" });
   }, [messages, sending, notice]);
+
+  function resetChat() {
+    if (sendingRef.current) return;
+    stopRecording();
+    stopSpeaking();
+    setMessages([]);
+    setDraft("");
+    setNotice(null);
+    setOtherDate("");
+  }
 
   function stopSpeaking() {
     window.speechSynthesis?.cancel();
@@ -99,6 +126,8 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
       const reply = body?.reply ?? "I could not answer that.";
       const heard = body?.transcript?.trim();
       const answer: ChatMessage = { role: "assistant", text: reply, actions: body?.actions ?? [] };
+      rememberCourtPromoLink(answer.actions ?? []);
+      if (/place is held/i.test(reply) || (answer.actions ?? []).some((action) => action.kind === "my_bookings_link" || action.kind === "stripe_checkout" || action.socialId)) refreshUnpaidHolds();
       setMessages(audio
         ? [...messagesRef.current, ...(heard ? [{ role: "user" as const, text: heard }] : []), answer]
         : [...next, answer]);
@@ -192,6 +221,7 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
               <p className="font-display text-lg leading-tight text-fg">Shuttle Sync</p>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-text">AI assistant</p>
             </div>
+            <Button type="button" size="sm" variant="secondary" icon={<RotateCcw className="h-4 w-4" aria-hidden="true" />} disabled={sending} onClick={resetChat}>Refresh</Button>
           </div>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             <ChatChoice
@@ -213,6 +243,12 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
               <div className="space-y-3">
                 <p className="text-sm text-fg-muted">Choose a starting point, or type your own question.</p>
                 <SupportChatActions actions={openingChoices} sending={sending} showReplies onPrompt={sendPrompt} onClose={() => setOpen(false)} />
+                <div className="rounded-2xl border border-border bg-inset p-3">
+                  <label className="block text-sm font-semibold text-fg" htmlFor="chat-other-date">Another date</label>
+                  <p className="mt-1 text-sm text-fg-muted">Pick a day further ahead than today or tomorrow.</p>
+                  <PickerInput id="chat-other-date" type="date" min={localIso()} className="mt-2 w-full" value={otherDate} disabled={sending} onChange={(event) => setOtherDate(event.target.value)} />
+                  <Button type="button" size="sm" className="mt-2" loading={sending} disabled={sending || otherDate.length === 0} onClick={() => sendPrompt(`Which courts are free on ${englishDate(otherDate)}?`)}>Courts on this date</Button>
+                </div>
               </div>
             ) : null}
             {messages.map((message, index) => (
@@ -282,8 +318,11 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
           if (open) {
             stopRecording();
             stopSpeaking();
+            setOpen(false);
+            return;
           }
-          setOpen((value) => !value);
+          setOpen(true);
+          void apiFetch("/api/auth/refresh", { method: "POST" }).catch(() => undefined);
         }}
       >
         <span className="grid h-9 w-9 place-items-center rounded-full bg-canvas text-accent-text">

@@ -18,7 +18,8 @@ internal static class SupportCheckoutTool
         BookingPayments payments,
         AuthSettings authSettings,
         VenueRow? venue,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool redeemAllPoints = false)
     {
         var session = await AuthEndpoints.CurrentSessionAsync(http, authRepository, cancellationToken);
         if (session is null)
@@ -45,6 +46,10 @@ internal static class SupportCheckoutTool
 
         var origin = authSettings.FrontendOrigin.TrimEnd('/');
         var points = Math.Max(0, ReadInt(args, "pointsToRedeem") ?? 0);
+        if (points == 0 && redeemAllPoints)
+        {
+            points = int.MaxValue;
+        }
         var promotionCode = ReadString(args, "promotionCode");
         CheckoutResponse result;
         if (groupId is Guid group)
@@ -58,7 +63,8 @@ internal static class SupportCheckoutTool
                 promotionCode,
                 $"{origin}/{venue.Slug}/book/group/{group}?checkout=success",
                 $"{origin}/{venue.Slug}/book/group/{group}?checkout=cancel",
-                cancellationToken);
+                cancellationToken,
+                releaseFirst: false);
         }
         else
         {
@@ -97,32 +103,43 @@ internal static class SupportCheckoutTool
             checkoutUrl,
             paymentMethods = checkoutUrl is null ? Array.Empty<string>() : PaymentMethods,
         };
-        var action = checkoutUrl is null
-            ? new SupportChatAction(
-                Kind: "my_bookings_link",
-                Label: "View in My Bookings",
-                Href: "/profile/bookings",
-                GroupId: groupId?.ToString("D"),
-                SessionId: sessionId?.ToString("D"),
-                Currency: result.Currency,
-                Subtotal: result.Subtotal,
-                DiscountAmount: result.DiscountAmount,
-                PointsValue: result.PointsValue,
-                CashAmount: result.CashAmount,
-                PromoCode: promotionCode)
-            : new SupportChatAction(
-                Kind: "stripe_checkout",
-                Label: "Pay now with Stripe",
-                Href: result.CheckoutUrl,
-                GroupId: groupId?.ToString("D"),
-                SessionId: sessionId?.ToString("D"),
-                Currency: result.Currency,
-                Subtotal: result.Subtotal,
-                DiscountAmount: result.DiscountAmount,
-                PointsValue: result.PointsValue,
-                CashAmount: result.CashAmount,
-                PromoCode: promotionCode);
-        return new SupportToolExecutionResult(summary, [action]);
+        var payPage = groupId is Guid held
+            ? $"/{venue.Slug}/book/group/{held:D}"
+            : "/profile/bookings";
+        if (!string.IsNullOrWhiteSpace(promotionCode))
+        {
+            payPage += "?promo=" + Uri.EscapeDataString(promotionCode.Trim());
+        }
+        var bookings = new SupportChatAction(
+            Kind: "my_bookings_link",
+            Label: checkoutUrl is null ? "View in My Bookings" : "Pay in My Bookings",
+            Href: payPage,
+            GroupId: groupId?.ToString("D"),
+            SessionId: sessionId?.ToString("D"),
+            Currency: result.Currency,
+            Subtotal: result.Subtotal,
+            DiscountAmount: result.DiscountAmount,
+            PointsValue: result.PointsValue,
+            CashAmount: result.CashAmount,
+            PromoCode: promotionCode);
+        if (checkoutUrl is null)
+        {
+            return new SupportToolExecutionResult(summary, [bookings]);
+        }
+
+        var stripe = new SupportChatAction(
+            Kind: "stripe_checkout",
+            Label: "Pay now with Stripe",
+            Href: result.CheckoutUrl,
+            GroupId: groupId?.ToString("D"),
+            SessionId: sessionId?.ToString("D"),
+            Currency: result.Currency,
+            Subtotal: result.Subtotal,
+            DiscountAmount: result.DiscountAmount,
+            PointsValue: result.PointsValue,
+            CashAmount: result.CashAmount,
+            PromoCode: promotionCode);
+        return new SupportToolExecutionResult(summary, [stripe, bookings]);
     }
 
     private static Guid? ReadGuid(JsonElement args, string name)

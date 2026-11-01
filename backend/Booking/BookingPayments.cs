@@ -117,6 +117,7 @@ public sealed class BookingPayments(
         try
         {
             await payments.AttachPaymentAsync(prepared.BookingId, userId, customerId, session.Id, prepared.Cash, prepared.Currency, cancellationToken);
+            await payments.ExtendHoldAsync(session.Id, DateTime.UtcNow.AddMinutes(30), cancellationToken);
         }
         catch
         {
@@ -260,6 +261,7 @@ public sealed class BookingPayments(
         try
         {
             await payments.AttachPaymentAsync(prepared.BookingId, userId, customerId, session.Id, prepared.Cash, prepared.Currency, cancellationToken);
+            await payments.ExtendHoldAsync(session.Id, DateTime.UtcNow.AddMinutes(30), cancellationToken);
         }
         catch
         {
@@ -588,7 +590,8 @@ public sealed class BookingPayments(
                         "failed",
                         intent.LastPaymentError?.Code,
                         intent.LastPaymentError?.Message,
-                        cancellationToken);
+                        cancellationToken,
+                        expireHold: false);
                     if (failed)
                     {
                         await CancelIntentsAsync([intent.Id], cancellationToken);
@@ -663,7 +666,7 @@ public sealed class BookingPayments(
 
                 return;
             case "canceled":
-                await payments.FailPendingAsync(intent.Id, "cancelled", "canceled", "The payment was cancelled.", cancellationToken);
+                await payments.FailPendingAsync(intent.Id, "cancelled", "canceled", "The payment was cancelled.", cancellationToken, expireHold: false);
                 return;
         }
     }
@@ -862,7 +865,7 @@ public sealed class BookingPayments(
 
         if (eventType == "checkout.session.expired")
         {
-            await payments.FailPendingAsync(session.Id, "cancelled", "expired", "The payment page expired.", cancellationToken);
+            await payments.FailPendingAsync(session.Id, "cancelled", "expired", "The payment page expired.", cancellationToken, expireHold: false);
             return true;
         }
 

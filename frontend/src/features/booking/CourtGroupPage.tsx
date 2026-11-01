@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowRight, CalendarDays, ChevronDown, CircleCheck, Clock } from "lucide-react";
@@ -9,7 +9,7 @@ import { PayBar, summaryAside, summaryLines } from "./checkoutUi";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { bookingPayment, refreshUnpaidHolds, type BookingPayment } from "../profile/profileApi";
-import { abandonCourtCheckout, bookAgainPath, courtHold, forgetOpenCheckout, readOpenCheckout, rememberOpenCheckout, startGroupCheckout, venuePromotions, type CourtHoldSession, type Promotion, type ReleasedRetry } from "../venues/venueApi";
+import { abandonCourtCheckout, bookAgainPath, courtHold, forgetOpenCheckout, rememberOpenCheckout, savedCourtPromo, savedPointShare, startGroupCheckout, venuePromotions, type CourtHoldSession, type Promotion, type ReleasedRetry } from "../venues/venueApi";
 import { PaymentResultBanner, paymentOutcomeKind, paymentSettled, useCleanReturnUrl } from "./PaymentResultBanner";
 import { pointsQuote as quote, promoDiscount } from "./bookingMath";
 
@@ -83,10 +83,8 @@ export default function CourtGroupPage() {
     setSessions(null);
     const returned = new URLSearchParams(location.search).get("checkout");
     const cancelled = returned === "cancel";
-    const open = readOpenCheckout();
-    const leftStripe = !returned && open?.groupId === groupId;
     if (returned === "success") forgetOpenCheckout();
-    const load = cancelled || leftStripe
+    const load = cancelled
       ? abandonCourtCheckout(slug, groupId).catch(() => undefined).finally(forgetOpenCheckout).then(() => courtHold(slug, groupId))
       : courtHold(slug, groupId);
     load
@@ -123,14 +121,33 @@ export default function CourtGroupPage() {
     };
   }, [slug, groupId, attempt, status, location.search]);
 
+  const promoQuery = new URLSearchParams(location.search).get("promo") || savedCourtPromo(groupId);
   useEffect(() => {
+    const code = carried?.promotionCode || promoQuery;
     venuePromotions(slug)
       .then((list) => {
         setPromotions(list);
-        if (carried?.promotionCode) setAppliedCode((current) => current ?? list.find((promotion) => promotion.code === carried.promotionCode) ?? null);
+        if (!code) return;
+        const match = list.find((promotion) => promotion.code.localeCompare(code, undefined, { sensitivity: "accent" }) === 0) ?? null;
+        setAppliedCode((current) => current ?? match);
+        if (match) setPromoNote((current) => current ?? `${match.code} applied.`);
       })
       .catch(() => setPromotions([]));
-  }, [slug, carried]);
+  }, [slug, carried, promoQuery]);
+
+  const pointsChosen = useRef(false);
+  useEffect(() => {
+    if (pointsChosen.current || !sessions || promotions === null || picked.length === 0) return;
+    const wantAll = new URLSearchParams(location.search).get("points") === "100" || savedPointShare() === 100;
+    if (!wantAll) return;
+    const selected = sessions.filter((session) => session.status === "pending" && picked.includes(session.bookingId));
+    const selectedTotal = selected.reduce((sum, session) => sum + session.price, 0);
+    const selectedPayable = Math.max(0, Math.round((selectedTotal - promoDiscount(selectedTotal, appliedCode)) * 100) / 100);
+    const selectedMax = Math.min(balance, selectedPayable <= 0 ? 0 : Math.floor(selectedPayable * rate));
+    if (selectedMax <= 0) return;
+    pointsChosen.current = true;
+    setPoints(selectedMax);
+  }, [sessions, promotions, picked, appliedCode, balance, rate, location.search]);
 
   useEffect(() => {
     function onShow(event: PageTransitionEvent) {

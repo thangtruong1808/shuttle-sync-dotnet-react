@@ -132,7 +132,9 @@ export function setCourtRepeat(groupId: string, enabled: boolean): Promise<{ rep
 }
 
 export type UnpaidHold = {
+  kind?: string;
   groupId: string;
+  socialId?: string | null;
   venueName: string;
   venueSlug: string;
   timeZone: string;

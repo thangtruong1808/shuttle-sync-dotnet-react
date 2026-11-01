@@ -4,6 +4,7 @@ import { ChevronDown, CircleAlert, CircleCheck, Clock, CreditCard, Gift, Repeat,
 import { Badge, Button, Spinner } from "../../components/ui";
 import { Money, formatVenueDateTime, formatVenueRange } from "../../components/format";
 import { AuthRequestError } from "../auth/authApi";
+import { withSavedPromo } from "../venues/venueApi";
 import { deleteSeries, deleteSeriesPreview, refreshUnpaidHolds, setCourtRepeat, type CourtWeekCourt, type SeriesCancelPreview } from "./profileApi";
 import { WeekEditor } from "./WeekEditor";
 import { formatWeekDate, leadCourt, timeGroups, topUpSource, weekOfYear, weekPayNote, weekSpan, sameSlot } from "./bookingWeek";
@@ -101,7 +102,7 @@ export function SeriesCard({ weeks, topUps = [], open, onToggle, openWeek, onOpe
         </button>
         <div className="flex w-full shrink-0 flex-col gap-2 rounded-xl border border-border bg-inset p-2 sm:w-auto">
           {nextUnpaid ? (
-            <Link to={`/${sample.venueSlug}/book/group/${sample.groupId}?bookings=${nextUnpaid.filter((court) => court.status === "pending").map((court) => court.bookingId).join(",")}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
+            <Link to={withSavedPromo(`/${sample.venueSlug}/book/group/${sample.groupId}?bookings=${nextUnpaid.filter((court) => court.status === "pending").map((court) => court.bookingId).join(",")}`, sample.groupId)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
               <CreditCard className="h-4 w-4 shrink-0" aria-hidden="true" />
               Pay next week
             </Link>

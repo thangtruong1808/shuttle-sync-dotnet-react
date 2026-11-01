@@ -6,6 +6,7 @@ import type { RootState } from "../../app/store";
 import { formatVenueDateTime, formatVenueRange } from "../../components/format";
 import { Button } from "../../components/ui";
 import { AuthRequestError } from "../auth/authApi";
+import { withSavedPromo } from "../venues/venueApi";
 import { deleteUnpaidHold, refreshUnpaidHolds, unpaidHoldListeners as listeners, unpaidHolds, type UnpaidHold } from "./profileApi";
 
 function useUnpaidHolds() {
@@ -66,6 +67,11 @@ export function PaymentBell() {
 
 function noticeText(item: UnpaidHold) {
   const when = formatVenueRange(item.startTime, item.endTime, item.timeZone);
+  if (item.kind === "social") {
+    return item.checkoutStarted
+      ? `Payment for your place at ${item.venueName}, ${when} is not finished. Complete the payment, or the place is released.`
+      : `Your place at ${item.venueName}, ${when} is not paid yet. Pay before ${formatVenueDateTime(item.payBy, item.timeZone)}, or the place is released.`;
+  }
   const single = item.courtCount === 1;
   const courts = `${item.courtCount} ${single ? "court" : "courts"}`;
   if (item.checkoutStarted) {
@@ -75,7 +81,11 @@ function noticeText(item: UnpaidHold) {
 }
 
 function noticeHeading(items: UnpaidHold[]) {
-  const courts = items.reduce((sum, item) => sum + item.courtCount, 0);
+  const socials = items.filter((item) => item.kind === "social").length;
+  if (socials === items.length) {
+    return socials === 1 ? "1 social place needs payment" : `${socials} social places need payment`;
+  }
+  const courts = items.filter((item) => item.kind !== "social").reduce((sum, item) => sum + item.courtCount, 0);
   if (items.length === 1) {
     return courts === 1 ? "1 court needs payment soon" : `${courts} courts need payment soon`;
   }
@@ -83,7 +93,12 @@ function noticeHeading(items: UnpaidHold[]) {
 }
 
 function noticeHint(items: UnpaidHold[]) {
-  const courts = items.reduce((sum, item) => sum + item.courtCount, 0);
+  if (items.every((item) => item.kind === "social")) {
+    return items.length === 1
+      ? "Pay before 24 hours of the session to keep this place. If it is still unpaid then, the place is released."
+      : "Pay each social place before 24 hours of its session. Any place still unpaid then is released.";
+  }
+  const courts = items.filter((item) => item.kind !== "social").reduce((sum, item) => sum + item.courtCount, 0);
   return courts === 1
     ? "Pay before 24 hours of the session to keep this court. If it is still unpaid then, the court is released for other players."
     : "Pay each booking before 24 hours of its session to keep those courts. Any court still unpaid then is released for other players.";
@@ -120,15 +135,17 @@ function NoticeRow({ item }: { item: UnpaidHold }) {
           <span>{noticeText(item)}</span>
         </p>
         <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-          <Link className="inline-flex items-center justify-center rounded-xl bg-amber-300 px-3 py-2 text-sm font-semibold text-accent-fg hover:bg-amber-200" to={`/${item.venueSlug}/book/group/${item.groupId}?bookings=${item.bookingIds.join(",")}`}>
-            {item.checkoutStarted ? "Complete payment" : "Pay this week"}
+          <Link className="inline-flex items-center justify-center rounded-xl bg-amber-300 px-3 py-2 text-sm font-semibold text-accent-fg hover:bg-amber-200" to={item.kind === "social" && item.socialId ? withSavedPromo(`/${item.venueSlug}/social/${item.socialId}`) : withSavedPromo(`/${item.venueSlug}/book/group/${item.groupId}?bookings=${item.bookingIds.join(",")}`, item.groupId)}>
+            {item.kind === "social" ? "Pay for this social" : item.checkoutStarted ? "Complete payment" : "Pay this week"}
           </Link>
-          {confirm && !busy ? (
+          {item.kind === "social" ? null : confirm && !busy ? (
             <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => setConfirm(false)}>Keep it</Button>
           ) : null}
-          <Button type="button" variant="danger" className="w-full sm:w-auto" loading={busy} disabled={busy} onClick={() => void remove()}>
-            {confirm ? "Confirm delete" : "Delete this week"}
-          </Button>
+          {item.kind === "social" ? null : (
+            <Button type="button" variant="danger" className="w-full sm:w-auto" loading={busy} disabled={busy} onClick={() => void remove()}>
+              {confirm ? "Confirm delete" : "Delete this week"}
+            </Button>
+          )}
         </div>
       </div>
       {confirm && !busy ? <p className="mt-2 text-sm text-amber-800 dark:text-amber-100">{item.courtCount === 1 ? "This releases the unpaid court for this session only." : `This releases the ${item.courtCount} unpaid courts for this session only.`} Paid weeks stay, and Keep weeks ahead is turned off so this week is not added back.</p> : null}

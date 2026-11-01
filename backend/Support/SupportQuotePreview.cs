@@ -16,7 +16,8 @@ internal static class SupportQuotePreview
         BookingRepository repository,
         VenueRow? venue,
         string? pageDate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool redeemAllPoints = false)
     {
         if (venue is null || !TryGetZone(venue.TimeZone, out var zone))
         {
@@ -35,6 +36,10 @@ internal static class SupportQuotePreview
         var weeks = Math.Clamp(ReadInt(args, "weeks") ?? 1, 1, 12);
         var promoCode = ReadString(args, "promotionCode")?.Trim().ToUpperInvariant();
         var requestedPoints = Math.Max(0, ReadInt(args, "pointsToRedeem") ?? 0);
+        if (requestedPoints == 0 && redeemAllPoints)
+        {
+            requestedPoints = int.MaxValue;
+        }
 
         var startLocal = date.ToDateTime(startClock);
         var endLocal = date.ToDateTime(endClock);

@@ -286,14 +286,28 @@ public sealed class ShuttleSyncBackendTests
         }));
         const string chosen = "Select Court 1 on Tuesday, 3 November 2026, 6:00 PM–7:00 PM";
 
-        var courts = SupportReplyChips.For([("user", "Which courts are free tomorrow?")], progress, []);
+        var asked = SupportReplyChips.For([("user", "Which courts are free today?")], new SupportReplyProgress(), []);
+        Assert.Contains(asked.Actions, action => action.Label == "1 hour" && action.Prompt == "Book for 1 hour");
+        Assert.Equal("Please tell me how long you would like to play.", asked.Reply);
+
+        var length = SupportReplyChips.For([("user", "Which courts are free tomorrow?")], progress, []);
+        Assert.Contains(length.Actions, action => action.Label == "30 minutes");
+        Assert.Contains(length.Actions, action => action.Label == "1 hour");
+        Assert.Contains(length.Actions, action => action.Label == "1 hour 30 minutes");
+        Assert.Contains(length.Actions, action => action.Label == "2 hours");
+        Assert.Contains(length.Actions, action => action.Label == "2 hours 30 minutes");
+        Assert.Contains(length.Actions, action => action.Label == "3 hours");
+        Assert.Equal("Please tell me how long you would like to play.", length.Reply);
+        Assert.DoesNotContain(length.Actions, action => action.Label.StartsWith("Court ", StringComparison.Ordinal));
+
+        var courts = SupportReplyChips.For([("user", "Which courts are free tomorrow?\nBook for 1 hour")], progress, []);
         Assert.Contains(courts.Actions, action => action.Label == "Court 1 · 6:00 PM–7:00 PM");
         Assert.Contains(courts.Actions, action => action.Label == "Court 2 · 6:00 PM–7:00 PM");
         Assert.DoesNotContain(courts.Actions, action => action.Label == "One session");
 
         var schedule = SupportReplyChips.For([("user", chosen)], progress, []);
         Assert.Contains(schedule.Actions, action => action.Label == "One session");
-        Assert.Equal("Would you like one session, a hold for 1 week, or a weekly repeat?", schedule.Reply);
+        Assert.Equal("Please choose one session, a hold for 1 week, or a weekly repeat.", schedule.Reply);
         Assert.DoesNotContain("RIVER10", schedule.Reply);
         Assert.DoesNotContain(schedule.Actions, action => action.Label.StartsWith("Court ", StringComparison.Ordinal));
 
@@ -313,6 +327,12 @@ public sealed class ShuttleSyncBackendTests
         progress.Note("create_court_hold", new SupportToolExecutionResult(new { groupId = Guid.NewGuid() }));
         var held = SupportReplyChips.For([("user", $"{chosen}\nOne session, just this time\nPay later, at least 24 hours before play")], progress, [new SupportChatAction("my_bookings_link", "View in My Bookings", Href: "/profile/bookings")]);
         Assert.Contains("Your booking is held", held.Reply);
+
+        var linked = SupportReplyChips.For(
+            [("user", $"{chosen}\nOne session, just this time\nApply promotion code RIVER10\nPay later, at least 24 hours before play")],
+            progress,
+            [new SupportChatAction("my_bookings_link", "Pay now", Href: "/riverside-shuttle/book/group/abc")]);
+        Assert.Contains(linked.Actions, action => action.Label == "Pay in My Bookings" && action.Href == "/riverside-shuttle/book/group/abc?promo=RIVER10");
         Assert.Contains(held.Actions, action => action.Label == "Pay in My Bookings");
         Assert.Contains(held.Actions, action => action.Label == "Pay from this chat");
         Assert.Contains(held.Actions, action => action.Kind == "close_chat");
@@ -323,7 +343,7 @@ public sealed class ShuttleSyncBackendTests
         {
             suggestions = new[] { new { courtName = "Court 3", date = "2026-11-03", windowLabel = "18:00-19:00" } },
         }));
-        var english = SupportReplyChips.For([("user", "What is free?")], iso, []);
+        var english = SupportReplyChips.For([("user", "What is free?\nBook for 1 hour")], iso, []);
         Assert.Contains(english.Actions, action => action.Label == "Court 3 · 6:00 PM–7:00 PM" && action.Prompt == "Select Court 3 on Tuesday, 3 November 2026, 6:00 PM–7:00 PM");
 
         var tonight = SupportReplyChips.For(
@@ -337,6 +357,87 @@ public sealed class ShuttleSyncBackendTests
         Assert.Contains(tonight.Actions, action => action.Label == "Repeat weekly");
         Assert.Contains("within 24 hours", tonight.Reply);
         Assert.Contains("must be paid now", tonight.Reply);
+
+        var morning = new SupportReplyProgress();
+        morning.Note("check_court_availability", new SupportToolExecutionResult(new
+        {
+            sampleAvailableWindows = new[]
+            {
+                new { courtName = "Court 1", dateLabel = "Sunday, 1 November 2026", windowLabel = "8:00 AM–9:00 AM" },
+                new { courtName = "Court 2", dateLabel = "Sunday, 1 November 2026", windowLabel = "2:00 PM–3:00 PM" },
+            },
+        }));
+        var today = SupportReplyChips.For(
+            [("user", "Which courts are free today?\nBook for 1 hour")],
+            morning,
+            [],
+            new DateTime(2026, 11, 1, 13, 47, 0));
+        Assert.Contains(today.Actions, action => action.Label == "Court 2 · 2:00 PM–3:00 PM");
+        Assert.DoesNotContain(today.Actions, action => action.Label.Contains("8:00 AM", StringComparison.Ordinal));
+        Assert.Equal("Please choose one of these times.", today.Reply);
+
+        var socials = new SupportReplyProgress();
+        socials.Note("list_active_promotions_and_socials", new SupportToolExecutionResult(new
+        {
+            promotions = new[] { new { code = "RIVER10", discountType = "percent", discountValue = 10m } },
+            socials = new[]
+            {
+                new { dateFormatted = "Monday, 2 November 2026", windowFormatted = "6:00 PM–8:00 PM", isFull = false },
+                new { dateFormatted = "Tuesday, 3 November 2026", windowFormatted = "7:00 PM–9:00 PM", isFull = true },
+            },
+        }));
+        socials.Note("get_user_booking_context", new SupportToolExecutionResult(new { rewardPoints = 875 }));
+        var listed = SupportReplyChips.For([("user", "What public socials can I join?")], socials, []);
+        Assert.Contains(listed.Actions, action => action.Label == "Monday, 2 November 2026 · 6:00 PM–8:00 PM" && action.Prompt == "Join the social on Monday, 2 November 2026, 6:00 PM–8:00 PM");
+        Assert.Contains(listed.Actions, action => action.Label == "Tuesday, 3 November 2026 · 7:00 PM–9:00 PM · Waitlist");
+        Assert.Equal("Please choose a social.", listed.Reply);
+        Assert.DoesNotContain(listed.Actions, action => action.Label == "1 hour");
+        Assert.DoesNotContain(listed.Actions, action => action.Label == "One session");
+
+        const string joined = "What public socials can I join?\nJoin the social on Monday, 2 November 2026, 6:00 PM–8:00 PM";
+        var socialPromo = SupportReplyChips.For([("user", joined)], socials, []);
+        Assert.Contains(socialPromo.Actions, action => action.Label == "Use both");
+        Assert.Contains(socialPromo.Actions, action => action.Label == "Apply RIVER10");
+        Assert.Contains("875", socialPromo.Reply);
+        Assert.DoesNotContain(socialPromo.Actions, action => action.Label == "One session");
+        Assert.DoesNotContain(socialPromo.Reply ?? "", "cash");
+
+        var socialPay = SupportReplyChips.For([("user", $"{joined}\nContinue without a promotion code or reward points")], socials, []);
+        Assert.Contains(socialPay.Actions, action => action.Label == "Pay now with Stripe" && action.Prompt == "Pay now with Stripe");
+        Assert.Contains(socialPay.Actions, action => action.Label == "Pay later (before 24h)");
+        Assert.Contains("pay later", socialPay.Reply);
+
+        var socialSoon = SupportReplyChips.For(
+            [("user", $"{joined}\nContinue without a promotion code or reward points")],
+            socials,
+            [],
+            new DateTime(2026, 11, 2, 10, 0, 0));
+        Assert.Contains(socialSoon.Actions, action => action.Label == "Pay now with Stripe");
+        Assert.DoesNotContain(socialSoon.Actions, action => action.Label.StartsWith("Pay later", StringComparison.Ordinal));
+        Assert.Contains("within 24 hours", socialSoon.Reply);
+        Assert.Contains("paid now", socialSoon.Reply);
+
+        socials.Note("join_public_social", new SupportToolExecutionResult(new { registrationId = Guid.NewGuid(), needsPayment = true }));
+        var socialHeld = SupportReplyChips.For(
+            [("user", $"{joined}\nContinue without a promotion code or reward points\nPay later, at least 24 hours before play")],
+            socials,
+            [new SupportChatAction("my_bookings_link", "Pay in My Bookings", Href: "/riverside-shuttle/social/abc")]);
+        Assert.Contains("Your place is held", socialHeld.Reply);
+        Assert.Contains(socialHeld.Actions, action => action.Href == "/riverside-shuttle/social/abc");
+
+        var taken = new SupportReplyProgress();
+        taken.Note("list_active_promotions_and_socials", new SupportToolExecutionResult(new
+        {
+            socials = new[]
+            {
+                new { dateFormatted = "Monday, 2 November 2026", windowFormatted = "6:00 PM–8:00 PM", isFull = false, yourStatus = "confirmed", payHref = "/riverside-shuttle/social/abc" },
+            },
+        }));
+        var again = SupportReplyChips.For([("user", "What public socials can I join?")], taken, []);
+        Assert.Contains(again.Actions, action => action.Label == "Monday, 2 November 2026 · 6:00 PM–8:00 PM · Already registered");
+        var blocked = SupportReplyChips.For([("user", "What public socials can I join?\nI already have a place in the social on Monday, 2 November 2026, 6:00 PM–8:00 PM")], taken, []);
+        Assert.Equal("You already have a place in this social.", blocked.Reply);
+        Assert.DoesNotContain(blocked.Actions, action => action.Label == "Pay now with Stripe");
     }
 
     private sealed record SampleNumbers(decimal? Amount, int? Count);

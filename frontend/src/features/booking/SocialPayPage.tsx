@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch } from "../../app/store";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -10,7 +10,7 @@ import { PayBar, summaryAside, summaryLines } from "./checkoutUi";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { SocialRoster } from "../courts/CourtSchedule";
-import { socialOffer, socialRegistration, startSocialCheckout, startWaitlistCheckout, venuePromotions, type Promotion, type SocialOffer, type SocialRegistration } from "../venues/venueApi";
+import { savedCourtPromo, savedPointShare, socialOffer, socialRegistration, startSocialCheckout, startWaitlistCheckout, venuePromotions, type Promotion, type SocialOffer, type SocialRegistration } from "../venues/venueApi";
 import { PaymentResultBanner, paymentOutcomeKind, paymentSettled, useCleanReturnUrl } from "./PaymentResultBanner";
 import { FriendPanel } from "./SocialFriendsPanel";
 import { pointsQuote as quote, promoDiscount } from "./bookingMath";
@@ -77,8 +77,31 @@ export default function SocialPayPage() {
   }, [slug, socialId, attempt]);
 
   useEffect(() => {
-    venuePromotions(slug).then(setPromotions).catch(() => setPromotions([]));
-  }, [slug]);
+    const code = new URLSearchParams(location.search).get("promo") || savedCourtPromo();
+    venuePromotions(slug)
+      .then((list) => {
+        setPromotions(list);
+        if (!code) return;
+        const match = list.find((promotion) => promotion.code.localeCompare(code, undefined, { sensitivity: "accent" }) === 0) ?? null;
+        setAppliedCode((current) => current ?? match);
+        if (match) setPromoNote((current) => current ?? `${match.code} applied.`);
+      })
+      .catch(() => setPromotions([]));
+  }, [slug, location.search]);
+
+  const pointsChosen = useRef(false);
+  useEffect(() => {
+    if (pointsChosen.current || !offer || promotions === null) return;
+    const wantAll = new URLSearchParams(location.search).get("points") === "100" || savedPointShare() === 100;
+    if (!wantAll) return;
+    const pointRate = offer.venue.pointsPerDollar || 100;
+    const pointDiscount = promoDiscount(offer.price, appliedCode);
+    const pointPayable = Math.max(0, Math.round((offer.price - pointDiscount) * 100) / 100);
+    const pointMax = Math.min(balance, pointPayable <= 0 ? 0 : Math.floor(pointPayable * pointRate));
+    if (pointMax <= 0) return;
+    pointsChosen.current = true;
+    setPoints(pointMax);
+  }, [offer, promotions, appliedCode, balance, location.search]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);

@@ -1310,7 +1310,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
             """,
             new { UserId = userId },
             cancellationToken: cancellationToken))).ToArray();
-        return rows
+        var courts = rows
             .GroupBy(row => row.GroupId)
             .Select(group =>
             {
@@ -1318,6 +1318,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                 var week = group.Where(row => SameInstant(row.StartTime, first.StartTime)).ToArray();
                 return new UnpaidHoldRow
                 {
+                    Kind = "court",
                     GroupId = first.GroupId,
                     VenueName = first.VenueName,
                     VenueSlug = first.VenueSlug,
@@ -1328,9 +1329,56 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                     BookingIds = week.Select(row => row.BookingId).ToArray(),
                     CheckoutStarted = week.Any(row => row.CheckoutStarted == 1),
                 };
-            })
+            });
+        var socials = await connection.QueryAsync<UnpaidSocialHoldRow>(new CommandDefinition(
+            """
+            SELECT r.Id AS RegistrationId, r.SocialId, v.Name AS VenueName, v.Slug AS VenueSlug, v.TimeZone,
+                   s.StartTime, s.EndTime,
+                   CAST(EXISTS (
+                       SELECT 1 FROM PublicSocialPayments p
+                       WHERE p.RegistrationId = r.Id AND p.FriendGroupId IS NULL AND p.Status = 'pending'
+                   ) AS SIGNED) AS CheckoutStarted
+            FROM PublicSocialRegistrations r
+            JOIN PublicSocials s ON s.Id = r.SocialId AND s.IsDeleted = 0
+            JOIN Venues v ON v.Id = r.VenueId
+            WHERE r.UserId = @UserId
+              AND r.Status = 'pending'
+              AND r.HoldExpiresAt IS NOT NULL
+              AND r.HoldExpiresAt > UTC_TIMESTAMP(6)
+              AND s.StartTime > UTC_TIMESTAMP(6)
+            ORDER BY s.StartTime
+            """,
+            new { UserId = userId },
+            cancellationToken: cancellationToken));
+        return courts
+            .Concat(socials.Select(row => new UnpaidHoldRow
+            {
+                Kind = "social",
+                GroupId = row.RegistrationId,
+                SocialId = row.SocialId,
+                VenueName = row.VenueName,
+                VenueSlug = row.VenueSlug,
+                TimeZone = row.TimeZone,
+                StartTime = row.StartTime,
+                EndTime = row.EndTime,
+                CourtCount = 1,
+                BookingIds = [],
+                CheckoutStarted = row.CheckoutStarted == 1,
+            }))
             .OrderBy(row => row.StartTime)
             .ToArray();
+    }
+
+    private sealed class UnpaidSocialHoldRow
+    {
+        public Guid RegistrationId { get; init; }
+        public Guid SocialId { get; init; }
+        public string VenueName { get; init; } = "";
+        public string VenueSlug { get; init; } = "";
+        public string TimeZone { get; init; } = "";
+        public DateTime StartTime { get; init; }
+        public DateTime EndTime { get; init; }
+        public int CheckoutStarted { get; init; }
     }
 
     private sealed class UnpaidHoldSourceRow
@@ -2661,6 +2709,56 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         return rows.ToArray();
     }
 
+    public async Task<SocialBlockRow[]> ListSocialBlocksAsync(Guid venueId, DateTime rangeStartUtc, DateTime rangeEndUtc, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<SocialBlockRow>(new CommandDefinition(
+            """
+            SELECT StartTime, EndTime, MaxCourts, CAST(RepeatWeekly AS SIGNED) AS RepeatWeekly
+            FROM PublicSocials
+            WHERE VenueId = @VenueId AND IsDeleted = 0
+              AND (
+                  (StartTime < @RangeEndUtc AND EndTime > @RangeStartUtc)
+                  OR (RepeatWeekly = 1 AND SuccessorId IS NULL AND EndTime > UTC_TIMESTAMP(6))
+              )
+            """,
+            new { VenueId = venueId, RangeStartUtc = rangeStartUtc, RangeEndUtc = rangeEndUtc },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
+    public static DateTime? SocialReserveEndUtc(
+        IReadOnlyList<SocialBlockRow> socials,
+        IReadOnlyList<PublicCourtRow> catalog,
+        Guid courtId,
+        string timeZone,
+        DateTime startUtc,
+        DateTime endUtc)
+    {
+        var ordered = catalog.OrderBy(court => court.CourtNumber).ToArray();
+        DateTime? until = null;
+        foreach (var social in socials)
+        {
+            if (!SocialCovers(timeZone, social.StartTime, social.EndTime, social.RepeatWeekly == 1, startUtc, endUtc, out _, out var showEnd))
+            {
+                continue;
+            }
+
+            var count = social.MaxCourts is null or < 1 ? ordered.Length : Math.Min(social.MaxCourts.Value, ordered.Length);
+            if (!ordered.Take(count).Any(court => court.Id == courtId))
+            {
+                continue;
+            }
+
+            if (until is null || showEnd > until)
+            {
+                until = showEnd;
+            }
+        }
+
+        return until;
+    }
+
     public async Task<PublicSocialSeatRow[]> ListPublicSocialSeatsAsync(IReadOnlyCollection<Guid> socialIds, CancellationToken cancellationToken)
     {
         if (socialIds.Count == 0)
@@ -3776,7 +3874,8 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         string currency,
         int requestedPoints,
         string? promotionCode,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? holdUntil = null)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
@@ -3963,7 +4062,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                     PointsValue = @PointsValue,
                     PromotionCodeId = @PromotionCodeId,
                     IncentivePoints = @IncentivePoints,
-                    HoldExpiresAt = CASE WHEN @Confirmed = 1 THEN NULL ELSE DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 30 MINUTE) END,
+                    HoldExpiresAt = CASE WHEN @Confirmed = 1 THEN NULL WHEN @HoldUntil IS NOT NULL THEN @HoldUntil ELSE DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 30 MINUTE) END,
                     ConfirmedAt = CASE WHEN @Confirmed = 1 THEN UTC_TIMESTAMP(6) ELSE NULL END
                 WHERE Id = @Id AND Status = 'pending'
                 """,
@@ -3979,6 +4078,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                     PromotionCodeId = promoId,
                     IncentivePoints = incentivePoints,
                     Confirmed = confirmedNow ? 1 : 0,
+                    HoldUntil = holdUntil,
                 },
                 tx,
                 cancellationToken: cancellationToken));
@@ -4058,7 +4158,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                 VALUES
                     (@Id, @SocialId, @VenueId, @UserId, @CourtId, @Status, @Cash, @Price, @Discount,
                      @Points, @PointsValue, @PromotionCodeId, @IncentivePoints,
-                     CASE WHEN @Confirmed = 1 THEN NULL ELSE DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 30 MINUTE) END,
+                     CASE WHEN @Confirmed = 1 THEN NULL WHEN @HoldUntil IS NOT NULL THEN @HoldUntil ELSE DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 30 MINUTE) END,
                      CASE WHEN @Confirmed = 1 THEN UTC_TIMESTAMP(6) ELSE NULL END,
                      UTC_TIMESTAMP(6))
                 """,
@@ -4078,6 +4178,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                     PromotionCodeId = promoId,
                     IncentivePoints = incentivePoints,
                     Confirmed = confirmedNow ? 1 : 0,
+                    HoldUntil = holdUntil,
                 },
                 tx,
                 cancellationToken: cancellationToken));
@@ -7380,7 +7481,9 @@ public sealed class ReleasedHoldRow
 
 public sealed class UnpaidHoldRow
 {
+    public string Kind { get; init; } = "court";
     public Guid GroupId { get; init; }
+    public Guid? SocialId { get; init; }
     public string VenueName { get; init; } = "";
     public string VenueSlug { get; init; } = "";
     public string TimeZone { get; init; } = "";
@@ -7442,6 +7545,14 @@ public sealed class PublicIncentiveRow
     public int Points { get; init; }
     public DateTime StartsOn { get; init; }
     public DateTime EndsOn { get; init; }
+}
+
+public sealed class SocialBlockRow
+{
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public int? MaxCourts { get; init; }
+    public int RepeatWeekly { get; init; }
 }
 
 public sealed class PublicSocialRow

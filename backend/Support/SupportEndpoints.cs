@@ -79,6 +79,7 @@ public static class SupportEndpoints
         }
 
         var history = turns.Select(turn => (turn.Role ?? "user", turn.Text ?? "")).ToArray();
+        var said = string.Join('\n', history.Where(turn => turn.Item1 == "user").Select(turn => turn.Item2));
         var progress = new SupportReplyProgress();
         var outcome = await SupportToolLoop.RunWithToolsAsync(
             httpClientFactory,
@@ -86,8 +87,39 @@ public static class SupportEndpoints
             SupportAgentPrompt.Build(venueName, venue?.Slug, body.Date),
             history,
             [.. SupportDiscoveryTools.Declarations, .. SupportBookingTools.Declarations],
-            (call, token) => ExecuteToolAsync(call, http, authRepository, repository, dashboardRepository, payments, authSettings, venue, body.Date, progress, token),
+            (call, token) => ExecuteToolAsync(call, http, authRepository, repository, dashboardRepository, payments, authSettings, venue, body.Date, progress, SupportReplyChips.WantsAllPoints(said), said, token),
             cancellationToken);
+        if (venue is not null && progress.Socials.Count == 0 && (SupportSocialSteps.NeedsSocialList(said) || SupportSocialSteps.ReadyToPay(said, progress.Socials)))
+        {
+            using var socialArgs = JsonDocument.Parse("""{"date":"today"}""");
+            var listed = await SupportDiscoveryTools.TryExecuteAsync(
+                new SupportToolCall("list_active_promotions_and_socials", socialArgs.RootElement.Clone()),
+                http,
+                authRepository,
+                repository,
+                venue,
+                "today",
+                cancellationToken);
+            if (listed is not null)
+            {
+                progress.Note("list_active_promotions_and_socials", listed);
+            }
+        }
+
+        if (venue is not null && SupportSocialSteps.ReadyToPay(said, progress.Socials) && !outcome.Actions.Any(action => action.Kind == "stripe_checkout"))
+        {
+            var paid = await SupportSocialPay.CompleteAsync(said, http, authRepository, repository, payments, authSettings, venue, progress, cancellationToken);
+            if (paid is not null)
+            {
+                progress.Note("join_public_social", paid);
+                outcome = outcome with
+                {
+                    Actions = outcome.Actions.Concat(paid.Actions ?? []).ToArray(),
+                    Reply = SupportSocialPay.Error(paid) ?? outcome.Reply,
+                };
+            }
+        }
+
         DateTime? nowLocal = null;
         if (venue is not null && SupportDiscoveryShared.TryGetZone(venue.TimeZone, out var zone))
         {
@@ -117,10 +149,12 @@ public static class SupportEndpoints
         VenueRow? venue,
         string? pageDate,
         SupportReplyProgress progress,
+        bool redeemAllPoints,
+        string? playerText,
         CancellationToken cancellationToken)
     {
-        var found = await SupportDiscoveryTools.TryExecuteAsync(call, http, authRepository, repository, venue, pageDate, cancellationToken)
-            ?? await SupportBookingTools.TryExecuteAsync(call, http, authRepository, repository, dashboardRepository, payments, authSettings, venue, pageDate, cancellationToken);
+        var found = await SupportDiscoveryTools.TryExecuteAsync(call, http, authRepository, repository, venue, pageDate, cancellationToken, redeemAllPoints, playerText)
+            ?? await SupportBookingTools.TryExecuteAsync(call, http, authRepository, repository, dashboardRepository, payments, authSettings, venue, pageDate, cancellationToken, redeemAllPoints);
         found ??= new SupportToolExecutionResult(new { error = "That action is not available." });
         progress.Note(call.Name, found);
         return found;
