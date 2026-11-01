@@ -13,7 +13,7 @@ import SocialCheckoutPage from "./features/booking/SocialCheckoutPage";
 import SocialPayPage from "./features/booking/SocialPayPage";
 import CourtsPage from "./features/courts/CourtsPage";
 import HomePage from "./features/home/HomePage";
-import { CancellationPage, ContactPage, FaqPage, NotFoundPage, PrivacyPage, PromotionsPage as PublicPromotionsPage, RewardsPage, TermsPage } from "./features/pages/StaticPages";
+import { BusinessHoursPage, CancellationPage, ContactPage, FaqPage, NotFoundPage, PrivacyPage, PromotionsPage as PublicPromotionsPage, RewardsPage, TermsPage } from "./features/pages/StaticPages";
 import { venueForPage } from "./features/venues/venueApi";
 import VenueGate from "./features/venues/VenueGate";
 
@@ -112,6 +112,7 @@ export default function App() {
             <Route path="/register" element={<AuthPage key="register" mode="register" />} />
             <Route path="/promotions" element={<PublicPromotionsPage />} />
             <Route path="/rewards" element={<RewardsPage />} />
+            <Route path="/business-hours" element={<BusinessHoursPage />} />
             <Route path="/faq" element={<FaqPage />} />
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/cancellation" element={<CancellationPage />} />

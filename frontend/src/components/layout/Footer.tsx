@@ -1,5 +1,5 @@
 import { Link, useLocation, useParams } from "react-router-dom";
-import { CircleHelp, ExternalLink, Gift, Mail, MapPin, Phone, Scale, Shield, Ticket, type LucideIcon } from "lucide-react";
+import { CircleHelp, Clock, ExternalLink, Gift, Mail, MapPin, Phone, Scale, Shield, Ticket, type LucideIcon } from "lucide-react";
 import { venueForPage } from "../../features/venues/venueApi";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { BrandMark, Wordmark } from "./BrandMark";
@@ -11,6 +11,7 @@ const columns: { title: string; links: { label: string; href: (slug: string) => 
     links: [
       { label: "Promotions", href: () => "/promotions", icon: Ticket },
       { label: "Rewards", href: () => "/rewards", icon: Gift },
+      { label: "Business hours", href: () => "/business-hours", icon: Clock },
     ],
   },
   {

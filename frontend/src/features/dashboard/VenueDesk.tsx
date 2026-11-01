@@ -81,7 +81,7 @@ export default function VenueDesk() {
             {current === "slots" ? <Slots venueId={venueId} currency={venue.currency} timeZone={venue.timeZone} /> : null}
             {current === "rates" && admin ? <Rates venueId={venueId} currency={venue.currency} hourlyRate={venue.hourlyRate} /> : null}
             {current === "rates" && !admin ? <EmptyState title="Admins only" body="Court rates are managed by an admin." /> : null}
-            {current === "closures" ? <Closures venueId={venueId} timeZone={venue.timeZone} /> : null}
+            {current === "closures" ? <Closures venueId={venueId} timeZone={venue.timeZone} venueName={venue.name} /> : null}
             {current === "incentives" && admin ? <Incentives venueId={venueId} timeZone={venue.timeZone} /> : null}
             {current === "incentives" && !admin ? <EmptyState title="Admins only" body="Reward incentives are managed by an admin." /> : null}
           </div>

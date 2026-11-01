@@ -77,7 +77,7 @@ export function HomeHero({
         <StatCard label="Hours" value={hours} icon={<Clock className="h-4 w-4" aria-hidden="true" />} />
         <StatCard label="Courts" value={courts} icon={<LayoutGrid className="h-4 w-4" aria-hidden="true" />} />
         <StatCard
-          label="Price from"
+          label="Price"
           value={<><Money amount={venue.hourlyRate} currency={venue.currency} /> <span className="text-base font-medium text-fg-muted">/ hour</span></>}
           icon={<Ticket className="h-4 w-4" aria-hidden="true" />}
         />

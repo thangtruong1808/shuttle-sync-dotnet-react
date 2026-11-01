@@ -952,11 +952,20 @@ public sealed class DashboardRepository(IConfiguration configuration)
             ORDER BY cc.StartTime DESC
             """,
             new { VenueId = venueId }, cancellationToken: cancellationToken));
-        return rows.ToArray();
+        var daily = await DailyClosureRules.ForDashboardAsync(connection, venueId, cancellationToken);
+        return rows.Concat(daily).OrderByDescending(row => row.StartTime).ToArray();
     }
 
-    public async Task<string?> CreateClosureAsync(Guid venueId, Guid? courtId, DateTime start, DateTime end, string? reason, Guid actorId, string? ip, CancellationToken cancellationToken)
+    public Task<string?> CreateClosureAsync(Guid venueId, Guid? courtId, DateTime start, DateTime end, string? reason, Guid actorId, string? ip, CancellationToken cancellationToken) =>
+        CreateClosuresAsync(venueId, courtId, [(start, end)], reason, actorId, ip, cancellationToken);
+
+    public async Task<string?> CreateClosuresAsync(Guid venueId, Guid? courtId, IReadOnlyList<(DateTime Start, DateTime End)> windows, string? reason, Guid actorId, string? ip, CancellationToken cancellationToken)
     {
+        if (windows.Count == 0)
+        {
+            return "Choose a from date and a to date.";
+        }
+
         await using var connection = await OpenAsync(cancellationToken);
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         if (courtId is not null)
@@ -970,22 +979,67 @@ public sealed class DashboardRepository(IConfiguration configuration)
             }
         }
 
-        if (await CheckClosureConflictsAsync(connection, tx, venueId, courtId, start, end, cancellationToken) is string conflictError)
+        foreach (var window in windows)
         {
-            return conflictError;
+            if (await CheckClosureConflictsAsync(connection, tx, venueId, courtId, window.Start, window.End, cancellationToken) is string conflictError)
+            {
+                return conflictError;
+            }
         }
 
-        var id = Guid.NewGuid();
-        await connection.ExecuteAsync(new CommandDefinition(
-            """
-            INSERT INTO CourtClosures (Id, VenueId, CourtId, StartTime, EndTime, Reason, CreatedBy, CreatedAt)
-            VALUES (@Id, @VenueId, @CourtId, @Start, @End, @Reason, @ActorId, UTC_TIMESTAMP(6))
-            """,
-            new { Id = id, VenueId = venueId, CourtId = courtId, Start = start, End = end, Reason = reason, ActorId = actorId },
-            tx, cancellationToken: cancellationToken));
-        await AuditAsync(connection, tx, actorId, venueId, "create", "CourtClosure", id, new { courtId, start, end, reason }, ip, cancellationToken);
+        foreach (var window in windows)
+        {
+            var id = Guid.NewGuid();
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO CourtClosures (Id, VenueId, CourtId, StartTime, EndTime, Reason, CreatedBy, CreatedAt)
+                VALUES (@Id, @VenueId, @CourtId, @Start, @End, @Reason, @ActorId, UTC_TIMESTAMP(6))
+                """,
+                new { Id = id, VenueId = venueId, CourtId = courtId, Start = window.Start, End = window.End, Reason = reason, ActorId = actorId },
+                tx, cancellationToken: cancellationToken));
+            await AuditAsync(connection, tx, actorId, venueId, "create", "CourtClosure", id, new { courtId, start = window.Start, end = window.End, reason }, ip, cancellationToken);
+        }
+
         await tx.CommitAsync(cancellationToken);
         return null;
+    }
+
+    public async Task<(string? Error, string? Warning)> SaveDailyClosureAsync(
+        Guid venueId,
+        Guid? closureId,
+        Guid? courtId,
+        DateOnly fromDate,
+        DateOnly? untilDate,
+        TimeOnly startClock,
+        TimeOnly endClock,
+        string? reason,
+        Guid actorId,
+        string? ip,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var tx = await connection.BeginTransactionAsync(cancellationToken);
+        if (courtId is not null)
+        {
+            var court = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT COUNT(*) FROM Courts WHERE Id = @Id AND VenueId = @VenueId AND IsDeleted = 0 FOR UPDATE",
+                new { Id = courtId, VenueId = venueId }, tx, cancellationToken: cancellationToken));
+            if (court == 0)
+            {
+                return ("That court was not found.", null);
+            }
+        }
+
+        var warning = await DailyClosureRules.ConflictAsync(connection, tx, venueId, courtId, fromDate, untilDate, startClock, endClock, cancellationToken);
+        var id = closureId ?? Guid.NewGuid();
+        if (await DailyClosureRules.UpsertAsync(connection, tx, id, venueId, courtId, fromDate, untilDate, startClock, endClock, reason, actorId, closureId is not null, cancellationToken) is string error)
+        {
+            return (error, null);
+        }
+
+        await AuditAsync(connection, tx, actorId, venueId, closureId is null ? "create" : "update", "DailyClosure", id, new { courtId, fromDate, untilDate, startClock, endClock, reason }, ip, cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return (null, warning);
     }
 
     public async Task<string?> UpdateClosureAsync(Guid venueId, Guid closureId, Guid? courtId, DateTime start, DateTime end, string? reason, Guid actorId, string? ip, CancellationToken cancellationToken)
@@ -1003,7 +1057,14 @@ public sealed class DashboardRepository(IConfiguration configuration)
             }
         }
 
-        if (await CheckClosureConflictsAsync(connection, tx, venueId, courtId, start, end, cancellationToken) is string conflictError)
+        var existingWindow = await connection.QuerySingleOrDefaultAsync<ClosureWindowRow>(new CommandDefinition(
+            "SELECT StartTime, EndTime, CourtId FROM CourtClosures WHERE Id = @Id AND VenueId = @VenueId",
+            new { Id = closureId, VenueId = venueId }, tx, cancellationToken: cancellationToken));
+        var sameWindow = existingWindow is not null
+            && existingWindow.CourtId == courtId
+            && SameMoment(existingWindow.StartTime, start)
+            && SameMoment(existingWindow.EndTime, end);
+        if (!sameWindow && await CheckClosureConflictsAsync(connection, tx, venueId, courtId, start, end, cancellationToken) is string conflictError)
         {
             return conflictError;
         }
@@ -1018,13 +1079,30 @@ public sealed class DashboardRepository(IConfiguration configuration)
             tx, cancellationToken: cancellationToken));
         if (changed == 0)
         {
-            return "That closure was not found.";
+            var removed = await connection.ExecuteAsync(new CommandDefinition(
+                "DELETE FROM DailyClosures WHERE Id = @Id AND VenueId = @VenueId",
+                new { Id = closureId, VenueId = venueId }, tx, cancellationToken: cancellationToken));
+            if (removed == 0)
+            {
+                return "That closure was not found.";
+            }
+
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO CourtClosures (Id, VenueId, CourtId, StartTime, EndTime, Reason, CreatedBy, CreatedAt)
+                VALUES (@Id, @VenueId, @CourtId, @Start, @End, @Reason, @ActorId, UTC_TIMESTAMP(6))
+                """,
+                new { Id = closureId, VenueId = venueId, CourtId = courtId, Start = start, End = end, Reason = reason, ActorId = actorId },
+                tx, cancellationToken: cancellationToken));
         }
 
         await AuditAsync(connection, tx, actorId, venueId, "update", "CourtClosure", closureId, new { courtId, start, end, reason }, ip, cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return null;
     }
+
+    private static bool SameMoment(DateTime left, DateTime right) =>
+        Math.Abs((DateTime.SpecifyKind(left, DateTimeKind.Utc) - DateTime.SpecifyKind(right, DateTimeKind.Utc)).TotalSeconds) < 2;
 
     private static async Task<string?> CheckClosureConflictsAsync(
         MySqlConnection connection,
@@ -1053,6 +1131,11 @@ public sealed class DashboardRepository(IConfiguration configuration)
             cancellationToken: cancellationToken));
         if (activeBookings > 0)
         {
+            if (courtId is null && end - start > TimeSpan.FromHours(18))
+            {
+                return "Bookings already sit inside this continuous closure. Tick Every day to close only the chosen hours each day, such as 12:00 AM to 7:00 AM.";
+            }
+
             return courtId is null
                 ? "Cancel or move existing bookings in this window before closing the venue."
                 : "Cancel or move existing bookings on this court before adding a closure.";
@@ -1097,6 +1180,13 @@ public sealed class DashboardRepository(IConfiguration configuration)
         var changed = await connection.ExecuteAsync(new CommandDefinition(
             "DELETE FROM CourtClosures WHERE Id = @Id AND VenueId = @VenueId",
             new { Id = closureId, VenueId = venueId }, tx, cancellationToken: cancellationToken));
+        if (changed == 0)
+        {
+            changed = await connection.ExecuteAsync(new CommandDefinition(
+                "DELETE FROM DailyClosures WHERE Id = @Id AND VenueId = @VenueId",
+                new { Id = closureId, VenueId = venueId }, tx, cancellationToken: cancellationToken));
+        }
+
         if (changed == 0)
         {
             return "That closure was not found.";
@@ -2455,6 +2545,13 @@ public sealed class DashSessionRow
     public bool? IncentiveActive { get; init; }
 }
 
+file sealed class ClosureWindowRow
+{
+    public DateTime StartTime { get; set; }
+    public DateTime EndTime { get; set; }
+    public Guid? CourtId { get; set; }
+}
+
 file sealed class SessionStartRow
 {
     public Guid Id { get; init; }
@@ -2478,6 +2575,9 @@ public sealed class DashClosureRow
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
     public string? Reason { get; init; }
+    public bool RepeatsDaily { get; init; }
+    public DateTime? RepeatFrom { get; init; }
+    public DateTime? RepeatUntil { get; init; }
 }
 
 public sealed record DashPromoWrite(

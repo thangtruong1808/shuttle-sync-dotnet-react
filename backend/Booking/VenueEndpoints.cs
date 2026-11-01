@@ -14,6 +14,7 @@ public static class VenueEndpoints
         venues.MapGet("/{slug}/availability", AvailabilityAsync);
         venues.MapGet("/{slug}/court-price", CourtPriceAsync);
         venues.MapGet("/{slug}/promotions", PromotionsAsync);
+        venues.MapGet("/{slug}/hours", HoursAsync);
         venues.MapGet("/{slug}/slots/{sessionId:guid}", SlotAsync);
         venues.MapPost("/{slug}/sessions", OpenSessionAsync).RequireAuthorization();
         venues.MapPost("/{slug}/holds", OpenHoldAsync).RequireAuthorization();
@@ -209,6 +210,29 @@ public static class VenueEndpoints
             venueId = promotion.VenueId,
             validFrom = VenueClock.AsUtc(promotion.ValidFrom),
             validTo = VenueClock.AsUtc(promotion.ValidTo),
+        }));
+    }
+
+    private static async Task<IResult> HoursAsync(string slug, BookingRepository repository, CancellationToken cancellationToken)
+    {
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Results.NotFound();
+        }
+
+        var rows = await repository.ListPublicHoursAsync(venue.Id, cancellationToken);
+        return Results.Ok(rows.Select(row => new
+        {
+            id = row.Id,
+            courtId = row.CourtId,
+            courtName = row.CourtName ?? "Whole venue",
+            startTime = VenueClock.AsUtc(row.StartTime),
+            endTime = VenueClock.AsUtc(row.EndTime),
+            reason = row.Reason,
+            repeatsDaily = row.RepeatsDaily,
+            fromDate = row.RepeatFrom?.ToString("yyyy-MM-dd"),
+            untilDate = row.RepeatUntil?.ToString("yyyy-MM-dd"),
         }));
     }
 

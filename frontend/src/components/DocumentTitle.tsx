@@ -13,6 +13,7 @@ const staticPages: Record<string, string> = {
   "/register": "Sign up",
   "/promotions": "Promotions",
   "/rewards": "Rewards",
+  "/business-hours": "Business hours",
   "/faq": "FAQ",
   "/contact": "Contact",
   "/cancellation": "Cancellation policy",

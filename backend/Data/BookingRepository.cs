@@ -120,7 +120,25 @@ public sealed partial class BookingRepository(IConfiguration configuration)
             """,
             new { VenueId = venueId, DayStartUtc = dayStartUtc, DayEndUtc = dayEndUtc },
             cancellationToken: cancellationToken));
-        return rows.ToArray();
+        var daily = await DailyClosureRules.ExpandDayAsync(connection, null, venueId, dayStartUtc, dayEndUtc, cancellationToken);
+        return rows.Concat(daily).ToArray();
+    }
+
+    public async Task<DashClosureRow[]> ListPublicHoursAsync(Guid venueId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<DashClosureRow>(new CommandDefinition(
+            """
+            SELECT cc.Id, cc.CourtId, COALESCE(c.CourtName, 'Whole venue') AS CourtName, cc.StartTime, cc.EndTime, cc.Reason
+            FROM CourtClosures cc
+            LEFT JOIN Courts c ON c.Id = cc.CourtId AND c.VenueId = cc.VenueId
+            WHERE cc.VenueId = @VenueId
+            ORDER BY cc.StartTime
+            """,
+            new { VenueId = venueId },
+            cancellationToken: cancellationToken));
+        var daily = await DailyClosureRules.ForDashboardAsync(connection, venueId, cancellationToken);
+        return daily.Concat(rows).ToArray();
     }
 
     public async Task<SupportSessionRow[]> ListSupportSessionsAsync(
@@ -205,7 +223,8 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                 """,
                 new { VenueId = venueId, DayStartUtc = dayStartUtc, DayEndUtc = dayEndUtc },
                 cancellationToken: cancellationToken));
-        return rows.ToArray();
+        var block = await DailyClosureRules.BlockerAsync(connection, null, venueId, cancellationToken);
+        return rows.Where(row => !block(row.CourtId, row.StartTime, row.EndTime)).ToArray();
     }
 
     public async Task<(Guid SessionId, decimal Price, string? Error)> OpenPlayerSessionAsync(
@@ -258,7 +277,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
             new { VenueId = venueId, CourtId = courtId, StartTime = startUtc, EndTime = endUtc },
             tx,
             cancellationToken: cancellationToken));
-        if (closed > 0)
+        if (closed > 0 || await DailyClosureRules.BlocksAsync(connection, tx, venueId, courtId, startUtc, endUtc, cancellationToken))
         {
             return (Guid.Empty, 0, "This slot is not available.");
         }
@@ -649,7 +668,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                     new { VenueId = venueId, CourtId = court.Id, StartTime = start, EndTime = end },
                     tx,
                     cancellationToken: cancellationToken));
-                if (closed > 0)
+                if (closed > 0 || await DailyClosureRules.BlocksAsync(connection, tx, venueId, court.Id, start, end, cancellationToken))
                 {
                     return HoldError($"{court.CourtName} is closed on {HoldWhen(timeZone, start)}. Choose another time.");
                 }
@@ -1138,7 +1157,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                 new { VenueId = group.VenueId, CourtId = court.Id, StartTime = startUtc, EndTime = endUtc },
                 tx,
                 cancellationToken: cancellationToken));
-            if (closed > 0)
+            if (closed > 0 || await DailyClosureRules.BlocksAsync(connection, tx, group.VenueId, court.Id, startUtc, endUtc, cancellationToken))
             {
                 return ([], $"{court.CourtName} is closed on {HoldWhen(group.TimeZone, startUtc)}.");
             }
@@ -1640,7 +1659,7 @@ public sealed partial class BookingRepository(IConfiguration configuration)
                 new { VenueId = sample.VenueId, CourtId = row.CourtId, StartTime = newStartUtc, EndTime = newEndUtc },
                 tx,
                 cancellationToken: cancellationToken));
-            if (closed > 0)
+            if (closed > 0 || await DailyClosureRules.BlocksAsync(connection, tx, sample.VenueId, row.CourtId, newStartUtc, newEndUtc, cancellationToken))
             {
                 return CourtMoveResult.Fail($"{row.CourtName} is closed at that time. Choose another date or time.");
             }

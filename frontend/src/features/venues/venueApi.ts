@@ -166,6 +166,22 @@ export function venuePromotions(slug: string): Promise<Promotion[]> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/promotions`);
 }
 
+export type PublicClosure = {
+  id: string;
+  courtId: string | null;
+  courtName: string;
+  startTime: string;
+  endTime: string;
+  reason: string | null;
+  repeatsDaily: boolean;
+  fromDate: string | null;
+  untilDate: string | null;
+};
+
+export function venueHours(slug: string): Promise<PublicClosure[]> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/hours`, "no-store");
+}
+
 export type SocialCheckout = {
   registrationId: string;
   status: string;

@@ -496,6 +496,9 @@ public static class DashboardEndpoints
             endTime = Utc(row.EndTime),
             reason = row.Reason,
             timeZone = venue?.TimeZone,
+            repeatsDaily = row.RepeatsDaily,
+            fromDate = row.RepeatFrom?.ToString("yyyy-MM-dd"),
+            untilDate = row.RepeatUntil?.ToString("yyyy-MM-dd"),
         }));
     }
 
@@ -505,8 +508,16 @@ public static class DashboardEndpoints
         if (gate.Error is not null) return gate.Error;
         var venue = await repo.FindVenueAsync(venueId, cancellationToken);
         if (venue is null) return Missing();
-        if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var error)) return Form(error);
-        error = await repo.CreateClosureAsync(venueId, body.CourtId, window.StartUtc, window.EndUtc, Trim(body.Reason, 200), gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
+        if (body.EveryDay)
+        {
+            if (!DailyClosureRules.TryRead(body.Date, body.ToDate, body.Start, body.End, out var fromDate, out var untilDate, out var startClock, out var endClock, out var dailyError)) return Form(dailyError);
+            var saved = await repo.SaveDailyClosureAsync(venueId, null, body.CourtId, fromDate, untilDate, startClock, endClock, Trim(body.Reason, 200), gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
+            if (saved.Error is not null) return Form(saved.Error);
+            return saved.Warning is null ? Results.NoContent() : Results.Ok(new { warning = saved.Warning });
+        }
+
+        if (!VenueClock.TryGetClosureWindows(venue.TimeZone, body.Date, body.ToDate, body.Start, body.End, false, out var windows, out var error)) return Form(error);
+        error = await repo.CreateClosuresAsync(venueId, body.CourtId, windows.Select(window => (window.StartUtc, window.EndUtc)).ToArray(), Trim(body.Reason, 200), gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
     }
 
@@ -516,7 +527,16 @@ public static class DashboardEndpoints
         if (gate.Error is not null) return gate.Error;
         var venue = await repo.FindVenueAsync(venueId, cancellationToken);
         if (venue is null) return Missing();
-        if (!VenueClock.TryGetDayWindow(venue.TimeZone, body.Date, body.Start, body.End, out var window, out var error)) return Form(error);
+        if (body.EveryDay)
+        {
+            if (!DailyClosureRules.TryRead(body.Date, body.ToDate, body.Start, body.End, out var fromDate, out var untilDate, out var startClock, out var endClock, out var dailyError)) return Form(dailyError);
+            var saved = await repo.SaveDailyClosureAsync(venueId, closureId, body.CourtId, fromDate, untilDate, startClock, endClock, Trim(body.Reason, 200), gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
+            if (saved.Error is not null) return Form(saved.Error);
+            return saved.Warning is null ? Results.NoContent() : Results.Ok(new { warning = saved.Warning });
+        }
+
+        if (!VenueClock.TryGetClosureWindows(venue.TimeZone, body.Date, body.ToDate, body.Start, body.End, false, out var windows, out var error)) return Form(error);
+        var window = windows[0];
         error = await repo.UpdateClosureAsync(venueId, closureId, body.CourtId, window.StartUtc, window.EndUtc, Trim(body.Reason, 200), gate.Actor!.UserId, gate.Actor.Ip, cancellationToken);
         return error is null ? Results.NoContent() : Form(error);
     }
@@ -1029,7 +1049,7 @@ public static class DashboardEndpoints
 
     private static readonly HashSet<string> ReservedSlugs = new(StringComparer.Ordinal)
     {
-        "login", "register", "profile", "dashboard", "rewards", "promotions", "faq", "contact",
+        "login", "register", "profile", "dashboard", "rewards", "promotions", "business-hours", "faq", "contact",
         "cancellation", "terms", "privacy", "api", "assets",
     };
 
@@ -1257,7 +1277,7 @@ public static class DashboardEndpoints
 
     private static string MinutesToClock(int minute) => $"{minute / 60:00}:{minute % 60:00}";
 
-    private sealed record ClosureBody(Guid? CourtId, string? Date, string? Start, string? End, string? Reason);
+    private sealed record ClosureBody(Guid? CourtId, string? Date, string? Start, string? End, string? Reason, string? ToDate = null, bool EveryDay = false);
 
     private sealed record PromoBody(Guid? VenueId, string? Code, string? DiscountType, decimal DiscountValue, int? MaxUses, int MaxUsesPerUser, string? ValidFrom, string? ValidTo, bool IsActive);
 

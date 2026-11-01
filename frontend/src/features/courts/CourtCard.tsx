@@ -10,6 +10,7 @@ export function CourtCard({
   currency,
   hourlyRate,
   heading = "h3",
+  showPrice = true,
   children,
 }: {
   name: string;
@@ -19,6 +20,7 @@ export function CourtCard({
   currency: string;
   hourlyRate: number;
   heading?: "h2" | "h3";
+  showPrice?: boolean;
   children?: ReactNode;
 }) {
   const Title = heading;
@@ -32,10 +34,12 @@ export function CourtCard({
         </div>
         {surface ? <Badge>{surface}</Badge> : null}
       </div>
-      <p className="mt-2 text-sm tabular-nums text-fg">
-        From <span className="font-semibold"><Money amount={hourlyRate} currency={currency} /></span>
-        <span className="text-fg-muted"> / hour</span>
-      </p>
+      {showPrice ? (
+        <p className="mt-2 text-sm tabular-nums text-fg">
+          From <span className="font-semibold"><Money amount={hourlyRate} currency={currency} /></span>
+          <span className="text-fg-muted"> / hour</span>
+        </p>
+      ) : null}
       {children}
     </article>
   );

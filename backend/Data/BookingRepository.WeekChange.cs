@@ -517,7 +517,7 @@ public sealed partial class BookingRepository
                 new { VenueId = row.VenueId, CourtId = row.CourtId, StartTime = startUtc, EndTime = endUtc },
                 tx,
                 cancellationToken: cancellationToken));
-            if (closed > 0)
+            if (closed > 0 || await DailyClosureRules.BlocksAsync(connection, tx, row.VenueId, row.CourtId, startUtc, endUtc, cancellationToken))
             {
                 return WeekRowMove.Block("COURT_UNAVAILABLE", row.CourtName);
             }
@@ -628,7 +628,7 @@ public sealed partial class BookingRepository
             new { VenueId = sample.VenueId, CourtId = court.Id, StartTime = startUtc, EndTime = endUtc },
             tx,
             cancellationToken: cancellationToken));
-        if (closed > 0)
+        if (closed > 0 || await DailyClosureRules.BlocksAsync(connection, tx, sample.VenueId, court.Id, startUtc, endUtc, cancellationToken))
         {
             return (null, "COURT_UNAVAILABLE");
         }
@@ -878,6 +878,13 @@ public sealed partial class BookingRepository
             """,
             new { VenueId = sample.VenueId, StartTime = day.StartUtc, EndTime = day.EndUtc },
             cancellationToken: cancellationToken))).ToArray();
+        var dailyClosures = await DailyClosureRules.ExpandDayAsync(connection, null, sample.VenueId, day.StartUtc, day.EndUtc, cancellationToken);
+        closures = closures.Concat(dailyClosures.Select(row => new ClosureRow
+        {
+            CourtId = row.CourtId,
+            StartTime = row.StartTime,
+            EndTime = row.EndTime,
+        })).ToArray();
         return new WeekBoard(sample.TimeZone, sample.VenueId, userId, groupId, sample.StartTime, sample.EndTime, day.Date, week, courts, busy, closures);
     }
 

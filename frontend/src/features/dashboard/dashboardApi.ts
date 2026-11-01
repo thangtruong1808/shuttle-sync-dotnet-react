@@ -63,6 +63,9 @@ export type DashClosure = {
   endTime: string;
   reason: string | null;
   timeZone: string | null;
+  repeatsDaily?: boolean;
+  fromDate?: string | null;
+  untilDate?: string | null;
 };
 
 export type DashPromo = {
@@ -231,6 +234,21 @@ async function send(path: string, method: string, body?: unknown): Promise<void>
   }
 }
 
+async function sendWarning(path: string, method: string, body: unknown): Promise<string | null> {
+  const response = await apiFetch(path, {
+    method,
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    return fail(response);
+  }
+  if (response.status === 204) return null;
+  const payload = (await response.json().catch(() => null)) as { warning?: string } | null;
+  return payload?.warning ?? null;
+}
+
 export function overview(): Promise<{ venues: number; courts: number; role: string }> {
   return read("/api/dashboard/overview");
 }
@@ -344,12 +362,12 @@ export function listClosures(venueId: string): Promise<DashClosure[]> {
   return read(`/api/dashboard/venues/${venueId}/closures`);
 }
 
-export function createClosure(venueId: string, body: { courtId: string | null; date: string; start: string; end: string; reason: string }): Promise<void> {
-  return send(`/api/dashboard/venues/${venueId}/closures`, "POST", body);
+export function createClosure(venueId: string, body: { courtId: string | null; date: string; toDate: string; start: string; end: string; reason: string; everyDay: boolean }): Promise<string | null> {
+  return sendWarning(`/api/dashboard/venues/${venueId}/closures`, "POST", body);
 }
 
-export function updateClosure(venueId: string, closureId: string, body: { courtId: string | null; date: string; start: string; end: string; reason: string }): Promise<void> {
-  return send(`/api/dashboard/venues/${venueId}/closures/${closureId}`, "PUT", body);
+export function updateClosure(venueId: string, closureId: string, body: { courtId: string | null; date: string; toDate: string; start: string; end: string; reason: string; everyDay: boolean }): Promise<string | null> {
+  return sendWarning(`/api/dashboard/venues/${venueId}/closures/${closureId}`, "PUT", body);
 }
 
 export function deleteClosure(venueId: string, closureId: string): Promise<void> {

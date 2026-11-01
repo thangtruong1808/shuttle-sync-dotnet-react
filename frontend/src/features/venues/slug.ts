@@ -5,6 +5,7 @@ export const reservedSlugs = [
   "dashboard",
   "rewards",
   "promotions",
+  "business-hours",
   "faq",
   "contact",
   "cancellation",

@@ -55,6 +55,131 @@ public static class VenueClock
         return true;
     }
 
+    public static bool TryGetClosureWindows(
+        string timeZoneId,
+        string? fromDate,
+        string? toDate,
+        string? start,
+        string? end,
+        bool everyDay,
+        out IReadOnlyList<DayWindow> windows,
+        out string error)
+    {
+        windows = [];
+        error = "";
+        if (string.IsNullOrWhiteSpace(fromDate) || !DateOnly.TryParse(fromDate, out var from))
+        {
+            error = "Choose a from date.";
+            return false;
+        }
+
+        var to = from;
+        if (!string.IsNullOrWhiteSpace(toDate))
+        {
+            if (!DateOnly.TryParse(toDate, out to))
+            {
+                error = "Choose a to date.";
+                return false;
+            }
+        }
+
+        if (to < from)
+        {
+            error = "The to date must be on or after the from date.";
+            return false;
+        }
+
+        var dayCount = to.DayNumber - from.DayNumber + 1;
+        if (!everyDay)
+        {
+            if (from == to)
+            {
+                if (!TryGetDayWindow(timeZoneId, from.ToString("yyyy-MM-dd"), start, end, out var sameDay, out error))
+                {
+                    return false;
+                }
+
+                windows = [sameDay];
+                return true;
+            }
+
+            return TryGetSpan(timeZoneId, from, to, start, end, out windows, out error);
+        }
+
+        if (dayCount > 366)
+        {
+            error = "Every day can cover up to 366 days.";
+            return false;
+        }
+
+        var daily = new List<DayWindow>(dayCount);
+        for (var day = from; day <= to; day = day.AddDays(1))
+        {
+            if (!TryGetDayWindow(timeZoneId, day.ToString("yyyy-MM-dd"), start, end, out var window, out error))
+            {
+                return false;
+            }
+
+            daily.Add(window);
+        }
+
+        windows = daily;
+        return true;
+    }
+
+    private static bool TryGetSpan(
+        string timeZoneId,
+        DateOnly from,
+        DateOnly to,
+        string? start,
+        string? end,
+        out IReadOnlyList<DayWindow> windows,
+        out string error)
+    {
+        windows = [];
+        TimeZoneInfo zone;
+        try
+        {
+            zone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            error = "This venue timezone is not available on the server.";
+            return false;
+        }
+
+        if (!TryParseClock(start, out var fromClock, out error) || fromClock is null)
+        {
+            error = string.IsNullOrWhiteSpace(error) ? "Choose a start time." : error;
+            return false;
+        }
+
+        if (!TryParseClock(end, out var toClock, out error) || toClock is null)
+        {
+            error = string.IsNullOrWhiteSpace(error) ? "Choose an end time." : error;
+            return false;
+        }
+
+        try
+        {
+            var startUtc = TimeZoneInfo.ConvertTimeToUtc(from.ToDateTime(fromClock.Value), zone);
+            var endUtc = TimeZoneInfo.ConvertTimeToUtc(to.ToDateTime(toClock.Value), zone);
+            if (endUtc <= startUtc)
+            {
+                error = "The end time must be later than the start time.";
+                return false;
+            }
+
+            windows = [new DayWindow(from.ToString("yyyy-MM-dd"), startUtc, endUtc)];
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            error = "Choose a valid date and time.";
+            return false;
+        }
+    }
+
     public static DateTimeOffset AsUtc(DateTime value) =>
         new(DateTime.SpecifyKind(value, DateTimeKind.Utc));
 

@@ -107,7 +107,7 @@ public sealed class PaymentRepository(IConfiguration configuration)
             new { VenueId = venueId, slot.CourtId, slot.StartTime, slot.EndTime },
             tx,
             cancellationToken: cancellationToken));
-        if (closed > 0)
+        if (closed > 0 || await DailyClosureRules.BlocksAsync(connection, tx, venueId, slot.CourtId, slot.StartTime, slot.EndTime, cancellationToken))
         {
             return CheckoutPrepared.Fail("This court is closed for that session.", StatusCodes.Status409Conflict);
         }

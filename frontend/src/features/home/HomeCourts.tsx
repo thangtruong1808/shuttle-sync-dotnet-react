@@ -68,6 +68,7 @@ export function HomeCourts({
                     imageUrl={court.imageUrl}
                     currency={availability.venue.currency}
                     hourlyRate={availability.venue.hourlyRate}
+                    showPrice={false}
                   >
                     {bookings.length === 0 ? null : (
                       <ul className="mt-3 grid grid-cols-2 gap-2">
