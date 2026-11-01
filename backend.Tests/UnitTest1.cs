@@ -166,5 +166,178 @@ public sealed class ShuttleSyncBackendTests
         Assert.False(BookingRepository.SocialIsFull(playerCount: 11, courtLimit: 2, playersPerCourt: 6, blockedCourts: 0));
     }
 
+    [Fact]
+    public void SupportDiscovery_FindOpenWindows_SkipsBlockedHourAndOffersTheNearestOpenCourt()
+    {
+        var zone = TimeZoneInfo.Utc;
+        var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10));
+        var courtId = Guid.NewGuid();
+        var courts = new[]
+        {
+            new PublicCourtRow { Id = courtId, CourtName = "Court 1", CourtNumber = 1 },
+        };
+        var sessions = new[]
+        {
+            new SupportSessionRow
+            {
+                CourtId = courtId,
+                CourtName = "Court 1",
+                CourtNumber = 1,
+                StartTime = date.ToDateTime(new TimeOnly(18, 0), DateTimeKind.Utc),
+                EndTime = date.ToDateTime(new TimeOnly(19, 0), DateTimeKind.Utc),
+                Price = 22m,
+                Taken = 1,
+            },
+        };
+
+        var suggestions = SupportDiscoveryShared.FindOpenWindowsForDay(courts, sessions, [], [], zone, date, 22m, 60, new TimeOnly(18, 0));
+
+        Assert.NotEmpty(suggestions);
+        Assert.DoesNotContain(suggestions, slot => slot.Start == "18:00");
+        Assert.Equal("17:00", suggestions[0].Start);
+        Assert.Equal("18:00", suggestions[0].End);
+        Assert.Equal(courtId, suggestions[0].CourtId);
+        Assert.Equal(22m, suggestions[0].Price);
+        Assert.True(suggestions[0].MoreThan24HoursAway);
+    }
+
+    [Fact]
+    public void SupportBooking_DecideHoldPay_RequiresPayNowInside24HoursAndAllowsPayLaterBeyondIt()
+    {
+        var now = new DateTime(2026, 11, 1, 12, 0, 0, DateTimeKind.Utc);
+
+        var inside = SupportBookingTools.DecideHoldPay("pay_later", now.AddHours(2), now);
+        Assert.False(inside.Allowed);
+        Assert.True(inside.RequiresPayNow);
+        Assert.False(inside.MoreThan24HoursAway);
+
+        var exact = SupportBookingTools.DecideHoldPay("pay-later", now.AddHours(24), now);
+        Assert.True(exact.RequiresPayNow);
+
+        var soonPayNow = SupportBookingTools.DecideHoldPay("pay_now", now.AddHours(2), now);
+        Assert.True(soonPayNow.Allowed);
+        Assert.True(soonPayNow.PayNow);
+        Assert.False(soonPayNow.RequiresPayNow);
+
+        var later = SupportBookingTools.DecideHoldPay("pay_later", now.AddHours(24).AddSeconds(1), now);
+        Assert.True(later.Allowed);
+        Assert.False(later.PayNow);
+        Assert.True(later.MoreThan24HoursAway);
+
+        var missing = SupportBookingTools.DecideHoldPay(" ", now.AddHours(48), now);
+        Assert.False(missing.Allowed);
+        Assert.False(missing.RequiresPayNow);
+        Assert.Contains("pay_now", missing.Error);
+    }
+
+    [Fact]
+    public void SupportToolLoop_ExtractsFunctionCallAndSerializesFunctionResponse()
+    {
+        const string payload = """
+            {
+              "candidates": [
+                {
+                  "content": {
+                    "parts": [
+                      {
+                        "thoughtSignature": "sig-1",
+                        "functionCall": {
+                          "name": "create_court_hold",
+                          "args": { "payTiming": "pay_later", "date": "2026-12-15" }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+            """;
+
+        var calls = SupportToolLoop.ExtractFunctionCalls(payload);
+
+        Assert.Single(calls);
+        Assert.Equal("create_court_hold", calls[0].Name);
+        Assert.Equal("pay_later", calls[0].Args.GetProperty("payTiming").GetString());
+        Assert.Equal("sig-1", calls[0].ModelPart.GetProperty("thoughtSignature").GetString());
+        Assert.Empty(SupportToolLoop.ExtractFunctionCalls("{"));
+        Assert.Empty(SupportToolLoop.ExtractFunctionCalls("""{"candidates":[]}"""));
+
+        var part = SupportToolLoop.BuildFunctionResponsePart("create_court_hold", new { saved = true });
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(part));
+        var response = document.RootElement.GetProperty("functionResponse");
+        Assert.Equal("create_court_hold", response.GetProperty("name").GetString());
+        Assert.True(response.GetProperty("response").GetProperty("result").GetProperty("saved").GetBoolean());
+    }
+
+    [Fact]
+    public void SupportReplyChips_MovesToTheNextChoiceAfterAButtonIsUsed()
+    {
+        var progress = new SupportReplyProgress();
+        progress.Note("check_court_availability", new SupportToolExecutionResult(new
+        {
+            dateFormatted = "Tuesday, 3 November 2026",
+            windowFormatted = "6:00 PM–7:00 PM",
+            availableCourts = new[] { new { courtName = "Court 1" }, new { courtName = "Court 2" } },
+        }));
+        progress.Note("get_user_booking_context", new SupportToolExecutionResult(new { rewardPoints = 875 }));
+        progress.Note("list_active_promotions_and_socials", new SupportToolExecutionResult(new
+        {
+            promotions = new[] { new { code = "RIVER10", discountType = "percent", discountValue = 10m } },
+        }));
+        const string chosen = "Select Court 1 on Tuesday, 3 November 2026, 6:00 PM–7:00 PM";
+
+        var courts = SupportReplyChips.For([("user", "Which courts are free tomorrow?")], progress, []);
+        Assert.Contains(courts.Actions, action => action.Label == "Court 1 · 6:00 PM–7:00 PM");
+        Assert.Contains(courts.Actions, action => action.Label == "Court 2 · 6:00 PM–7:00 PM");
+        Assert.DoesNotContain(courts.Actions, action => action.Label == "One session");
+
+        var schedule = SupportReplyChips.For([("user", chosen)], progress, []);
+        Assert.Contains(schedule.Actions, action => action.Label == "One session");
+        Assert.Equal("Would you like one session, a hold for 1 week, or a weekly repeat?", schedule.Reply);
+        Assert.DoesNotContain("RIVER10", schedule.Reply);
+        Assert.DoesNotContain(schedule.Actions, action => action.Label.StartsWith("Court ", StringComparison.Ordinal));
+
+        var promo = SupportReplyChips.For([("user", $"{chosen}\nOne session, just this time")], progress, []);
+        Assert.Contains(promo.Actions, action => action.Label == "Use both");
+        Assert.Contains(promo.Actions, action => action.Label == "Apply RIVER10");
+        Assert.Contains(promo.Actions, action => action.Label == "Use my points");
+        Assert.Contains("RIVER10", promo.Reply);
+        Assert.Contains("875", promo.Reply);
+        Assert.Contains("or use both", promo.Reply);
+        Assert.DoesNotContain(promo.Actions, action => action.Label == "One session");
+
+        var pay = SupportReplyChips.For([("user", $"{chosen}\nOne session, just this time\nApply promotion code RIVER10")], progress, []);
+        Assert.Contains(pay.Actions, action => action.Label == "Pay now with Stripe");
+        Assert.Contains(pay.Actions, action => action.Label == "Pay later (before 24h)");
+
+        progress.Note("create_court_hold", new SupportToolExecutionResult(new { groupId = Guid.NewGuid() }));
+        var held = SupportReplyChips.For([("user", $"{chosen}\nOne session, just this time\nPay later, at least 24 hours before play")], progress, [new SupportChatAction("my_bookings_link", "View in My Bookings", Href: "/profile/bookings")]);
+        Assert.Contains("Your booking is held", held.Reply);
+        Assert.Contains(held.Actions, action => action.Label == "Pay in My Bookings");
+        Assert.Contains(held.Actions, action => action.Label == "Pay from this chat");
+        Assert.Contains(held.Actions, action => action.Kind == "close_chat");
+        Assert.DoesNotContain(held.Actions, action => action.Label == "View in My Bookings");
+
+        var iso = new SupportReplyProgress();
+        iso.Note("suggest_alternative_slots", new SupportToolExecutionResult(new
+        {
+            suggestions = new[] { new { courtName = "Court 3", date = "2026-11-03", windowLabel = "18:00-19:00" } },
+        }));
+        var english = SupportReplyChips.For([("user", "What is free?")], iso, []);
+        Assert.Contains(english.Actions, action => action.Label == "Court 3 · 6:00 PM–7:00 PM" && action.Prompt == "Select Court 3 on Tuesday, 3 November 2026, 6:00 PM–7:00 PM");
+
+        var tonight = SupportReplyChips.For(
+            [("user", "Select Court 1 on Sunday, 1 November 2026, 8:00 PM–9:00 PM")],
+            new SupportReplyProgress(),
+            [new SupportChatAction("login_link", "Sign in to book", Href: "/login")],
+            new DateTime(2026, 11, 1, 13, 0, 0));
+        Assert.Contains(tonight.Actions, action => action.Label == "Sign in to book");
+        Assert.Contains(tonight.Actions, action => action.Label == "One session");
+        Assert.Contains(tonight.Actions, action => action.Label == "Hold for 1 week");
+        Assert.Contains(tonight.Actions, action => action.Label == "Repeat weekly");
+        Assert.Contains("within 24 hours", tonight.Reply);
+        Assert.Contains("must be paid now", tonight.Reply);
+    }
+
     private sealed record SampleNumbers(decimal? Amount, int? Count);
 }

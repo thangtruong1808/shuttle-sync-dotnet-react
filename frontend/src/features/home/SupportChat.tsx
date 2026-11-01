@@ -1,7 +1,10 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Mic, Send } from "lucide-react";
-import { Button } from "../../components/ui";
+import { Mic, Send, Sparkles } from "lucide-react";
+import { Button, Spinner } from "../../components/ui";
 import { apiFetch, AuthRequestError } from "../auth/authApi";
+import { openingChoices, SupportChatActions, type SupportChatAction } from "./SupportChatCards";
+
+type ChatMessage = { role: "user" | "assistant"; text: string; actions?: SupportChatAction[] };
 
 export function SupportChat({ venueName, venueSlug, date }: { venueName: string; venueSlug: string; date: string }) {
   const [open, setOpen] = useState(false);
@@ -14,7 +17,7 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const sendingRef = useRef(false);
@@ -45,8 +48,10 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
 
   function speak(text: string) {
     if (!window.speechSynthesis) return;
+    const spoken = text.replace(/\p{Extended_Pictographic}/gu, "").replace(/[\uFE0F\u200D]/g, "").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+    if (!spoken) return;
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(spoken);
     utterance.lang = "en-AU";
     const voices = window.speechSynthesis.getVoices();
     const voice = voices.find((item) => item.lang.toLowerCase().startsWith("en-au")) ?? voices.find((item) => item.lang.toLowerCase().startsWith("en"));
@@ -69,32 +74,34 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
     setRecording(false);
   }
 
-  async function ask(next: { role: "user" | "assistant"; text: string }[], audio?: { audioBase64: string; mimeType: string }) {
+  async function ask(next: ChatMessage[], audio?: { audioBase64: string; mimeType: string }) {
     setNotice(null);
     sendingRef.current = true;
     setSending(true);
     try {
+      await apiFetch("/api/me");
       const response = await apiFetch("/api/support/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           venueSlug,
           date,
-          messages: next.slice(-8),
+          messages: next.slice(-14).map((message) => ({ role: message.role, text: message.text })),
           audioBase64: audio?.audioBase64,
           mimeType: audio?.mimeType,
         }),
       });
-      const body = (await response.json().catch(() => null)) as { reply?: string; transcript?: string; errors?: { form?: string[] } } | null;
+      const body = (await response.json().catch(() => null)) as { reply?: string; transcript?: string; actions?: SupportChatAction[]; errors?: { form?: string[] } } | null;
       if (!response.ok) {
         setNotice(body?.errors?.form?.[0] ?? "Support chat could not answer just now.");
         return;
       }
       const reply = body?.reply ?? "I could not answer that.";
       const heard = body?.transcript?.trim();
+      const answer: ChatMessage = { role: "assistant", text: reply, actions: body?.actions ?? [] };
       setMessages(audio
-        ? [...messagesRef.current, ...(heard ? [{ role: "user" as const, text: heard }] : []), { role: "assistant" as const, text: reply }]
-        : [...next, { role: "assistant" as const, text: reply }]);
+        ? [...messagesRef.current, ...(heard ? [{ role: "user" as const, text: heard }] : []), answer]
+        : [...next, answer]);
       if (replyModeRef.current === "voice" && body?.reply) speak(body.reply);
     } catch (reason) {
       setNotice(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "Support chat could not answer just now." : "Support chat could not answer just now.");
@@ -108,11 +115,20 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
     event.preventDefault();
     const text = draft.trim();
     if (!text || sending) return;
-    const next = [...messages, { role: "user" as const, text }];
+    const next: ChatMessage[] = [...messages, { role: "user", text }];
     setMessages(next);
     setDraft("");
     stopSpeaking();
     await ask(next);
+  }
+
+  function sendPrompt(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || sendingRef.current) return;
+    const next: ChatMessage[] = [...messagesRef.current, { role: "user", text: trimmed }];
+    setMessages(next);
+    stopSpeaking();
+    void ask(next);
   }
 
   async function finishRecording() {
@@ -193,7 +209,12 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
           </div>
           <p className="mt-3 text-sm text-fg-muted">Help for {venueName}.</p>
           <div ref={threadRef} className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto" data-chat-thread>
-            {messages.length === 0 ? <p className="text-sm text-fg-muted">Ask about booking, cancellations, points, or which courts are free.</p> : null}
+            {messages.length === 0 ? (
+              <div className="space-y-3">
+                <p className="text-sm text-fg-muted">Choose a starting point, or type your own question.</p>
+                <SupportChatActions actions={openingChoices} sending={sending} showReplies onPrompt={sendPrompt} onClose={() => setOpen(false)} />
+              </div>
+            ) : null}
             {messages.map((message, index) => (
               <div key={index} className={message.role === "user" ? "flex justify-end" : "flex items-end gap-2"}>
                 {message.role === "assistant" ? (
@@ -201,11 +222,26 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
                     <AssistantMark className="h-4 w-4" />
                   </span>
                 ) : null}
-                <p className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${message.role === "user" ? "bg-accent/15 text-fg" : "bg-surface-2 text-fg"}`}>
-                  {message.text}
-                </p>
+                <div className="flex max-w-[85%] flex-col gap-2">
+                  <p className={`whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${message.role === "user" ? "bg-accent/15 text-fg" : "bg-surface-2 text-fg"}`}>
+                    {message.text}
+                  </p>
+                  {message.role === "assistant" ? <SupportChatActions actions={message.actions} sending={sending} showReplies={index === messages.length - 1} onPrompt={sendPrompt} onClose={() => setOpen(false)} /> : null}
+                </div>
               </div>
             ))}
+            {sending ? (
+              <div className="flex items-end gap-2" role="status" aria-live="polite">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-canvas text-accent-text ring-1 ring-accent-text/50">
+                  <AssistantMark className="h-4 w-4" />
+                </span>
+                <p className="inline-flex items-center gap-2 rounded-2xl bg-surface-2 px-3 py-2 text-sm text-fg-muted">
+                  <Sparkles className="h-4 w-4 text-accent-text motion-safe:animate-pulse" aria-hidden="true" />
+                  Looking that up
+                  <Spinner className="h-4 w-4" />
+                </p>
+              </div>
+            ) : null}
           </div>
           {notice ? <p className="mt-2 text-sm text-fg" role="alert">{notice}</p> : null}
           {mode === "text" ? (
