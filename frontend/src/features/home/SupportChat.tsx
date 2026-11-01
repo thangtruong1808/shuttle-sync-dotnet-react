@@ -41,6 +41,9 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const threadRef = useRef<HTMLDivElement | null>(null);
+  const draftRef = useRef<HTMLTextAreaElement | null>(null);
+  const last = messages.at(-1);
+  const asksStart = last?.role === "assistant" && /type the time you would like to start/i.test(last.text);
 
   useEffect(() => {
     window.speechSynthesis?.getVoices();
@@ -57,6 +60,10 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
     if (!thread) return;
     thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" });
   }, [messages, sending, notice]);
+
+  useEffect(() => {
+    if (asksStart && mode === "text") draftRef.current?.focus();
+  }, [asksStart, mode, messages.length]);
 
   function resetChat() {
     if (sendingRef.current) return;
@@ -283,10 +290,11 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
           {mode === "text" ? (
             <form className="mt-3 flex items-end gap-2" onSubmit={onSend}>
               <textarea
+                ref={draftRef}
                 rows={3}
                 value={draft}
                 disabled={sending}
-                placeholder="Ask about a court or a time"
+                placeholder={asksStart ? "Type a start time, for example 6:00 PM" : "Ask about a court or a time"}
                 aria-label="Question"
                 className="min-h-[5.25rem] w-full resize-none rounded-2xl border border-border bg-surface-2 px-3 py-2 text-sm text-fg disabled:opacity-60"
                 onChange={(event) => setDraft(event.target.value)}
@@ -307,7 +315,7 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
             </div>
           )}
           {speaking ? <button type="button" className="mt-2 self-start text-sm font-semibold text-accent-text" onClick={stopSpeaking}>Stop speaking</button> : null}
-          <p className="mt-2 text-xs text-fg-muted">{mode === "text" ? "Enter starts a new line." : recording ? "Listening… tap Send voice when you finish. It stops after 20 seconds." : "Tap to talk, then tap again to send."}{replyMode === "voice" ? " Replies are read aloud." : ""}</p>
+          <p className="mt-2 text-xs text-fg-muted">{asksStart ? "Type the time you want to start, then send." : mode === "text" ? "Enter starts a new line." : recording ? "Listening… tap Send voice when you finish. It stops after 20 seconds." : "Tap to talk, then tap again to send."}{replyMode === "voice" ? " Replies are read aloud." : ""}</p>
         </section>
       ) : null}
       <button

@@ -44,8 +44,8 @@ public static class SupportDiscoveryTools
                 properties = new Dictionary<string, object>
                 {
                     ["date"] = new { type = "STRING", description = "Target date in YYYY-MM-DD, or 'today' / 'tomorrow'." },
-                    ["durationMinutes"] = new { type = "INTEGER", description = "How long they want to play: 30, 60, 90, 120, 150, or 180. Required before listing free courts." },
-                    ["startTime"] = new { type = "STRING", description = "Optional start time in HH:mm (24h) or e.g. '6:00 pm'." },
+                    ["durationMinutes"] = new { type = "INTEGER", description = "How long they want to play: 30, 60, 90, 120, 150, or 180. Required before listing times or courts." },
+                    ["startTime"] = new { type = "STRING", description = "Start time in HH:mm (24h) or e.g. '6:00 pm'. Omit it until the player chooses or types a start time. For today, omitting it returns the earliest open times from now. For tomorrow or a later date, omitting it asks them to type a time." },
                     ["endTime"] = new { type = "STRING", description = "Optional end time in HH:mm (24h) or e.g. '8:00 pm'." },
                     ["weeks"] = new { type = "INTEGER", description = "Optional number of weeks (1 to 12) if checking a multi-week hold." },
                 },
@@ -193,8 +193,32 @@ public static class SupportDiscoveryTools
         }
 
         var date = DateChosenByPlayer(playerText, zone) ?? ResolveDate(ReadString(args, "date") ?? pageDate, zone);
+        var minutes = ReadInt(args, "durationMinutes") ?? SpokenDuration(playerText) ?? 0;
         var startRaw = ReadString(args, "startTime");
+        if (string.IsNullOrWhiteSpace(startRaw) && StartChosenByPlayer(playerText) is TimeOnly spokenStart)
+        {
+            startRaw = spokenStart.ToString("HH:mm", CultureInfo.InvariantCulture);
+        }
+
         var endRaw = ReadString(args, "endTime");
+        if (!string.IsNullOrWhiteSpace(startRaw)
+            && string.IsNullOrWhiteSpace(endRaw)
+            && minutes is 30 or 60 or 90 or 120 or 150 or 180
+            && TryParseClockFlexible(startRaw, out var startForLength))
+        {
+            var endForLength = startForLength.AddMinutes(minutes);
+            if (endForLength <= startForLength)
+            {
+                return new SupportToolExecutionResult(new
+                {
+                    error = "That length runs past the end of the day.",
+                    recommendation = "Please choose a shorter time. That length runs past the end of the day.",
+                });
+            }
+
+            endRaw = endForLength.ToString("HH:mm", CultureInfo.InvariantCulture);
+        }
+
         var weeks = Math.Clamp(ReadInt(args, "weeks") ?? 1, 1, 12);
 
         var dayStartUtc = TimeZoneInfo.ConvertTimeToUtc(date.ToDateTime(TimeOnly.MinValue), zone);
@@ -210,7 +234,6 @@ public static class SupportDiscoveryTools
             || !TryParseClockFlexible(startRaw, out var startClock)
             || !TryParseClockFlexible(endRaw, out var endClock))
         {
-            var minutes = ReadInt(args, "durationMinutes") ?? 0;
             if (minutes is not (30 or 60 or 90 or 120 or 150 or 180))
             {
                 return new SupportToolExecutionResult(new
@@ -223,21 +246,40 @@ public static class SupportDiscoveryTools
                 });
             }
 
-            var anchored = CourtsAfterLastBooking(courts, sessions, closures, socials, rates, zone, venue.TimeZone, date, venue.HourlyRate, minutes);
+            var clockLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone);
+            var localNow = clockLocal.ToString("dddd, d MMMM yyyy, h:mm tt", CultureInfo.InvariantCulture);
+            var dateFormatted = date.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture);
+            if (date > DateOnly.FromDateTime(clockLocal))
+            {
+                return new SupportToolExecutionResult(new
+                {
+                    needsStartTime = true,
+                    typedStart = true,
+                    venueName = venue.Name,
+                    date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    dateFormatted,
+                    localNow,
+                    durationMinutes = minutes,
+                    recommendation = "Please type the time you would like to start, for example 6:00 PM.",
+                    message = "Ask them to type a start time. Do not list courts or times yet.",
+                });
+            }
+
+            var starts = EarliestStartChoices(courts, sessions, closures, socials, zone, venue.TimeZone, date, minutes);
             return new SupportToolExecutionResult(new
             {
+                needsStartTime = true,
+                typedStart = false,
                 venueName = venue.Name,
-                currency = venue.Currency,
                 date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                dateFormatted = date.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture),
-                localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone).ToString("dddd, d MMMM yyyy, h:mm tt", CultureInfo.InvariantCulture),
+                dateFormatted,
+                localNow,
                 durationMinutes = minutes,
-                lastBookingEnds = anchored.LastBookingEnds,
-                windowFormatted = anchored.Window,
-                recommendation = anchored.Recommendation,
-                availableCourts = anchored.Slots.Select(slot => new { courtName = slot.CourtName, courtNumber = slot.CourtNumber, pricePerSession = slot.Price, windowFormatted = slot.WindowLabel, dateFormatted = slot.DateLabel }).ToArray(),
-                sampleAvailableWindows = anchored.Slots,
-                incentivePoints = incentives.FirstOrDefault()?.Points ?? 0,
+                startChoices = starts.Select(item => new { label = item.Label, prompt = item.Prompt, time24 = item.Time24 }).ToArray(),
+                recommendation = starts.Count == 0
+                    ? "Please choose a later time today, or look at tomorrow. Nothing is still open from now for that length."
+                    : "Please choose what time you would like to start. These times begin at the earliest one still open.",
+                message = "Offer only these start times, earliest first, from the current time. Do not name a court yet.",
             });
         }
 
@@ -262,6 +304,7 @@ public static class SupportDiscoveryTools
             return new SupportToolExecutionResult(new
             {
                 error = "That start time has already passed.",
+                recommendation = "That start time has already passed. Please choose a later time.",
                 suggestedAlternatives = alternatives.Take(6).ToArray(),
             });
         }
@@ -322,6 +365,9 @@ public static class SupportDiscoveryTools
             availableCourts,
             unavailableCourts,
             suggestedAlternatives = suggestedWhenFull,
+            recommendation = availableCourts.Count == 0
+                ? "That time is full. Please choose the next open time."
+                : "Please choose a court.",
         });
     }
 
@@ -339,8 +385,8 @@ public static class SupportDiscoveryTools
         }
 
         var date = DateChosenByPlayer(playerText, zone) ?? ResolveDate(ReadString(args, "date") ?? pageDate, zone);
-        var duration = Math.Clamp(ReadInt(args, "durationMinutes") ?? 60, 30, 240);
-        TimeOnly? preferred = TryParseClockFlexible(ReadString(args, "preferredStartTime"), out var parsedClock) ? parsedClock : null;
+        var duration = Math.Clamp(ReadInt(args, "durationMinutes") ?? SpokenDuration(playerText) ?? 60, 30, 240);
+        TimeOnly? preferred = TryParseClockFlexible(ReadString(args, "preferredStartTime"), out var parsedClock) ? parsedClock : StartChosenByPlayer(playerText);
 
         var courts = await repository.ListPublicCourtsAsync(venue.Id, cancellationToken);
         var rates = await repository.ListRateWindowsAsync(venue.Id, cancellationToken);
@@ -354,17 +400,31 @@ public static class SupportDiscoveryTools
         if (preferred is null)
         {
             var minutes = duration is 30 or 60 or 90 or 120 or 150 or 180 ? duration : 60;
-            var anchored = CourtsAfterLastBooking(courts, sessions, closures, socials, rates, zone, venue.TimeZone, date, venue.HourlyRate, minutes);
+            var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone);
+            var dateFormatted = date.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture);
+            if (date > DateOnly.FromDateTime(nowLocal))
+            {
+                return new SupportToolExecutionResult(new
+                {
+                    needsStartTime = true,
+                    typedStart = true,
+                    dateFormatted,
+                    durationMinutes = minutes,
+                    recommendation = "Please type the time you would like to start, for example 6:00 PM.",
+                });
+            }
+
+            var starts = EarliestStartChoices(courts, sessions, closures, socials, zone, venue.TimeZone, date, minutes);
             return new SupportToolExecutionResult(new
             {
-                venueName = venue.Name,
-                currency = venue.Currency,
-                requestedDate = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                dateFormatted = date.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture),
+                needsStartTime = true,
+                typedStart = false,
+                dateFormatted,
                 durationMinutes = minutes,
-                windowFormatted = anchored.Window,
-                recommendation = anchored.Recommendation,
-                suggestions = anchored.Slots,
+                startChoices = starts.Select(item => new { label = item.Label, prompt = item.Prompt, time24 = item.Time24 }).ToArray(),
+                recommendation = starts.Count == 0
+                    ? "Please choose a later time today, or look at tomorrow. Nothing is still open from now for that length."
+                    : "Please choose what time you would like to start. These times begin at the earliest one still open.",
             });
         }
 

@@ -202,6 +202,37 @@ public sealed class ShuttleSyncBackendTests
     }
 
     [Fact]
+    public void SupportDiscovery_EarliestStarts_BeginAtTheNextOpenHalfHour()
+    {
+        var zone = TimeZoneInfo.Utc;
+        var date = new DateOnly(2026, 11, 1);
+        var courts = new[] { new PublicCourtRow { Id = Guid.NewGuid(), CourtName = "Court 1", CourtNumber = 1 } };
+        var closures = new[]
+        {
+            new PublicClosureRow
+            {
+                StartTime = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                EndTime = date.ToDateTime(new TimeOnly(7, 0), DateTimeKind.Utc),
+            },
+        };
+
+        var morning = SupportDiscoveryShared.EarliestStartChoices(courts, [], closures, [], zone, "UTC", date, 60, new DateTime(2026, 11, 1, 6, 10, 0, DateTimeKind.Utc));
+        Assert.Equal("7:00 AM", morning[0].Label);
+        Assert.Equal("Start at 7:00 AM", morning[0].Prompt);
+        Assert.DoesNotContain(morning, item => item.Time24 == "06:30");
+
+        var afternoon = SupportDiscoveryShared.EarliestStartChoices(courts, [], [], [], zone, "UTC", date, 60, new DateTime(2026, 11, 1, 13, 47, 0, DateTimeKind.Utc));
+        Assert.Equal("2:00 PM", afternoon[0].Label);
+        Assert.Equal("14:00", afternoon[0].Time24);
+        Assert.Equal("2:30 PM", afternoon[1].Label);
+
+        Assert.Equal(new TimeOnly(18, 0), SupportDiscoveryShared.StartChosenByPlayer("Which courts are free tomorrow?\nBook for 1 hour\n6:00 PM"));
+        Assert.Equal(new TimeOnly(14, 30), SupportDiscoveryShared.StartChosenByPlayer("Start at 2:30 PM"));
+        Assert.Null(SupportDiscoveryShared.StartChosenByPlayer("Select Court 1 on Tuesday, 3 November 2026, 6:00 PM–7:00 PM"));
+        Assert.Equal(90, SupportDiscoveryShared.SpokenDuration("Book for 1 hour 30 minutes"));
+    }
+
+    [Fact]
     public void SupportBooking_DecideHoldPay_RequiresPayNowInside24HoursAndAllowsPayLaterBeyondIt()
     {
         var now = new DateTime(2026, 11, 1, 12, 0, 0, DateTimeKind.Utc);
@@ -301,9 +332,14 @@ public sealed class ShuttleSyncBackendTests
         Assert.DoesNotContain(length.Actions, action => action.Label.StartsWith("Court ", StringComparison.Ordinal));
 
         var courts = SupportReplyChips.For([("user", "Which courts are free tomorrow?\nBook for 1 hour")], progress, []);
-        Assert.Contains(courts.Actions, action => action.Label == "Court 1 · 6:00 PM–7:00 PM");
-        Assert.Contains(courts.Actions, action => action.Label == "Court 2 · 6:00 PM–7:00 PM");
+        Assert.DoesNotContain(courts.Actions, action => action.Label.StartsWith("Court ", StringComparison.Ordinal));
         Assert.DoesNotContain(courts.Actions, action => action.Label == "One session");
+        Assert.Equal("Please type the time you would like to start, for example 6:00 PM.", courts.Reply);
+
+        var named = SupportReplyChips.For([("user", "Which courts are free tomorrow?\nBook for 1 hour\n6:00 PM")], progress, []);
+        Assert.Contains(named.Actions, action => action.Label == "Court 1 · 6:00 PM–7:00 PM");
+        Assert.Contains(named.Actions, action => action.Label == "Court 2 · 6:00 PM–7:00 PM");
+        Assert.Equal("Please choose a court.", named.Reply);
 
         var schedule = SupportReplyChips.For([("user", chosen)], progress, []);
         Assert.Contains(schedule.Actions, action => action.Label == "One session");
@@ -344,7 +380,10 @@ public sealed class ShuttleSyncBackendTests
             suggestions = new[] { new { courtName = "Court 3", date = "2026-11-03", windowLabel = "18:00-19:00" } },
         }));
         var english = SupportReplyChips.For([("user", "What is free?\nBook for 1 hour")], iso, []);
-        Assert.Contains(english.Actions, action => action.Label == "Court 3 · 6:00 PM–7:00 PM" && action.Prompt == "Select Court 3 on Tuesday, 3 November 2026, 6:00 PM–7:00 PM");
+        Assert.Contains(english.Actions, action => action.Label == "6:00 PM" && action.Prompt == "Start at 6:00 PM");
+        Assert.DoesNotContain(english.Actions, action => action.Label.StartsWith("Court ", StringComparison.Ordinal));
+        var englishCourt = SupportReplyChips.For([("user", "What is free?\nBook for 1 hour\nStart at 6:00 PM")], iso, []);
+        Assert.Contains(englishCourt.Actions, action => action.Label == "Court 3 · 6:00 PM–7:00 PM" && action.Prompt == "Select Court 3 on Tuesday, 3 November 2026, 6:00 PM–7:00 PM");
 
         var tonight = SupportReplyChips.For(
             [("user", "Select Court 1 on Sunday, 1 November 2026, 8:00 PM–9:00 PM")],
@@ -372,9 +411,10 @@ public sealed class ShuttleSyncBackendTests
             morning,
             [],
             new DateTime(2026, 11, 1, 13, 47, 0));
-        Assert.Contains(today.Actions, action => action.Label == "Court 2 · 2:00 PM–3:00 PM");
+        Assert.Contains(today.Actions, action => action.Label == "2:00 PM" && action.Prompt == "Start at 2:00 PM");
         Assert.DoesNotContain(today.Actions, action => action.Label.Contains("8:00 AM", StringComparison.Ordinal));
-        Assert.Equal("Please choose one of these times.", today.Reply);
+        Assert.DoesNotContain(today.Actions, action => action.Label.StartsWith("Court ", StringComparison.Ordinal));
+        Assert.Equal("Please choose what time you would like to start. These times begin at the earliest one still open.", today.Reply);
 
         var socials = new SupportReplyProgress();
         socials.Note("list_active_promotions_and_socials", new SupportToolExecutionResult(new

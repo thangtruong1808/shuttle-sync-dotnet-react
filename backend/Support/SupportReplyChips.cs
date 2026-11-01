@@ -16,6 +16,9 @@ internal sealed class SupportReplyProgress
     public string? PromoDetail { get; private set; }
     public bool HoldSaved { get; private set; }
     public bool NeedsDuration { get; private set; }
+    public bool NeedsStartTime { get; private set; }
+    public bool TypedStart { get; private set; }
+    public List<SlotChoice> Starts { get; } = [];
     public string? Recommendation { get; private set; }
     public List<SocialChoice> Socials { get; } = [];
     public bool SocialJoined { get; private set; }
@@ -47,9 +50,16 @@ internal sealed class SupportReplyProgress
         if (tool is "check_court_availability" or "suggest_alternative_slots")
         {
             NeedsDuration = Has(result.Response, "needsDuration");
+            NeedsStartTime = Has(result.Response, "needsStartTime");
+            TypedStart = Has(result.Response, "typedStart");
             Recommendation = Text(JsonSerializer.SerializeToElement(result.Response), "recommendation");
             Slots.Clear();
-            if (!NeedsDuration)
+            Starts.Clear();
+            if (NeedsStartTime)
+            {
+                Starts.AddRange(ReadStartChoices(result.Response));
+            }
+            else if (!NeedsDuration)
             {
                 Slots.AddRange(ReadSlots(result.Response));
             }
@@ -206,6 +216,28 @@ internal sealed class SupportReplyProgress
         return [];
     }
 
+    private static IEnumerable<SlotChoice> ReadStartChoices(object response)
+    {
+        var json = JsonSerializer.SerializeToElement(response);
+        if (json.ValueKind != JsonValueKind.Object || !json.TryGetProperty("startChoices", out var list) || list.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return list.EnumerateArray()
+            .Select(item =>
+            {
+                var label = Text(item, "label");
+                var prompt = Text(item, "prompt");
+                return string.IsNullOrWhiteSpace(label)
+                    ? null
+                    : new SlotChoice(label.Trim(), string.IsNullOrWhiteSpace(prompt) ? $"Start at {label.Trim()}" : prompt.Trim());
+            })
+            .Where(choice => choice is not null)
+            .Select(choice => choice!)
+            .Take(6);
+    }
+
     private static string? Text(JsonElement item, string name) =>
         item.ValueKind == JsonValueKind.Object
         && item.TryGetProperty(name, out var value)
@@ -294,6 +326,10 @@ internal static class SupportReplyChips
         var kept = next.Any(action => action.Kind == "close_chat")
             ? actions.Where(action => action.Kind != "my_bookings_link" || action.Href?.Contains("/social/", StringComparison.Ordinal) == true).ToArray()
             : actions;
+        if (WaitingForStart(said, progress))
+        {
+            kept = kept.Where(action => action.Kind != "quick_replies").ToArray();
+        }
         var combined = next.Count == 0 ? kept : kept.Concat(next).ToArray();
         return new SupportReplyPlan(StampPromo(combined, said, progress, actions), GuidedReply(said, progress, nowLocal));
     }
@@ -324,9 +360,20 @@ internal static class SupportReplyChips
                 new SupportChatAction(Kind: "close_chat", Label: "Finish chat"),
             ];
         }
-        if (!pickedSlot && ChosenDuration(said) is null && (progress.NeedsDuration || progress.Slots.Count > 0 || AskedForCourts(said)))
+        if (!pickedSlot && ChosenDuration(said) is null && (progress.NeedsDuration || progress.Slots.Count > 0 || progress.Starts.Count > 0 || AskedForCourts(said)))
         {
             return DurationChips();
+        }
+
+        if (WaitingForStart(said, progress))
+        {
+            if (WantsTypedStart(said, nowLocal) || progress.TypedStart)
+            {
+                return [];
+            }
+
+            var starts = progress.Starts.Count > 0 ? progress.Starts : StartsFromSlots(OpenSlots(progress, nowLocal));
+            return starts.Select(slot => Chip(slot.Label, slot.Prompt)).ToArray();
         }
 
         if (progress.Slots.Count > 0 && !pickedSlot)
@@ -401,9 +448,27 @@ internal static class SupportReplyChips
 
         if (!pickedSlot)
         {
-            if (ChosenDuration(said) is null && (progress.NeedsDuration || progress.Slots.Count > 0 || AskedForCourts(said)))
+            if (ChosenDuration(said) is null && (progress.NeedsDuration || progress.Slots.Count > 0 || progress.Starts.Count > 0 || AskedForCourts(said)))
             {
                 return "Please tell me how long you would like to play.";
+            }
+
+            if (WaitingForStart(said, progress))
+            {
+                if (WantsTypedStart(said, nowLocal) || progress.TypedStart)
+                {
+                    return "Please type the time you would like to start, for example 6:00 PM.";
+                }
+
+                var starts = progress.Starts.Count > 0 ? progress.Starts : StartsFromSlots(OpenSlots(progress, nowLocal));
+                return starts.Count == 0
+                    ? "Please choose a later time today, or look at tomorrow. Nothing is still open from now for that length."
+                    : "Please choose what time you would like to start. These times begin at the earliest one still open.";
+            }
+
+            if (StartChosen(said) && progress.Slots.Count > 0)
+            {
+                return string.IsNullOrWhiteSpace(progress.Recommendation) ? "Please choose a court." : progress.Recommendation;
             }
 
             if (progress.Slots.Count == 0)
@@ -540,6 +605,31 @@ internal static class SupportReplyChips
 
     private static bool AskedForCourts(string said) =>
         Has(said, "free today") || Has(said, "free tomorrow") || Has(said, "free on") || Has(said, "courts are free") || Has(said, "what is free") || Has(said, "book a court") || Has(said, "which courts");
+
+    private static bool StartChosen(string said) => SupportDiscoveryShared.StartChosenByPlayer(said) is not null;
+
+    private static bool WaitingForStart(string said, SupportReplyProgress progress) =>
+        !PickedSlot(said)
+        && ChosenDuration(said) is not null
+        && !StartChosen(said)
+        && (progress.NeedsStartTime || progress.TypedStart || progress.Starts.Count > 0 || progress.Slots.Count > 0 || AskedForCourts(said));
+
+    private static bool WantsTypedStart(string said, DateTime? nowLocal)
+    {
+        var today = DateOnly.FromDateTime(nowLocal ?? DateTime.UtcNow);
+        var chosen = SupportDiscoveryShared.DateChosenByPlayer(said, today);
+        return chosen is not null && chosen.Value > today;
+    }
+
+    private static IReadOnlyList<SlotChoice> StartsFromSlots(IReadOnlyList<SlotChoice> slots) =>
+        slots
+            .Select(slot => Regex.Match(slot.Label, @"(\d{1,2}:\d{2}\s*[AP]M)", RegexOptions.IgnoreCase))
+            .Where(match => match.Success)
+            .Select(match => match.Groups[1].Value.ToUpperInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(label => new SlotChoice(label, $"Start at {label}"))
+            .Take(6)
+            .ToArray();
 
     private static SupportChatAction[] DurationChips() =>
     [

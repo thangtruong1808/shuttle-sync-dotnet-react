@@ -177,6 +177,67 @@ internal static class SupportDiscoveryShared
         return new AnchoredWindow(slots, sharedWindow, null, recommendation);
     }
 
+    internal readonly record struct StartOption(string Label, string Prompt, string Time24);
+
+    internal static IReadOnlyList<StartOption> EarliestStartChoices(
+        IReadOnlyList<PublicCourtRow> courts,
+        IReadOnlyList<SupportSessionRow> sessions,
+        IReadOnlyList<PublicClosureRow> closures,
+        IReadOnlyList<SocialBlockRow> socials,
+        TimeZoneInfo zone,
+        string timeZoneId,
+        DateOnly date,
+        int minutes,
+        DateTime? nowUtc = null)
+    {
+        var clock = DateTime.SpecifyKind(nowUtc ?? DateTime.UtcNow, DateTimeKind.Utc);
+        var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(clock, zone);
+        if (courts.Count == 0 || date != DateOnly.FromDateTime(nowLocal) || minutes < 30)
+        {
+            return [];
+        }
+
+        var cursor = RoundUpHalfHour(nowLocal.AddMinutes(5));
+        var results = new List<StartOption>();
+        while (results.Count < 6 && DateOnly.FromDateTime(cursor) == date)
+        {
+            var endLocal = cursor.AddMinutes(minutes);
+            if (endLocal.Date != cursor.Date)
+            {
+                break;
+            }
+
+            var startUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(cursor, DateTimeKind.Unspecified), zone);
+            var endUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(endLocal, DateTimeKind.Unspecified), zone);
+            var open = courts.Any(court =>
+            {
+                var busyUntil = BusyUntilLocal(court.Id, startUtc, endUtc, sessions, closures, socials, courts, timeZoneId, zone);
+                return busyUntil is null || busyUntil <= cursor;
+            });
+            if (open)
+            {
+                var label = cursor.ToString("h:mm tt", CultureInfo.InvariantCulture);
+                results.Add(new StartOption(label, $"Start at {label}", cursor.ToString("HH:mm", CultureInfo.InvariantCulture)));
+            }
+
+            cursor = cursor.AddMinutes(30);
+        }
+
+        return results;
+    }
+
+    private static DateTime RoundUpHalfHour(DateTime value)
+    {
+        var minute = new DateTime(value.Year, value.Month, value.Day, value.Hour, value.Minute, 0);
+        var remainder = minute.Minute % 30;
+        if (remainder == 0 && value.Second == 0 && value.Millisecond == 0)
+        {
+            return minute;
+        }
+
+        return minute.AddMinutes(remainder == 0 ? 30 : 30 - remainder);
+    }
+
     private static DateTime Minute(DateTime value) =>
         new(value.Year, value.Month, value.Day, value.Hour, value.Minute, 0);
 
@@ -308,14 +369,69 @@ internal static class SupportDiscoveryShared
             : today;
     }
 
-    internal static DateOnly? DateChosenByPlayer(string? said, TimeZoneInfo zone)
+    internal static DateOnly? DateChosenByPlayer(string? said, TimeZoneInfo zone) =>
+        DateChosenByPlayer(said, DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone)));
+
+    internal static int? SpokenDuration(string? said)
     {
         if (string.IsNullOrWhiteSpace(said))
         {
             return null;
         }
 
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone));
+        if (said.Contains("3 hours", StringComparison.OrdinalIgnoreCase)) return 180;
+        if (said.Contains("2 hours 30", StringComparison.OrdinalIgnoreCase) || said.Contains("2 hour 30", StringComparison.OrdinalIgnoreCase)) return 150;
+        if (said.Contains("2 hours", StringComparison.OrdinalIgnoreCase)) return 120;
+        if (said.Contains("1 hour 30", StringComparison.OrdinalIgnoreCase) || said.Contains("90 minutes", StringComparison.OrdinalIgnoreCase)) return 90;
+        if (said.Contains("1 hour", StringComparison.OrdinalIgnoreCase) || said.Contains("60 minutes", StringComparison.OrdinalIgnoreCase)) return 60;
+        if (said.Contains("30 minutes", StringComparison.OrdinalIgnoreCase)) return 30;
+        return null;
+    }
+
+    internal static TimeOnly? StartChosenByPlayer(string? said)
+    {
+        if (string.IsNullOrWhiteSpace(said))
+        {
+            return null;
+        }
+
+        var lines = said.Split('\n');
+        for (var index = lines.Length - 1; index >= 0; index--)
+        {
+            var line = lines[index].Trim();
+            if (line.Length == 0 || line.Contains("Select ", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var named = Regex.Match(line, @"\bStart at\s+(\d{1,2}(?::\d{2})?\s*[AP]M|\d{1,2}:\d{2})\b", RegexOptions.IgnoreCase);
+            if (named.Success && TryParseClockFlexible(named.Groups[1].Value, out var fromChip))
+            {
+                return fromChip;
+            }
+
+            var sentence = Regex.Match(line, @"\b(?:start(?:ing)?(?:\s+at)?|from)\s+(\d{1,2}(?::\d{2})?\s*[AP]M|\d{1,2}:\d{2})\b", RegexOptions.IgnoreCase);
+            if (sentence.Success && TryParseClockFlexible(sentence.Groups[1].Value, out var spoken))
+            {
+                return spoken;
+            }
+
+            var bare = Regex.Match(line, @"^(?:at\s+)?(\d{1,2}(?::\d{2})?\s*[AP]M|\d{1,2}:\d{2})$", RegexOptions.IgnoreCase);
+            if (bare.Success && TryParseClockFlexible(bare.Groups[1].Value, out var typed))
+            {
+                return typed;
+            }
+        }
+
+        return null;
+    }
+
+    internal static DateOnly? DateChosenByPlayer(string? said, DateOnly today)
+    {
+        if (string.IsNullOrWhiteSpace(said))
+        {
+            return null;
+        }
         DateOnly? chosen = null;
         var at = -1;
         void Take(int index, DateOnly value)
