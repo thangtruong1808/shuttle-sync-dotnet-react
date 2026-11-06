@@ -67,7 +67,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "frontend/dist,deploy/docker-compose.yml"
+          source: "frontend/dist"
           target: /opt/projects/badminton-booking-ai/incoming
           overwrite: true
 
@@ -91,7 +91,10 @@ jobs:
               echo "Missing /opt/projects/badminton-booking-ai/.env"
               exit 1
             fi
-            install -m 644 incoming/deploy/docker-compose.yml docker-compose.yml
+            if [ ! -f docker-compose.yml ]; then
+              echo "Missing /opt/projects/badminton-booking-ai/docker-compose.yml"
+              exit 1
+            fi
             rm -rf www
             mkdir -p www
             cp -a incoming/frontend/dist/. www/
