@@ -13,6 +13,7 @@ public static class VenueEndpoints
         venues.MapGet("/{slug}", GetAsync);
         venues.MapGet("/{slug}/availability", AvailabilityAsync);
         venues.MapGet("/{slug}/court-price", CourtPriceAsync);
+        venues.MapGet("/{slug}/rates", RatesAsync);
         venues.MapGet("/{slug}/promotions", PromotionsAsync);
         venues.MapGet("/{slug}/hours", HoursAsync);
         venues.MapGet("/{slug}/slots/{sessionId:guid}", SlotAsync);
@@ -62,7 +63,7 @@ public static class VenueEndpoints
         }
 
         var rates = await repository.ListRateWindowsAsync(venue.Id, cancellationToken);
-        decimal amount = 0;
+        var raw = new List<CourtRateLine>();
         var scheduled = false;
         var startUtc = window.StartUtc;
         var endUtc = window.EndUtc;
@@ -73,11 +74,49 @@ public static class VenueEndpoints
                 return Results.Json(new { errors = new Dictionary<string, string[]> { ["form"] = ["That weekly time could not be placed."] } }, statusCode: StatusCodes.Status400BadRequest);
             }
 
-            amount += CourtRates.Quote(venue.TimeZone, venue.HourlyRate, startUtc, endUtc, rates);
+            raw.AddRange(CourtRates.Collect(venue.TimeZone, venue.HourlyRate, startUtc, endUtc, rates));
             scheduled |= CourtRates.UsesWindow(venue.TimeZone, startUtc, endUtc, rates);
         }
 
-        return Results.Ok(new { courtAmount = decimal.Round(amount, 2, MidpointRounding.AwayFromZero), scheduled });
+        var lines = CourtRates.Present(raw);
+        return Results.Ok(new
+        {
+            courtAmount = lines.Sum(line => line.Amount),
+            scheduled,
+            lines = lines.Select(line => new
+            {
+                minutes = line.Minutes,
+                hourlyRate = line.HourlyRate,
+                amount = line.Amount,
+                scheduled = line.Scheduled,
+                days = Enumerable.Range(0, 7).Select(index => (line.DaysMask & (1 << index)) != 0).ToArray(),
+                start = Clock(line.StartMinute),
+                end = Clock(line.EndMinute),
+            }),
+        });
+    }
+
+    private static string Clock(int minute) => $"{minute / 60:00}:{minute % 60:00}";
+
+    private static async Task<IResult> RatesAsync(string slug, BookingRepository repository, CancellationToken cancellationToken)
+    {
+        var venue = await repository.FindActiveVenueBySlugAsync(slug, cancellationToken);
+        if (venue is null)
+        {
+            return Results.NotFound();
+        }
+
+        var rates = await repository.ListRateWindowsAsync(venue.Id, cancellationToken);
+        return Results.Ok(rates
+            .OrderBy(rate => rate.StartMinute)
+            .ThenBy(rate => rate.DaysMask)
+            .Select(rate => new
+            {
+                days = Enumerable.Range(0, 7).Select(index => (rate.DaysMask & (1 << index)) != 0).ToArray(),
+                start = $"{rate.StartMinute / 60:00}:{rate.StartMinute % 60:00}",
+                end = $"{rate.EndMinute / 60:00}:{rate.EndMinute % 60:00}",
+                hourlyRate = rate.HourlyRate,
+            }));
     }
 
     private static async Task<IResult> AvailabilityAsync(
@@ -687,6 +726,7 @@ public static class VenueEndpoints
         HttpContext http,
         AuthRepository authRepository,
         BookingRepository repository,
+        BookingPayments payments,
         CancellationToken cancellationToken)
     {
         var current = await AuthEndpoints.CurrentSessionAsync(http, authRepository, cancellationToken);
@@ -701,6 +741,7 @@ public static class VenueEndpoints
             return Form("That venue was not found.", StatusCodes.Status404NotFound);
         }
 
+        var change = await CourtRateChanges.SyncGroupAsync(repository, payments, venue.Id, current.UserId, groupId, cancellationToken);
         var rows = await repository.ListCourtHoldGroupAsync(venue.Id, current.UserId, groupId, cancellationToken);
         if (rows.Length == 0)
         {
@@ -745,24 +786,44 @@ public static class VenueEndpoints
         }
 
         var now = DateTime.UtcNow;
+        var rates = await repository.ListRateWindowsAsync(venue.Id, cancellationToken);
+        var previous = change.HoldChanges.ToDictionary(item => item.BookingId, item => item.Previous);
+        var holdIncrease = decimal.Round(change.HoldChanges.Where(item => item.Current > item.Previous).Sum(item => item.Current - item.Previous), 2, MidpointRounding.AwayFromZero);
+        var holdDecrease = decimal.Round(change.HoldChanges.Where(item => item.Current < item.Previous).Sum(item => item.Previous - item.Current), 2, MidpointRounding.AwayFromZero);
         return Results.Ok(new
         {
             currency = venue.Currency,
             pointsPerDollar = venue.PointsPerDollar,
             lateCancelFeePercent = venue.LateCancelFeePercent,
             timeZone = venue.TimeZone,
-            sessions = rows.Select(row => new
+            rateChange = new
             {
-                bookingId = row.BookingId,
-                courtName = row.CourtName,
-                courtNumber = row.CourtNumber,
-                startTime = VenueClock.AsUtc(row.StartTime),
-                endTime = VenueClock.AsUtc(row.EndTime),
-                price = row.Price,
-                status = row.Status,
-                incentivePoints = row.IncentivePoints,
-                holdExpiresAt = row.HoldExpiresAt is null ? (DateTimeOffset?)null : VenueClock.AsUtc(row.HoldExpiresAt.Value),
-                payNow = row.Status == "pending" && (row.StartTime <= now.AddHours(24) || (row.HoldExpiresAt is not null && row.HoldExpiresAt.Value <= now.AddMinutes(31) && row.StartTime > now.AddHours(24))),
+                holdIncrease,
+                holdDecrease,
+                refunded = change.Refunded,
+                refundError = change.RefundError,
+            },
+            sessions = rows.Select(row =>
+            {
+                var quote = row.Status == "confirmed"
+                    ? CourtRates.Quote(venue.TimeZone, venue.HourlyRate, row.StartTime, row.EndTime, rates)
+                    : row.Price;
+                var due = row.Status == "confirmed" && quote > row.Price ? decimal.Round(quote - row.Price, 2, MidpointRounding.AwayFromZero) : 0m;
+                return new
+                {
+                    bookingId = row.BookingId,
+                    courtName = row.CourtName,
+                    courtNumber = row.CourtNumber,
+                    startTime = VenueClock.AsUtc(row.StartTime),
+                    endTime = VenueClock.AsUtc(row.EndTime),
+                    price = row.Price,
+                    previousPrice = previous.TryGetValue(row.BookingId, out var oldPrice) ? oldPrice : (decimal?)null,
+                    due,
+                    status = row.Status,
+                    incentivePoints = row.IncentivePoints,
+                    holdExpiresAt = row.HoldExpiresAt is null ? (DateTimeOffset?)null : VenueClock.AsUtc(row.HoldExpiresAt.Value),
+                    payNow = row.Status == "pending" && (row.StartTime <= now.AddHours(24) || (row.HoldExpiresAt is not null && row.HoldExpiresAt.Value <= now.AddMinutes(31) && row.StartTime > now.AddHours(24))),
+                };
             }),
         });
     }

@@ -96,7 +96,7 @@ public static class DashboardEndpoints
         return venue is null ? Missing() : Results.Ok(VenueJson(venue));
     }
 
-    private static async Task<IResult> UpdateVenueAsync(Guid venueId, VenueBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken)
+    private static async Task<IResult> UpdateVenueAsync(Guid venueId, VenueBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, BookingPayments payments, CancellationToken cancellationToken)
     {
         var actor = await ActorAsync(http, auth, cancellationToken);
         if (actor is null) return SignIn();
@@ -120,7 +120,7 @@ public static class DashboardEndpoints
         error = await repo.UpdateVenueAsync(write, actor.IsAdmin, actor.UserId, actor.Ip, cancellationToken);
         if (error is null)
         {
-            await bookings.RepriceOpenHoldsAsync(venueId, write.TimeZone, write.HourlyRate, cancellationToken);
+            await CourtRateChanges.RefundDropsAsync(bookings, payments, venueId, cancellationToken);
         }
 
         return error is null ? Results.NoContent() : Form(error);
@@ -1174,16 +1174,16 @@ public static class DashboardEndpoints
         return Results.Ok(rows.Select(RateJson));
     }
 
-    private static async Task<IResult> CreateRateWindowAsync(Guid venueId, RateWindowBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken)
+    private static async Task<IResult> CreateRateWindowAsync(Guid venueId, RateWindowBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, BookingPayments payments, CancellationToken cancellationToken)
     {
-        var saved = await SaveRateWindowAsync(venueId, null, body, http, auth, repo, bookings, cancellationToken);
+        var saved = await SaveRateWindowAsync(venueId, null, body, http, auth, repo, bookings, payments, cancellationToken);
         return saved;
     }
 
-    private static async Task<IResult> UpdateRateWindowAsync(Guid venueId, Guid rateId, RateWindowBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken) =>
-        await SaveRateWindowAsync(venueId, rateId, body, http, auth, repo, bookings, cancellationToken);
+    private static async Task<IResult> UpdateRateWindowAsync(Guid venueId, Guid rateId, RateWindowBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, BookingPayments payments, CancellationToken cancellationToken) =>
+        await SaveRateWindowAsync(venueId, rateId, body, http, auth, repo, bookings, payments, cancellationToken);
 
-    private static async Task<IResult> DeleteRateWindowAsync(Guid venueId, Guid rateId, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken)
+    private static async Task<IResult> DeleteRateWindowAsync(Guid venueId, Guid rateId, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, BookingPayments payments, CancellationToken cancellationToken)
     {
         var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
         if (gate.Error is not null) return gate.Error;
@@ -1191,11 +1191,11 @@ public static class DashboardEndpoints
         var venue = await repo.FindVenueAsync(venueId, cancellationToken);
         if (venue is null) return Missing();
         if (!await repo.DeleteRateWindowAsync(venueId, rateId, cancellationToken)) return Missing();
-        await bookings.RepriceOpenHoldsAsync(venueId, venue.TimeZone, venue.HourlyRate, cancellationToken);
+        await CourtRateChanges.RefundDropsAsync(bookings, payments, venueId, cancellationToken);
         return Results.NoContent();
     }
 
-    private static async Task<IResult> SaveRateWindowAsync(Guid venueId, Guid? rateId, RateWindowBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, CancellationToken cancellationToken)
+    private static async Task<IResult> SaveRateWindowAsync(Guid venueId, Guid? rateId, RateWindowBody body, HttpContext http, AuthRepository auth, DashboardRepository repo, BookingRepository bookings, BookingPayments payments, CancellationToken cancellationToken)
     {
         var gate = await GateVenue(venueId, http, auth, repo, cancellationToken);
         if (gate.Error is not null) return gate.Error;
@@ -1205,7 +1205,7 @@ public static class DashboardEndpoints
         if (!TryRateWindow(body, out var daysMask, out var startMinute, out var endMinute, out var error)) return Form(error);
         error = await repo.SaveRateWindowAsync(venueId, rateId, daysMask, startMinute, endMinute, body.HourlyRate, cancellationToken);
         if (error is not null) return Form(error);
-        await bookings.RepriceOpenHoldsAsync(venueId, venue.TimeZone, venue.HourlyRate, cancellationToken);
+        await CourtRateChanges.RefundDropsAsync(bookings, payments, venueId, cancellationToken);
         return Results.NoContent();
     }
 

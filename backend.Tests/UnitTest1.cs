@@ -42,9 +42,32 @@ public sealed class ShuttleSyncBackendTests
         };
 
         var quote = CourtRates.Quote("UTC", 24m, startUtc, endUtc, windows);
+        var lines = CourtRates.Present(CourtRates.Collect("UTC", 24m, startUtc, endUtc, windows));
 
         Assert.Equal(64.00m, quote);
+        Assert.Equal(64.00m, lines.Sum(line => line.Amount));
+        Assert.Equal(60, lines.Single(line => line.HourlyRate == 24m).Minutes);
+        Assert.Equal(60, lines.Single(line => line.HourlyRate == 40m).Minutes);
         Assert.True(CourtRates.UsesWindow("UTC", startUtc, endUtc, windows));
+    }
+
+    [Fact]
+    public void CourtRates_Quote_JoinsAOneMinuteGapOntoTheEarlierWindow()
+    {
+        var startUtc = new DateTime(2026, 6, 1, 17, 0, 0, DateTimeKind.Utc);
+        var endUtc = new DateTime(2026, 6, 1, 19, 0, 0, DateTimeKind.Utc);
+        var windows = new[]
+        {
+            new CourtRateWindow { DaysMask = 1, StartMinute = 8 * 60, EndMinute = 17 * 60 + 59, HourlyRate = 18m, UpdatedAt = DateTime.UtcNow },
+            new CourtRateWindow { DaysMask = 1, StartMinute = 18 * 60, EndMinute = 23 * 60, HourlyRate = 20m, UpdatedAt = DateTime.UtcNow },
+        };
+
+        var quote = CourtRates.Quote("UTC", 22m, startUtc, endUtc, windows);
+        var lines = CourtRates.Present(CourtRates.Collect("UTC", 22m, startUtc, endUtc, windows));
+
+        Assert.Equal(38.00m, quote);
+        Assert.Equal(60, lines.Single(line => line.HourlyRate == 18m).Minutes);
+        Assert.Equal(60, lines.Single(line => line.HourlyRate == 20m).Minutes);
     }
 
     [Fact]

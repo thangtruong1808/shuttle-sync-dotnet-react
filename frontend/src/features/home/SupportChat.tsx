@@ -14,6 +14,16 @@ function localIso(value = new Date()) {
   return `${value.getFullYear()}-${month}-${day}`;
 }
 
+function spokenClock(value: string) {
+  const [hourText, minuteText = "00"] = value.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute) || value.length === 0) return "";
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
 function englishDate(iso: string) {
   const [year, month, day] = iso.split("-").map(Number);
   const value = new Date(year, (month ?? 1) - 1, day);
@@ -30,6 +40,7 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
   const replyModeRef = useRef(replyMode);
   replyModeRef.current = replyMode;
   const [draft, setDraft] = useState("");
+  const [pickedTime, setPickedTime] = useState("");
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -71,6 +82,7 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
     stopSpeaking();
     setMessages([]);
     setDraft("");
+    setPickedTime("");
     setNotice(null);
     setOtherDate("");
   }
@@ -127,7 +139,7 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
       });
       const body = (await response.json().catch(() => null)) as { reply?: string; transcript?: string; actions?: SupportChatAction[]; errors?: { form?: string[] } } | null;
       if (!response.ok) {
-        setNotice(body?.errors?.form?.[0] ?? "Support chat could not answer just now.");
+        setNotice(body?.errors?.form?.[0] ?? "The agent could not answer just now.");
         return;
       }
       const reply = body?.reply ?? "I could not answer that.";
@@ -140,7 +152,7 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
         : [...next, answer]);
       if (replyModeRef.current === "voice" && body?.reply) speak(body.reply);
     } catch (reason) {
-      setNotice(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "Support chat could not answer just now." : "Support chat could not answer just now.");
+      setNotice(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "The agent could not answer just now." : "The agent could not answer just now.");
     } finally {
       sendingRef.current = false;
       setSending(false);
@@ -154,6 +166,7 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
     const next: ChatMessage[] = [...messages, { role: "user", text }];
     setMessages(next);
     setDraft("");
+    setPickedTime("");
     stopSpeaking();
     await ask(next);
   }
@@ -219,14 +232,14 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] flex-col items-end gap-3">
       {open ? (
-        <section className="pointer-events-auto flex h-[min(40rem,calc(100dvh-6.5rem))] min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-border bg-surface p-4 shadow-pop" aria-label="Support chat">
+        <section className="pointer-events-auto flex h-[min(40rem,calc(100dvh-6.5rem))] min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-border bg-surface p-4 shadow-pop" aria-label="AI booking agent">
           <div className="flex items-center gap-3">
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-canvas text-accent-text ring-1 ring-accent-text/60">
               <AssistantMark className="h-6 w-6" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="font-display text-lg leading-tight text-fg">Shuttle Sync</p>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-text">AI assistant</p>
+              <p className="font-display text-lg leading-tight text-fg">Court Agent</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-text">AI booking</p>
             </div>
             <Button type="button" size="sm" variant="secondary" icon={<RotateCcw className="h-4 w-4" aria-hidden="true" />} disabled={sending} onClick={resetChat}>Refresh</Button>
           </div>
@@ -287,6 +300,30 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
             ) : null}
           </div>
           {notice ? <p className="mt-2 text-sm text-fg" role="alert">{notice}</p> : null}
+          {asksStart ? (
+            <div className="mt-3 rounded-2xl border border-border bg-inset p-3">
+              <label className="block text-sm font-semibold text-fg" htmlFor="chat-start-time">Pick a start time</label>
+              <p className="mt-1 text-sm text-fg-muted">{mode === "text" ? "Optional. You can also type the time below." : "Optional. You can also say the time."}</p>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <PickerInput
+                  id="chat-start-time"
+                  type="time"
+                  className="w-full sm:max-w-44"
+                  value={pickedTime}
+                  disabled={sending}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setPickedTime(value);
+                    const spoken = spokenClock(value);
+                    if (spoken && mode === "text") setDraft(spoken);
+                  }}
+                />
+                {mode === "voice" ? (
+                  <Button type="button" size="sm" className="w-full sm:w-auto" loading={sending} disabled={sending || spokenClock(pickedTime).length === 0} onClick={() => sendPrompt(`Start at ${spokenClock(pickedTime)}`)}>Use this time</Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           {mode === "text" ? (
             <form className="mt-3 flex items-end gap-2" onSubmit={onSend}>
               <textarea
@@ -315,13 +352,14 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
             </div>
           )}
           {speaking ? <button type="button" className="mt-2 self-start text-sm font-semibold text-accent-text" onClick={stopSpeaking}>Stop speaking</button> : null}
-          <p className="mt-2 text-xs text-fg-muted">{asksStart ? "Type the time you want to start, then send." : mode === "text" ? "Enter starts a new line." : recording ? "Listening… tap Send voice when you finish. It stops after 20 seconds." : "Tap to talk, then tap again to send."}{replyMode === "voice" ? " Replies are read aloud." : ""}</p>
+          <p className="mt-2 text-xs text-fg-muted">{asksStart ? (mode === "text" ? "Pick a time or type one, then send." : "Pick a time, or tap to talk.") : mode === "text" ? "Enter starts a new line." : recording ? "Listening… tap Send voice when you finish. It stops after 20 seconds." : "Tap to talk, then tap again to send."}{replyMode === "voice" ? " Replies are read aloud." : ""}</p>
         </section>
       ) : null}
       <button
         type="button"
         className="pointer-events-auto inline-flex items-center gap-2.5 rounded-full bg-accent py-2 pl-2 pr-4 text-sm font-semibold text-accent-fg shadow-pop"
         aria-expanded={open}
+        aria-label={open ? "Close the booking agent" : "Open the AI booking agent"}
         onClick={() => {
           if (open) {
             stopRecording();
@@ -336,7 +374,7 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
         <span className="grid h-9 w-9 place-items-center rounded-full bg-canvas text-accent-text">
           <AssistantMark className="h-5 w-5" />
         </span>
-        {open ? "Close" : "Support"}
+        {open ? "Close" : "AI Agent"}
       </button>
     </div>
   );
@@ -366,8 +404,8 @@ function blobToBase64(blob: Blob) {
 function AssistantMark({ className = "h-5 w-5" }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
-      <path className="fill-current" d="M8 6.2h12.4a5.4 5.4 0 0 1 5.4 5.4v6.2a5.4 5.4 0 0 1-5.4 5.4H14.8l-4.7 3.5a.85.85 0 0 1-1.35-.68v-2.82H8a5.4 5.4 0 0 1-5.4-5.4v-6.2A5.4 5.4 0 0 1 8 6.2Z" />
-      <path className="fill-accent-fg" d="m16.1 11.1 1.05 3.05 3.05 1.05-3.05 1.05-1.05 3.05-1.05-3.05-3.05-1.05 3.05-1.05 1.05-3.05Z" />
+      <path className="fill-current" d="M16 2.2c.7 0 1.3.5 1.5 1.1l2.4 7.1 7.1 2.4c.6.2 1.1.8 1.1 1.5s-.5 1.3-1.1 1.5l-7.1 2.4-2.4 7.1c-.2.6-.8 1.1-1.5 1.1s-1.3-.5-1.5-1.1l-2.4-7.1-7.1-2.4C3.8 16 3.3 15.4 3.3 14.7s.5-1.3 1.1-1.5l7.1-2.4 2.4-7.1c.2-.6.8-1.1 1.5-1.1Z" />
+      <path className="fill-current" d="M25.4 2.6c.4 0 .7.3.8.6l.9 2.6 2.6.9c.3.1.6.4.6.8s-.3.7-.6.8l-2.6.9-.9 2.6c-.1.3-.4.6-.8.6s-.7-.3-.8-.6l-.9-2.6-2.6-.9c-.3-.1-.6-.4-.6-.8s.3-.7.6-.8l2.6-.9.9-2.6c.1-.3.4-.6.8-.6Z" />
     </svg>
   );
 }

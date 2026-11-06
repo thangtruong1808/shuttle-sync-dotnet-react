@@ -8,7 +8,7 @@ import { CourtImage, EmptyState, addDays, formatVenueRange, venueToday } from ".
 import { PageSection, useVenues } from "../../components/layout/SiteLayout";
 import { useNow } from "../courts/CourtSchedule";
 import { loadCurrentUser } from "../auth/authSlice";
-import { openSocials, rememberVenueSlug, venueAvailability, venuePromotions, type Availability, type Promotion } from "../venues/venueApi";
+import { openSocials, rememberVenueSlug, venueAvailability, venuePromotions, venueRates, type Availability, type Promotion, type PublicRate } from "../venues/venueApi";
 import { HomeCourts } from "./HomeCourts";
 import { HomeHero } from "./HomeHero";
 import { SupportChat } from "./SupportChat";
@@ -36,15 +36,23 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [hasSocials, setHasSocials] = useState(false);
+  const [rates, setRates] = useState<PublicRate[] | null>(null);
+  const [ratesLoading, setRatesLoading] = useState(true);
   const now = useNow();
 
   useEffect(() => {
     if (!slug) return;
     let active = true;
     setHasSocials(false);
+    setRates(null);
+    setRatesLoading(true);
     openSocials(slug)
       .then((result) => { if (active) setHasSocials(result.socials.length > 0); })
       .catch(() => { if (active) setHasSocials(false); });
+    venueRates(slug)
+      .then((next) => { if (active) setRates(next); })
+      .catch(() => { if (active) setRates([]); })
+      .finally(() => { if (active) setRatesLoading(false); });
     return () => {
       active = false;
     };
@@ -138,6 +146,8 @@ export default function HomePage() {
             cancelPercent={cancelPercent}
             promotions={promotions}
             promotionsLoading={loading}
+            rates={rates}
+            ratesLoading={ratesLoading}
           />
         ) : (
           <Skeleton className="h-80 rounded-3xl" />

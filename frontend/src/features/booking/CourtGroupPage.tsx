@@ -9,7 +9,7 @@ import { PayBar, summaryAside, summaryLines } from "./checkoutUi";
 import { loadCurrentUser } from "../auth/authSlice";
 import { AuthRequestError } from "../auth/authApi";
 import { bookingPayment, refreshUnpaidHolds, type BookingPayment } from "../profile/profileApi";
-import { abandonCourtCheckout, bookAgainPath, courtHold, forgetOpenCheckout, rememberOpenCheckout, savedCourtPromo, savedPointShare, startGroupCheckout, venuePromotions, type CourtHoldSession, type Promotion, type ReleasedRetry } from "../venues/venueApi";
+import { abandonCourtCheckout, bookAgainPath, courtHold, forgetOpenCheckout, rememberOpenCheckout, savedCourtPromo, savedPointShare, startGroupCheckout, startRateBalance, venuePromotions, type CourtHoldSession, type Promotion, type RateChange, type ReleasedRetry } from "../venues/venueApi";
 import { PaymentResultBanner, paymentOutcomeKind, paymentSettled, useCleanReturnUrl } from "./PaymentResultBanner";
 import { pointsQuote as quote, promoDiscount } from "./bookingMath";
 
@@ -49,6 +49,7 @@ export default function CourtGroupPage() {
   const status = useSelector((state: RootState) => state.auth.status);
   const balance = useSelector((state: RootState) => state.auth.user?.rewardPoints ?? 0);
   const [sessions, setSessions] = useState<CourtHoldSession[] | null>(null);
+  const [rateChange, setRateChange] = useState<RateChange | null>(null);
   const [timeZone, setTimeZone] = useState("Australia/Melbourne");
   const [currency, setCurrency] = useState("AUD");
   const [rate, setRate] = useState(100);
@@ -61,6 +62,7 @@ export default function CourtGroupPage() {
   const [carried] = useState(() => (location.state as { promotionCode?: string; points?: number } | null) ?? null);
   const [points, setPoints] = useState(carried?.points ?? 0);
   const [paying, setPaying] = useState(false);
+  const [topping, setTopping] = useState(false);
   const [outcome, setOutcome] = useState<BookingPayment | null>(null);
   const [waiting, setWaiting] = useState(false);
   const [promotions, setPromotions] = useState<Promotion[] | null>(null);
@@ -103,6 +105,7 @@ export default function CourtGroupPage() {
           return;
         }
         setSessions(hold.sessions);
+        setRateChange(hold.rateChange ?? null);
         setTimeZone(hold.timeZone);
         setCurrency(hold.currency);
         setRate(hold.pointsPerDollar || 100);
@@ -231,6 +234,9 @@ export default function CourtGroupPage() {
   const preview = sessions ? quote(Math.min(points, maxPoints), balance, rate, payable) : null;
   const cashTooSmall = preview ? preview.cash > 0 && preview.cash < 0.5 : false;
   const incentive = unpaid.reduce((sum, session) => sum + session.incentivePoints, 0);
+  const dueIds = rows.filter((session) => (session.due ?? 0) >= 0.5).map((session) => session.bookingId);
+  const dueTotal = rows.reduce((sum, session) => sum + ((session.due ?? 0) >= 0.5 ? session.due ?? 0 : 0), 0);
+  const smallDue = rows.reduce((sum, session) => sum + ((session.due ?? 0) > 0 && (session.due ?? 0) < 0.5 ? session.due ?? 0 : 0), 0);
 
   async function onPay() {
     if (!preview || unpaid.length === 0) return;
@@ -263,9 +269,29 @@ export default function CourtGroupPage() {
         setAttempt((value) => value + 1);
       }
     } catch (reason) {
-      setFormError(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "The payment could not be started." : "The payment could not be started.");
+      const message = reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "The payment could not be started." : "The payment could not be started.";
+      setFormError(message);
+      if (message.includes("venue rate changed")) setAttempt((value) => value + 1);
     } finally {
       setPaying(false);
+    }
+  }
+
+  async function onTopUp(ids: string[]) {
+    setFormError(null);
+    setTopping(true);
+    try {
+      const result = await startRateBalance(slug, groupId, ids);
+      sessionStorage.setItem(checkoutKey, result.bookingId);
+      if (result.checkoutUrl) {
+        rememberOpenCheckout(slug, groupId);
+        window.location.assign(result.checkoutUrl);
+        return;
+      }
+    } catch (reason) {
+      setFormError(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "The extra payment could not be started." : "The extra payment could not be started.");
+    } finally {
+      setTopping(false);
     }
   }
 
@@ -277,6 +303,25 @@ export default function CourtGroupPage() {
         <span>{waiting ? "Checking your payment" : paymentFailed ? "Payment not confirmed" : paymentProcessing ? "Waiting for bank confirmation" : paidView ? "This week is paid" : "Pay one week"}</span>
       </h1>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-fg/75">{intro ?? payIntro}</p>
+      {rateChange && (rateChange.holdIncrease > 0 || rateChange.holdDecrease > 0 || rateChange.refunded > 0 || rateChange.refundError) ? (
+        <div className="mt-4 max-w-3xl space-y-1 rounded-2xl border border-border bg-surface px-4 py-3 text-sm leading-relaxed text-fg" role="status">
+          {rateChange.holdIncrease > 0 ? <p>The venue rate changed. These held courts are <Money amount={rateChange.holdIncrease} currency={currency} /> more, so you pay the new total.</p> : null}
+          {rateChange.holdDecrease > 0 ? <p>The venue rate changed. These held courts are <Money amount={rateChange.holdDecrease} currency={currency} /> less, so you pay the new total.</p> : null}
+          {rateChange.refunded > 0 ? <p>The venue rate went down. <Money amount={rateChange.refunded} currency={currency} /> is being refunded to the card for the courts you already paid.</p> : null}
+          {rateChange.refundError ? <p>{rateChange.refundError}</p> : null}
+        </div>
+      ) : null}
+      {dueTotal > 0 || smallDue > 0 ? (
+        <div className="mt-4 max-w-3xl rounded-2xl border border-border bg-surface px-4 py-3 text-sm leading-relaxed text-fg" role="status">
+          {dueTotal > 0 ? <p>The venue rate went up. Pay <Money amount={dueTotal} currency={currency} /> more for the courts you already paid.</p> : null}
+          {smallDue > 0 ? <p>A further <Money amount={smallDue} currency={currency} /> is under the $0.50 card minimum, so that part stays on the price you already paid.</p> : null}
+          {dueTotal > 0 ? (
+            <Button type="button" className="mt-3" icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />} loading={topping} disabled={topping || paying} onClick={() => void onTopUp(dueIds)}>
+              Pay the extra
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {waiting ? <PaymentResultBanner kind="waiting" subject="courts" className="mt-6 max-w-3xl" /> : null}
       {!waiting && paymentFailed ? <PaymentResultBanner kind={outcomeKind === "cancelled" ? "cancelled" : "failed"} subject="courts" retryTo={`/${slug}/book`} className="mt-6 max-w-3xl" /> : null}
       {!waiting && paymentProcessing ? <PaymentResultBanner kind="processing" subject="courts" className="mt-6 max-w-3xl" /> : null}

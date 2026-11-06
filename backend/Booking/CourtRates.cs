@@ -9,33 +9,77 @@ public sealed class CourtRateWindow
     public DateTime UpdatedAt { get; set; }
 }
 
+public sealed record CourtRateLine(int Minutes, decimal HourlyRate, decimal Amount, bool Scheduled, int DaysMask, int StartMinute, int EndMinute);
+
 public static class CourtRates
 {
     public static decimal Quote(string timeZoneId, decimal baseHourlyRate, DateTime startUtc, DateTime endUtc, IReadOnlyList<CourtRateWindow> windows)
     {
-        if (!TryZone(timeZoneId, out var zone))
+        if (!TryZone(timeZoneId, out _))
         {
             return Flat(baseHourlyRate, startUtc, endUtc);
+        }
+
+        return decimal.Round(Collect(timeZoneId, baseHourlyRate, startUtc, endUtc, windows).Sum(line => line.Amount), 2, MidpointRounding.AwayFromZero);
+    }
+
+    public static IReadOnlyList<CourtRateLine> Present(IEnumerable<CourtRateLine> raw)
+    {
+        var merged = raw
+            .GroupBy(line => line.Scheduled
+                ? $"s|{line.DaysMask}|{line.StartMinute}|{line.EndMinute}|{line.HourlyRate}"
+                : $"b|{line.HourlyRate}")
+            .Select(group =>
+            {
+                var first = group.First();
+                return first with { Minutes = group.Sum(line => line.Minutes), Amount = group.Sum(line => line.Amount) };
+            })
+            .Where(line => line.Minutes > 0)
+            .ToList();
+        if (merged.Count == 0)
+        {
+            return merged;
+        }
+
+        var target = decimal.Round(merged.Sum(line => line.Amount), 2, MidpointRounding.AwayFromZero);
+        decimal running = 0;
+        for (var index = 0; index < merged.Count; index++)
+        {
+            var rounded = index == merged.Count - 1
+                ? target - running
+                : decimal.Round(merged[index].Amount, 2, MidpointRounding.AwayFromZero);
+            running += rounded;
+            merged[index] = merged[index] with { Amount = rounded };
+        }
+
+        return merged;
+    }
+
+    public static List<CourtRateLine> Collect(string timeZoneId, decimal baseHourlyRate, DateTime startUtc, DateTime endUtc, IReadOnlyList<CourtRateWindow> windows)
+    {
+        var lines = new List<CourtRateLine>();
+        if (!TryZone(timeZoneId, out var zone))
+        {
+            return lines;
         }
 
         var start = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(startUtc, DateTimeKind.Utc), zone);
         var end = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(endUtc, DateTimeKind.Utc), zone);
         if (end <= start)
         {
-            return 0;
+            return lines;
         }
 
-        decimal amount = 0;
         var cursor = start;
         while (cursor < end)
         {
             var midnight = cursor.Date.AddDays(1);
             var sliceEnd = end < midnight ? end : midnight;
-            amount += QuoteSlice(cursor, sliceEnd, baseHourlyRate, windows);
+            lines.AddRange(Slice(cursor, sliceEnd, baseHourlyRate, windows));
             cursor = sliceEnd;
         }
 
-        return decimal.Round(amount, 2, MidpointRounding.AwayFromZero);
+        return lines;
     }
 
     public static bool UsesWindow(string timeZoneId, DateTime startUtc, DateTime endUtc, IReadOnlyList<CourtRateWindow> windows)
@@ -66,13 +110,13 @@ public static class CourtRates
         return false;
     }
 
-    private static decimal QuoteSlice(DateTime start, DateTime end, decimal baseHourlyRate, IReadOnlyList<CourtRateWindow> windows)
+    private static IEnumerable<CourtRateLine> Slice(DateTime start, DateTime end, decimal baseHourlyRate, IReadOnlyList<CourtRateWindow> windows)
     {
         var fromMinute = (int)start.TimeOfDay.TotalMinutes;
         var toMinute = end.Date > start.Date ? 24 * 60 : (int)end.TimeOfDay.TotalMinutes;
         if (toMinute <= fromMinute)
         {
-            return 0;
+            yield break;
         }
 
         var bit = DayBit(start.DayOfWeek);
@@ -96,12 +140,12 @@ public static class CourtRates
         }
 
         var points = cuts.ToArray();
-        decimal amount = 0;
         for (var index = 0; index < points.Length - 1; index++)
         {
             var from = points[index];
             var to = points[index + 1];
             var rate = baseHourlyRate;
+            CourtRateWindow? winner = null;
             var latest = DateTime.MinValue;
             foreach (var window in windows)
             {
@@ -112,12 +156,27 @@ public static class CourtRates
 
                 latest = window.UpdatedAt;
                 rate = window.HourlyRate;
+                winner = window;
             }
 
-            amount += rate * (to - from) / 60m;
-        }
+            var minutes = to - from;
+            if (winner is null && minutes == 1)
+            {
+                winner = windows
+                    .Where(window => (window.DaysMask & bit) != 0 && window.EndMinute == from)
+                    .OrderByDescending(window => window.UpdatedAt)
+                    .FirstOrDefault();
+                if (winner is not null)
+                {
+                    rate = winner.HourlyRate;
+                }
+            }
 
-        return amount;
+            var amount = rate * minutes / 60m;
+            yield return winner is null
+                ? new CourtRateLine(minutes, rate, amount, false, 0, 0, 0)
+                : new CourtRateLine(minutes, rate, amount, true, winner.DaysMask, winner.StartMinute, winner.EndMinute);
+        }
     }
 
     private static int DayBit(DayOfWeek day) => 1 << (day == DayOfWeek.Sunday ? 6 : (int)day - 1);

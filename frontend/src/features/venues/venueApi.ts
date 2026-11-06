@@ -146,7 +146,17 @@ export function listVenues(): Promise<Venue[]> {
   return readJson("/api/venues");
 }
 
-export function courtPrice(slug: string, date: string, start: string, end: string, weeks: number): Promise<{ courtAmount: number; scheduled: boolean }> {
+export type CourtRateLine = {
+  minutes: number;
+  hourlyRate: number;
+  amount: number;
+  scheduled: boolean;
+  days: boolean[];
+  start: string;
+  end: string;
+};
+
+export function courtPrice(slug: string, date: string, start: string, end: string, weeks: number): Promise<{ courtAmount: number; scheduled: boolean; lines: CourtRateLine[] }> {
   const params = new URLSearchParams({ date, start, end, weeks: String(weeks) });
   return readJson(`/api/venues/${encodeURIComponent(slug)}/court-price?${params}`, "no-store");
 }
@@ -164,6 +174,17 @@ export function venueAvailability(slug: string, date: string, from: string, to: 
 
 export function venuePromotions(slug: string): Promise<Promotion[]> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/promotions`);
+}
+
+export type PublicRate = {
+  days: boolean[];
+  start: string;
+  end: string;
+  hourlyRate: number;
+};
+
+export function venueRates(slug: string): Promise<PublicRate[]> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/rates`, "no-store");
 }
 
 export type PublicClosure = {
@@ -303,10 +324,19 @@ export type CourtHoldSession = {
   startTime: string;
   endTime: string;
   price: number;
+  previousPrice?: number | null;
+  due?: number;
   status: string;
   incentivePoints: number;
   holdExpiresAt: string | null;
   payNow: boolean;
+};
+
+export type RateChange = {
+  holdIncrease: number;
+  holdDecrease: number;
+  refunded: number;
+  refundError?: string | null;
 };
 
 export type PayNowSlot = { date: string; start: string; end: string; courtIds: string[] };
@@ -375,7 +405,7 @@ export function bookAgainPath(slug: string, retry: ReleasedRetry) {
   return `/${encodeURIComponent(slug)}/book?${params}`;
 }
 
-export function courtHold(slug: string, groupId: string): Promise<{ currency: string; pointsPerDollar: number; lateCancelFeePercent: number; timeZone: string; sessions: CourtHoldSession[]; released?: boolean; retry?: ReleasedRetry | null }> {
+export function courtHold(slug: string, groupId: string): Promise<{ currency: string; pointsPerDollar: number; lateCancelFeePercent: number; timeZone: string; sessions: CourtHoldSession[]; rateChange?: RateChange | null; released?: boolean; retry?: ReleasedRetry | null }> {
   return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/${groupId}`, "no-store");
 }
 
@@ -454,6 +484,14 @@ export function startGroupCheckout(slug: string, groupId: string, points: number
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ points, promotionCode: promotionCode || null, bookingIds }),
+  });
+}
+
+export function startRateBalance(slug: string, groupId: string, bookingIds: string[]): Promise<CheckoutResult> {
+  return readJson(`/api/venues/${encodeURIComponent(slug)}/holds/${groupId}/rate-balance`, "no-store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bookingIds }),
   });
 }
 

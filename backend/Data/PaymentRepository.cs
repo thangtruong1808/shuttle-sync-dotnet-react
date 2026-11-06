@@ -328,6 +328,93 @@ public sealed class PaymentRepository(IConfiguration configuration)
             cancellationToken: cancellationToken));
     }
 
+    public async Task<CheckoutPrepared> PrepareRateBalanceAsync(
+        Guid venueId,
+        Guid userId,
+        IReadOnlyList<(Guid BookingId, decimal Due, decimal Price)> targets,
+        CancellationToken cancellationToken)
+    {
+        if (targets.Count == 0)
+        {
+            return CheckoutPrepared.Fail("Nothing more to pay.", StatusCodes.Status409Conflict);
+        }
+
+        var cash = decimal.Round(targets.Sum(target => target.Due), 2, MidpointRounding.AwayFromZero);
+        if (cash < 0.5m)
+        {
+            return CheckoutPrepared.Fail("The extra is under $0.50, which is the smallest card payment.", StatusCodes.Status400BadRequest);
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        var account = await connection.QuerySingleOrDefaultAsync<CheckoutUserRow>(new CommandDefinition(
+            "SELECT Email, RewardPoints, StripeCustomerId FROM Users WHERE Id = @Id AND IsDeleted = 0",
+            new { Id = userId },
+            cancellationToken: cancellationToken));
+        if (account is null)
+        {
+            return CheckoutPrepared.Fail("Sign in again.", StatusCodes.Status401Unauthorized);
+        }
+
+        var currency = await connection.ExecuteScalarAsync<string>(new CommandDefinition(
+            "SELECT Currency FROM Venues WHERE Id = @Id",
+            new { Id = venueId },
+            cancellationToken: cancellationToken)) ?? "AUD";
+        var ids = targets.Select(target => target.BookingId).ToArray();
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE Payments
+            SET Status = 'cancelled', UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE BookingId IN @Ids AND Status = 'pending'
+            """,
+            new { Ids = ids },
+            cancellationToken: cancellationToken));
+        var encoded = targets
+            .Select(target => $"{target.BookingId:N}:{(int)decimal.Round(target.Price * 100m, 0, MidpointRounding.AwayFromZero)}")
+            .ToArray();
+        var first = new List<string>();
+        var second = new List<string>();
+        var used = 0;
+        foreach (var item in encoded)
+        {
+            var next = used == 0 ? item.Length : used + 1 + item.Length;
+            if (second.Count == 0 && next <= 480)
+            {
+                first.Add(item);
+                used = next;
+            }
+            else
+            {
+                second.Add(item);
+            }
+        }
+
+        var metadata = new Dictionary<string, string>
+        {
+            ["kind"] = "rate-balance",
+            ["targets"] = string.Join(",", first),
+        };
+        if (second.Count > 0)
+        {
+            metadata["targets2"] = string.Join(",", second);
+        }
+
+        return new CheckoutPrepared
+        {
+            BookingId = targets[0].BookingId,
+            Status = "pending",
+            NeedsPayment = true,
+            Subtotal = cash,
+            Cash = cash,
+            Currency = currency,
+            Email = account.Email,
+            StripeCustomerId = account.StripeCustomerId,
+            UserId = userId,
+            VenueId = venueId,
+            ProductName = "Court rate change",
+            Metadata = metadata,
+        };
+    }
+
     public async Task AttachPaymentAsync(
         Guid bookingId,
         Guid userId,
@@ -1108,7 +1195,7 @@ public sealed class PaymentRepository(IConfiguration configuration)
             cancellationToken: cancellationToken));
     }
 
-    public async Task RecordCourtRefundAsync(Guid paymentId, string stripeRefundId, decimal amount, string status, CancellationToken cancellationToken)
+    public async Task RecordCourtRefundAsync(Guid paymentId, string stripeRefundId, decimal amount, string status, CancellationToken cancellationToken, string? reason = null)
     {
         await using var connection = await OpenAsync(cancellationToken);
         try
@@ -1118,11 +1205,11 @@ public sealed class PaymentRepository(IConfiguration configuration)
                 INSERT INTO Refunds
                     (Id, PaymentId, StripeRefundId, Amount, Reason, Status, ProcessedAt, CreatedAt)
                 VALUES
-                    (@Id, @PaymentId, @StripeRefundId, @Amount, 'Shorter court time', @Status,
+                    (@Id, @PaymentId, @StripeRefundId, @Amount, @Reason, @Status,
                      CASE WHEN @Status = 'succeeded' THEN UTC_TIMESTAMP(6) ELSE NULL END,
                      UTC_TIMESTAMP(6))
                 """,
-                new { Id = Guid.NewGuid(), PaymentId = paymentId, StripeRefundId = stripeRefundId, Amount = amount, Status = status },
+                new { Id = Guid.NewGuid(), PaymentId = paymentId, StripeRefundId = stripeRefundId, Amount = amount, Reason = string.IsNullOrWhiteSpace(reason) ? "Shorter court time" : reason, Status = status },
                 cancellationToken: cancellationToken));
         }
         catch (MySqlException exception) when (exception.Number == 1062)
@@ -1756,6 +1843,7 @@ public sealed class CheckoutPrepared
     public bool ReplacePayment { get; init; }
     public string ProductName { get; init; } = "Court booking";
     public Guid[] SessionIds { get; init; } = [];
+    public Dictionary<string, string> Metadata { get; init; } = new();
 
     public static CheckoutPrepared Fail(string error, int statusCode) => new() { Error = error, StatusCode = statusCode };
 }

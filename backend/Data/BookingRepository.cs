@@ -436,6 +436,152 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         }
     }
 
+    public async Task<HoldPriceChange[]> RefreshGroupPricesAsync(Guid venueId, Guid userId, Guid groupId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var zone = await connection.ExecuteScalarAsync<string>(new CommandDefinition(
+            "SELECT TimeZone FROM Venues WHERE Id = @Id",
+            new { Id = venueId },
+            cancellationToken: cancellationToken)) ?? "Australia/Melbourne";
+        var hourlyRate = await connection.ExecuteScalarAsync<decimal>(new CommandDefinition(
+            "SELECT HourlyRate FROM Venues WHERE Id = @Id",
+            new { Id = venueId },
+            cancellationToken: cancellationToken));
+        var windows = await LoadRateWindowsAsync(connection, venueId, null, cancellationToken);
+        var rows = (await connection.QueryAsync<OpenHoldPriceRow>(new CommandDefinition(
+            """
+            SELECT b.Id, b.CourtSessionId, cs.StartTime, cs.EndTime, b.SubtotalAmount AS Price
+            FROM Bookings b
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId AND cs.IsDeleted = 0
+            WHERE b.GroupId = @GroupId AND b.VenueId = @VenueId AND b.UserId = @UserId
+              AND b.IsDeleted = 0 AND b.Status = 'pending'
+              AND b.DiscountAmount = 0 AND b.PointsRedeemed = 0
+              AND cs.StartTime > UTC_TIMESTAMP(6)
+              AND NOT EXISTS (
+                  SELECT 1 FROM Payments p
+                  WHERE p.BookingId = b.Id AND p.Status IN ('pending', 'succeeded', 'partially_refunded', 'refunded')
+              )
+            """,
+            new { GroupId = groupId, VenueId = venueId, UserId = userId },
+            cancellationToken: cancellationToken))).ToArray();
+        var changes = new List<HoldPriceChange>();
+        foreach (var row in rows)
+        {
+            var price = CourtRates.Quote(zone, hourlyRate, row.StartTime, row.EndTime, windows);
+            if (price <= 0 || Math.Abs(price - row.Price) < 0.009m)
+            {
+                continue;
+            }
+
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Bookings
+                SET SubtotalAmount = @Price, TotalAmount = @Price, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id AND Status = 'pending' AND IsDeleted = 0
+                """,
+                new { Id = row.Id, Price = price },
+                cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE CourtSessions
+                SET Price = @Price, UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id AND IsDeleted = 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM Bookings b
+                      WHERE b.CourtSessionId = CourtSessions.Id AND b.IsDeleted = 0 AND b.Status = 'confirmed'
+                  )
+                """,
+                new { Id = row.CourtSessionId, Price = price },
+                cancellationToken: cancellationToken));
+            changes.Add(new HoldPriceChange(row.Id, row.Price, price));
+        }
+
+        return changes.ToArray();
+    }
+
+    public async Task<ConfirmedCourtPrice[]> ListConfirmedCourtPricesAsync(Guid venueId, Guid? groupId, Guid? userId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var rows = await connection.QueryAsync<ConfirmedCourtPrice>(new CommandDefinition(
+            """
+            SELECT b.Id AS BookingId, b.UserId, b.SubtotalAmount, b.DiscountAmount, b.PointsValue, b.TotalAmount,
+                   cs.Id AS SessionId, cs.StartTime, cs.EndTime, v.TimeZone, v.HourlyRate
+            FROM Bookings b
+            JOIN CourtSessions cs ON cs.Id = b.CourtSessionId AND cs.IsDeleted = 0
+            JOIN Venues v ON v.Id = b.VenueId
+            WHERE b.VenueId = @VenueId AND b.IsDeleted = 0 AND b.Status = 'confirmed'
+              AND cs.StartTime > UTC_TIMESTAMP(6)
+              AND (@GroupId IS NULL OR b.GroupId = @GroupId)
+              AND (@UserId IS NULL OR b.UserId = @UserId)
+            """,
+            new { VenueId = venueId, GroupId = groupId, UserId = userId },
+            cancellationToken: cancellationToken));
+        return rows.ToArray();
+    }
+
+    public async Task SaveConfirmedCourtPriceAsync(Guid bookingId, Guid sessionId, decimal subtotal, decimal discount, decimal pointsValue, decimal total, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE Bookings
+            SET SubtotalAmount = @Subtotal,
+                DiscountAmount = @Discount,
+                PointsValue = @PointsValue,
+                TotalAmount = @Total,
+                UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE Id = @Id AND Status = 'confirmed' AND IsDeleted = 0
+            """,
+            new { Id = bookingId, Subtotal = subtotal, Discount = discount, PointsValue = pointsValue, Total = total },
+            cancellationToken: cancellationToken));
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE CourtSessions
+            SET Price = @Price, UpdatedAt = UTC_TIMESTAMP(6)
+            WHERE Id = @Id AND IsDeleted = 0
+            """,
+            new { Id = sessionId, Price = subtotal },
+            cancellationToken: cancellationToken));
+    }
+
+    public async Task ApplyRateBalanceAsync(IReadOnlyList<(Guid BookingId, decimal Price)> targets, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        foreach (var target in targets)
+        {
+            var current = await connection.ExecuteScalarAsync<decimal>(new CommandDefinition(
+                "SELECT SubtotalAmount FROM Bookings WHERE Id = @Id AND Status = 'confirmed' AND IsDeleted = 0",
+                new { Id = target.BookingId },
+                cancellationToken: cancellationToken));
+            var extra = decimal.Round(target.Price - current, 2, MidpointRounding.AwayFromZero);
+            if (extra <= 0.009m)
+            {
+                continue;
+            }
+
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE Bookings
+                SET DiscountAmount = LEAST(DiscountAmount, @Price),
+                    TotalAmount = TotalAmount + @Extra,
+                    SubtotalAmount = @Price,
+                    UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE Id = @Id AND Status = 'confirmed' AND IsDeleted = 0
+                """,
+                new { Id = target.BookingId, Price = target.Price, Extra = extra },
+                cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE CourtSessions cs
+                JOIN Bookings b ON b.CourtSessionId = cs.Id
+                SET cs.Price = @Price, cs.UpdatedAt = UTC_TIMESTAMP(6)
+                WHERE b.Id = @Id AND cs.IsDeleted = 0
+                """,
+                new { Id = target.BookingId, Price = target.Price },
+                cancellationToken: cancellationToken));
+        }
+    }
+
     private async Task<CourtRateWindow[]> LoadRateWindowsAsync(MySqlConnection connection, Guid venueId, MySqlTransaction? tx, CancellationToken cancellationToken)
     {
         var rows = await connection.QueryAsync<CourtRateWindow>(new CommandDefinition(
@@ -7341,6 +7487,24 @@ public sealed class OpenHoldPriceRow
     public Guid CourtSessionId { get; set; }
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
+    public decimal Price { get; set; }
+}
+
+public sealed record HoldPriceChange(Guid BookingId, decimal Previous, decimal Current);
+
+public sealed class ConfirmedCourtPrice
+{
+    public Guid BookingId { get; set; }
+    public Guid UserId { get; set; }
+    public decimal SubtotalAmount { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal PointsValue { get; set; }
+    public decimal TotalAmount { get; set; }
+    public Guid SessionId { get; set; }
+    public DateTime StartTime { get; set; }
+    public DateTime EndTime { get; set; }
+    public string TimeZone { get; set; } = "Australia/Melbourne";
+    public decimal HourlyRate { get; set; }
 }
 
 public sealed class HoldCourtRow

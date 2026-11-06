@@ -7,7 +7,7 @@ import { ErrorState, Money, venueToday } from "../../components/format";
 import { useVenues } from "../../components/layout/SiteLayout";
 import { Alert, Button, controlClass, Field, PickerInput, Select, Skeleton, Spinner } from "../../components/ui";
 import { AuthRequestError } from "../auth/authApi";
-import { abandonCourtCheckout, courtPrice, forgetOpenCheckout, openCourtHold, payNowHold, readOpenCheckout, rememberOpenCheckout, rememberVenueSlug, venueAvailability, venuePromotions, type AvailableCourt, type Promotion, type ScheduleClosure } from "../venues/venueApi";
+import { abandonCourtCheckout, courtPrice, forgetOpenCheckout, openCourtHold, payNowHold, readOpenCheckout, rememberOpenCheckout, rememberVenueSlug, venueAvailability, venuePromotions, type AvailableCourt, type CourtRateLine, type Promotion, type ScheduleClosure } from "../venues/venueApi";
 import { courtBusyLabel, pointsQuote, promoDiscount, sessionAmount, shownHoldError, startsWithin24Hours, unavailableReason } from "./bookingMath";
 import { PayBar, Step, summaryAside, summaryLines } from "./checkoutUi";
 import { WeekExtendPage } from "./WeekExtendPage";
@@ -40,6 +40,7 @@ function FreshCourtBooking() {
   const [closures, setClosures] = useState<ScheduleClosure[]>([]);
   const [loading, setLoading] = useState(false);
   const [quoted, setQuoted] = useState<number | null>(null);
+  const [rateLines, setRateLines] = useState<CourtRateLine[]>([]);
   const [scheduledRate, setScheduledRate] = useState(false);
   const [quoting, setQuoting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -139,6 +140,7 @@ function FreshCourtBooking() {
   useEffect(() => {
     if (!slug || !date || !form.start || !form.end) {
       setQuoted(null);
+      setRateLines([]);
       setScheduledRate(false);
       return;
     }
@@ -148,11 +150,13 @@ function FreshCourtBooking() {
       .then((result) => {
         if (controller.signal.aborted) return;
         setQuoted(result.courtAmount);
+        setRateLines(result.lines ?? []);
         setScheduledRate(result.scheduled);
       })
       .catch(() => {
         if (controller.signal.aborted) return;
         setQuoted(null);
+        setRateLines([]);
         setScheduledRate(false);
       })
       .finally(() => {
@@ -362,7 +366,19 @@ function FreshCourtBooking() {
           </form>
           <aside className={summaryAside}>
             <h2 className="font-display text-lg font-semibold text-fg">Order summary</h2>
+            {form.weeks > 1 && rateLines.length > 0 ? <p className="mt-3 text-sm text-fg-muted">Hours below are for one court across {form.weeks} weeks.</p> : null}
             <dl className={`mt-4 ${summaryLines}`}>
+              {rateLines.map((line) => {
+                const scale = form.weeks > 1 || form.courtIds.length === 0 ? 1 : form.courtIds.length;
+                const amount = Math.round(line.amount * scale * 100) / 100;
+                const suffix = form.weeks > 1 ? "" : form.courtIds.length > 1 ? ` × ${form.courtIds.length} courts` : form.courtIds.length === 0 ? ", each court" : "";
+                return (
+                  <div key={`${line.scheduled}-${line.start}-${line.end}-${line.hourlyRate}-${line.minutes}`} className="flex justify-between gap-3">
+                    <dt>{rateLineLabel(line)}{suffix}</dt>
+                    <dd className="text-fg"><Money amount={amount} currency={currency} /></dd>
+                  </div>
+                );
+              })}
               <div className="flex justify-between gap-3"><dt>This week, {form.courtIds.length} {form.courtIds.length === 1 ? "court" : "courts"}</dt><dd className="text-fg"><Money amount={weekSubtotal} currency={currency} /></dd></div>
               {weekDiscount > 0 ? <div className="flex justify-between gap-3"><dt>Promotion</dt><dd>-<Money amount={weekDiscount} currency={currency} /></dd></div> : null}
               <div className="flex justify-between gap-3"><dt>Points value</dt><dd><Money amount={payPreview.value} currency={currency} /></dd></div>
@@ -397,6 +413,34 @@ function FreshCourtBooking() {
       )}
     </main>
   );
+}
+
+const rateDayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function rateLineLabel(line: CourtRateLine) {
+  const hours = Math.floor(line.minutes / 60);
+  const rest = line.minutes % 60;
+  const length = [hours > 0 ? `${hours} ${hours === 1 ? "hour" : "hours"}` : "", rest > 0 ? `${rest} min` : ""].filter(Boolean).join(" ");
+  if (!line.scheduled) return `Standard rate · ${length}`;
+  const selected = line.days.map((on, index) => (on ? index : -1)).filter((index) => index >= 0);
+  const days = selected.length === 7
+    ? "Every day"
+    : selected.join(",") === "0,1,2,3,4"
+      ? "Weekdays"
+      : selected.join(",") === "5,6"
+        ? "Weekends"
+        : selected.map((index) => rateDayNames[index]).join(", ");
+  return `${days}, ${rateClock(line.start)}–${rateClock(line.end)} · ${length}`;
+}
+
+function rateClock(value: string) {
+  const [hourText, minuteText = "00"] = value.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return value;
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 || 12;
+  return minute === 0 ? `${hour12} ${suffix}` : `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
 export default function BookCourtPage() {

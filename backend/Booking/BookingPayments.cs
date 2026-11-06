@@ -199,6 +199,12 @@ public sealed class BookingPayments(
             await ReleaseExpiredCourtHoldsAsync(cancellationToken, force: true);
         }
 
+        var changes = await bookings.RefreshGroupPricesAsync(venueId, userId, groupId, cancellationToken);
+        if (changes.Any(change => bookingIds.Count == 0 || bookingIds.Contains(change.BookingId)))
+        {
+            return CheckoutResponse.Fail("The venue rate changed. Review the new total, then pay.", StatusCodes.Status409Conflict);
+        }
+
         var prepared = await payments.PrepareGroupCheckoutAsync(venueId, groupId, userId, bookingIds, points, promotionCode, cancellationToken);
         if (prepared.Error is not null)
         {
@@ -270,6 +276,74 @@ public sealed class BookingPayments(
             return CheckoutResponse.Fail("The payment could not be started.", StatusCodes.Status502BadGateway);
         }
 
+        return CheckoutResponse.From(prepared, session.Url);
+    }
+
+    public async Task<CheckoutResponse> CheckoutRateBalanceAsync(
+        Guid venueId,
+        Guid groupId,
+        Guid userId,
+        IReadOnlyList<Guid> bookingIds,
+        string successUrl,
+        string cancelUrl,
+        CancellationToken cancellationToken)
+    {
+        if (settings.IsConfigured)
+        {
+            StripeConfiguration.ApiKey = settings.SecretKey;
+        }
+
+        var wanted = bookingIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+        if (wanted.Length == 0)
+        {
+            return CheckoutResponse.Fail("Choose a paid court.", StatusCodes.Status400BadRequest);
+        }
+
+        var rows = await bookings.ListConfirmedCourtPricesAsync(venueId, groupId, userId, cancellationToken);
+        var windows = await bookings.ListRateWindowsAsync(venueId, cancellationToken);
+        var targets = new List<(Guid BookingId, decimal Due, decimal Price)>();
+        foreach (var row in rows.Where(row => wanted.Contains(row.BookingId)))
+        {
+            var quote = CourtRates.Quote(row.TimeZone, row.HourlyRate, row.StartTime, row.EndTime, windows);
+            var due = decimal.Round(quote - row.SubtotalAmount, 2, MidpointRounding.AwayFromZero);
+            if (due > 0.009m)
+            {
+                targets.Add((row.BookingId, due, quote));
+            }
+        }
+
+        var prepared = await payments.PrepareRateBalanceAsync(venueId, userId, targets, cancellationToken);
+        if (prepared.Error is not null)
+        {
+            return CheckoutResponse.Fail(prepared.Error, prepared.StatusCode);
+        }
+
+        if (!settings.IsConfigured)
+        {
+            return CheckoutResponse.Fail("Card payments are not configured yet.", StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var customerId = await CustomerIdAsync(prepared.StripeCustomerId, prepared.Email, userId, cancellationToken);
+        Session session;
+        try
+        {
+            session = await CreateCheckoutSessionAsync(prepared, customerId, successUrl, cancelUrl, includePayTo: true, replacement: true, cancellationToken);
+        }
+        catch (StripeException exception) when (MentionsPayTo(exception))
+        {
+            session = await CreateCheckoutSessionAsync(prepared, customerId, successUrl, cancelUrl, includePayTo: false, replacement: true, cancellationToken);
+        }
+        catch (StripeException exception)
+        {
+            return CheckoutResponse.Fail(exception.StripeError?.Message ?? "The extra payment could not be started.", StatusCodes.Status502BadGateway);
+        }
+
+        if (string.IsNullOrWhiteSpace(session.Url))
+        {
+            return CheckoutResponse.Fail("The payment page could not be opened.", StatusCodes.Status502BadGateway);
+        }
+
+        await payments.AttachPaymentAsync(prepared.BookingId, userId, customerId, session.Id, prepared.Cash, prepared.Currency, cancellationToken);
         return CheckoutResponse.From(prepared, session.Url);
     }
 
@@ -627,6 +701,11 @@ public sealed class BookingPayments(
 
                 if (transition.Action is "confirmed" or "already")
                 {
+                    if (IsRateBalance(intent.Metadata))
+                    {
+                        await bookings.ApplyRateBalanceAsync(RateTargets(intent.Metadata), cancellationToken);
+                    }
+
                     var sessions = transition.SessionIds.Length > 0 ? transition.SessionIds : [transition.SessionId];
                     foreach (var sessionId in sessions.Distinct())
                     {
@@ -759,7 +838,7 @@ public sealed class BookingPayments(
                 BillingAddressCollection = "auto",
                 PaymentMethodTypes = types,
                 ClientReferenceId = prepared.BookingId.ToString(),
-                Metadata = new Dictionary<string, string> { ["bookingId"] = prepared.BookingId.ToString() },
+                Metadata = SessionMetadata(prepared),
                 CustomText = new SessionCustomTextOptions
                 {
                     Submit = new SessionCustomTextSubmitOptions
@@ -774,7 +853,7 @@ public sealed class BookingPayments(
                 PaymentIntentData = new SessionPaymentIntentDataOptions
                 {
                     ReceiptEmail = string.IsNullOrWhiteSpace(prepared.Email) ? null : prepared.Email,
-                    Metadata = new Dictionary<string, string> { ["bookingId"] = prepared.BookingId.ToString() },
+                    Metadata = SessionMetadata(prepared),
                 },
                 LineItems =
                 [
@@ -788,7 +867,9 @@ public sealed class BookingPayments(
                             ProductData = new SessionLineItemPriceDataProductDataOptions
                             {
                                 Name = productName,
-                                Description = "Shuttle Sync court booking. Later weeks in a series stay held until you pay each one from My bookings.",
+                                Description = prepared.ProductName == "Court rate change"
+                                    ? "Extra court charge because the venue rate changed."
+                                    : "Shuttle Sync court booking. Later weeks in a series stay held until you pay each one from My bookings.",
                             },
                         },
                     },
@@ -1013,7 +1094,7 @@ public sealed class BookingPayments(
                 new RefundCreateOptions { PaymentIntent = intentId, Amount = Cents(refundAmount) },
                 new RequestOptions { IdempotencyKey = key },
                 cancellationToken);
-            await payments.RecordCourtRefundAsync(paymentId, refund.Id, refundAmount, MapRefundStatus(refund.Status), cancellationToken);
+            await payments.RecordCourtRefundAsync(paymentId, refund.Id, refundAmount, MapRefundStatus(refund.Status), cancellationToken, key.StartsWith("rate-refund-", StringComparison.Ordinal) ? "Venue rate decreased" : null);
             return null;
         }
         catch (StripeException exception)
@@ -2089,6 +2170,48 @@ public sealed class BookingPayments(
 
     private static bool IsSocial(IDictionary<string, string>? metadata) =>
         metadata is not null && metadata.TryGetValue("kind", out var kind) && kind == "social";
+
+    private static bool IsRateBalance(IDictionary<string, string>? metadata) =>
+        metadata is not null && metadata.TryGetValue("kind", out var kind) && kind == "rate-balance";
+
+    private static Dictionary<string, string> SessionMetadata(CheckoutPrepared prepared)
+    {
+        var metadata = new Dictionary<string, string> { ["bookingId"] = prepared.BookingId.ToString() };
+        foreach (var pair in prepared.Metadata)
+        {
+            metadata[pair.Key] = pair.Value;
+        }
+
+        return metadata;
+    }
+
+    private static List<(Guid BookingId, decimal Price)> RateTargets(IDictionary<string, string>? metadata)
+    {
+        var targets = new List<(Guid BookingId, decimal Price)>();
+        if (metadata is null)
+        {
+            return targets;
+        }
+
+        foreach (var key in new[] { "targets", "targets2" })
+        {
+            if (!metadata.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            foreach (var part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var bits = part.Split(':');
+                if (bits.Length == 2 && Guid.TryParse(bits[0], out var id) && int.TryParse(bits[1], out var cents))
+                {
+                    targets.Add((id, cents / 100m));
+                }
+            }
+        }
+
+        return targets;
+    }
 
     private static long Cents(decimal amount) =>
         (long)decimal.Round(amount * 100m, 0, MidpointRounding.AwayFromZero);

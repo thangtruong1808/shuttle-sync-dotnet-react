@@ -1,8 +1,8 @@
 import { Link } from "react-router-dom";
 import { CalendarDays, Clock, LayoutGrid, ShieldCheck, Ticket, Users } from "lucide-react";
 import { Money } from "../../components/format";
-import { buttonClass, StatCard } from "../../components/ui";
-import type { Promotion, Venue } from "../venues/venueApi";
+import { buttonClass, Skeleton, StatCard } from "../../components/ui";
+import type { Promotion, PublicRate, Venue } from "../venues/venueApi";
 import { HomePromos } from "./HomePromos";
 
 export function HomeHero({
@@ -17,6 +17,8 @@ export function HomeHero({
   cancelPercent,
   promotions,
   promotionsLoading,
+  rates,
+  ratesLoading,
 }: {
   venue: Venue;
   slug: string;
@@ -29,6 +31,8 @@ export function HomeHero({
   cancelPercent: string;
   promotions: Promotion[] | null;
   promotionsLoading: boolean;
+  rates: PublicRate[] | null;
+  ratesLoading: boolean;
 }) {
   const place = [venue.suburb, venue.state].filter(Boolean).join(", ");
   return (
@@ -73,14 +77,9 @@ export function HomeHero({
           </div>
         </div>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <StatCard label="Hours" value={hours} icon={<Clock className="h-4 w-4" aria-hidden="true" />} />
         <StatCard label="Courts" value={courts} icon={<LayoutGrid className="h-4 w-4" aria-hidden="true" />} />
-        <StatCard
-          label="Price"
-          value={<><Money amount={venue.hourlyRate} currency={venue.currency} /> <span className="text-base font-medium text-fg-muted">/ hour</span></>}
-          icon={<Ticket className="h-4 w-4" aria-hidden="true" />}
-        />
         <StatCard
           label="Free cancellation"
           value="24 hours"
@@ -88,6 +87,75 @@ export function HomeHero({
           icon={<ShieldCheck className="h-4 w-4" aria-hidden="true" />}
         />
       </div>
+      <PricePanel currency={venue.currency} hourlyRate={venue.hourlyRate} rates={rates} loading={ratesLoading} />
+    </section>
+  );
+}
+
+const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function dayLabel(days: boolean[]): string {
+  const selected = days.flatMap((on, index) => (on ? [index] : []));
+  if (selected.length === 0) return "Selected days";
+  if (selected.length === 7) return "Every day";
+  if (selected.join(",") === "0,1,2,3,4") return "Weekdays";
+  if (selected.join(",") === "5,6") return "Weekends";
+  const groups: string[] = [];
+  let start = selected[0] ?? 0;
+  let previous = start;
+  for (const day of selected.slice(1)) {
+    if (day === previous + 1) {
+      previous = day;
+      continue;
+    }
+    groups.push(start === previous ? dayNames[start] : `${dayNames[start]}–${dayNames[previous]}`);
+    start = previous = day;
+  }
+  groups.push(start === previous ? dayNames[start] : `${dayNames[start]}–${dayNames[previous]}`);
+  return groups.join(", ");
+}
+
+function clockLabel(value: string): string {
+  const [hourText, minuteText = "00"] = value.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return value;
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 || 12;
+  return minute === 0 ? `${hour12} ${suffix}` : `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
+function PricePanel({ currency, hourlyRate, rates, loading }: { currency: string; hourlyRate: number; rates: PublicRate[] | null; loading: boolean }) {
+  const windows = [...(rates ?? [])].sort((left, right) => left.start.localeCompare(right.start) || dayLabel(left.days).localeCompare(dayLabel(right.days)));
+  return (
+    <section className="mt-3 rounded-2xl border border-border bg-surface p-4 shadow-card dark:shadow-none sm:p-5" aria-labelledby="court-prices">
+      <div className="flex items-center justify-between gap-3">
+        <h2 id="court-prices" className="text-sm font-medium text-fg-muted">Price</h2>
+        <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent/15 text-accent-text"><Ticket className="h-4 w-4" aria-hidden="true" /></span>
+      </div>
+      {loading || rates === null ? (
+        <div className="mt-3" aria-busy="true">
+          <span className="sr-only">Loading prices</span>
+          <Skeleton className="h-16" />
+        </div>
+      ) : (
+        <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {windows.map((rate) => (
+            <li key={`${dayLabel(rate.days)}-${rate.start}-${rate.end}-${rate.hourlyRate}`} className="rounded-xl border border-border bg-surface-2 px-3 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{dayLabel(rate.days)}</p>
+              <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-fg"><Money amount={rate.hourlyRate} currency={currency} /> <span className="text-sm font-medium text-fg-muted">/ hour</span></p>
+              <p className="mt-1 text-sm text-fg">{clockLabel(rate.start)} – {clockLabel(rate.end)}</p>
+            </li>
+          ))}
+          {windows.length === 0 && hourlyRate > 0 ? (
+            <li className="rounded-xl border border-dashed border-border px-3 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">All hours</p>
+              <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-fg"><Money amount={hourlyRate} currency={currency} /> <span className="text-sm font-medium text-fg-muted">/ hour</span></p>
+              <p className="mt-1 text-sm text-fg-muted">The same rate applies all week.</p>
+            </li>
+          ) : null}
+        </ul>
+      )}
     </section>
   );
 }

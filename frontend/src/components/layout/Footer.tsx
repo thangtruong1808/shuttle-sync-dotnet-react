@@ -11,7 +11,6 @@ const columns: { title: string; links: { label: string; href: (slug: string) => 
     links: [
       { label: "Promotions", href: () => "/promotions", icon: Ticket },
       { label: "Rewards", href: () => "/rewards", icon: Gift },
-      { label: "Business hours", href: () => "/business-hours", icon: Clock },
     ],
   },
   {
@@ -27,6 +26,7 @@ const columns: { title: string; links: { label: string; href: (slug: string) => 
     links: [
       { label: "Terms", href: () => "/terms", icon: Scale },
       { label: "Privacy", href: () => "/privacy", icon: Shield },
+      { label: "Business hours", href: () => "/business-hours", icon: Clock },
     ],
   },
 ];
@@ -81,6 +81,41 @@ export function Footer() {
             </nav>
           ))}
         </div>
+      </div>
+      <div className="border-t border-border">
+        <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8" aria-labelledby="meet-developer">
+          <div className="flex flex-col gap-6 rounded-3xl border border-border bg-surface-2 p-5 sm:flex-row sm:items-center sm:gap-8 sm:p-6">
+            <img
+              src="/ThangTruong.jpg"
+              alt="Thang Truong, the developer of Shuttle Sync"
+              className="h-36 w-36 shrink-0 rounded-2xl object-cover object-top shadow-card sm:h-40 sm:w-40"
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-text">Meet the developer</p>
+              <h2 id="meet-developer" className="mt-1 font-display text-2xl font-semibold text-fg">Thang Truong</h2>
+              <p className="mt-3 text-sm leading-relaxed text-fg-muted">
+                Thang built Shuttle Sync so a badminton club can take bookings without a spreadsheet. Players see which courts are free, hold a weekly time, and pay by card. Each venue keeps its own hours, weekday and weekend rates, and social sessions.
+              </p>
+              <p className="mt-3 text-sm leading-relaxed text-fg-muted">
+                An AI chatbot supports the booking itself. It asks whether the player wants a court today or on a later date, then a start time, and it calls the live booking API so the suggested courts match the hours and rates that are actually open.
+              </p>
+              <ul className="mt-4 flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap sm:gap-x-6">
+                <li>
+                  <a className={`inline-flex items-center gap-2 font-medium text-fg hover:text-accent-text ${focusRing}`} href="mailto:thangtruong1808@gmail.com">
+                    <Mail className="h-4 w-4 text-accent-text" aria-hidden="true" />
+                    thangtruong1808@gmail.com
+                  </a>
+                </li>
+                <li>
+                  <a className={`inline-flex items-center gap-2 font-medium text-fg hover:text-accent-text ${focusRing}`} href="tel:+61466828649">
+                    <Phone className="h-4 w-4 text-accent-text" aria-hidden="true" />
+                    0466 828 649
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </section>
       </div>
       <div className="border-t border-border">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-5 text-sm text-fg-muted sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
