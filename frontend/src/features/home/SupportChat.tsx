@@ -42,7 +42,7 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
   messagesRef.current = messages;
   const threadRef = useRef<HTMLDivElement | null>(null);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
-  const last = messages.at(-1);
+  const last = messages[messages.length - 1];
   const asksStart = last?.role === "assistant" && /type the time you would like to start/i.test(last.text);
 
   useEffect(() => {
