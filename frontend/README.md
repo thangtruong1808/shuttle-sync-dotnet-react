@@ -1,6 +1,6 @@
 # Shuttle Sync frontend
 
-React 18, TypeScript, and Vite. The product overview, local setup, and VPS deploy live in the repository root [README](../README.md).
+React 18, TypeScript, and Vite. The product overview, API map, and local setup are in the repository root [README](../README.md).
 
 ```bash
 npm ci
