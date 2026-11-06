@@ -1,0 +1,10 @@
+services:
+  api:
+    image: ${SHUTTLE_SYNC_API_IMAGE}
+    env_file:
+      - .env
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8080:8080"

@@ -42,6 +42,10 @@ backend/App_Data/
 .env
 .env.*
 !.env.example
+deploy/api.env
+deploy/.env
+shuttle-sync-deploy
+shuttle-sync-deploy.pub
 
 
 # Logs and OS files
