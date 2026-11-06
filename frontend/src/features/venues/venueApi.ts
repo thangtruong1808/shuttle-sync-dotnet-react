@@ -441,7 +441,7 @@ export function savedPointShare() {
   }
 }
 
-export function withSavedPromo(href: string, groupId: string) {
+export function withSavedPromo(href: string, groupId?: string) {
   let next = href;
   const promo = savedCourtPromo(groupId);
   if (promo && !next.includes("promo=")) next += `${next.includes("?") ? "&" : "?"}promo=${encodeURIComponent(promo)}`;
