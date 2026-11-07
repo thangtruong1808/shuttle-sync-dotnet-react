@@ -46,6 +46,7 @@ builder.Services.AddSingleton<PasswordHasher<UserRow>>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<BookingRepository>();
 builder.Services.AddScoped<DashboardRepository>();
+builder.Services.AddScoped<DashboardStatsRepository>();
 builder.Services.AddScoped<RecommendationRepository>();
 builder.Services.AddSingleton<ComebackCopy>();
 builder.Services.AddSingleton<WeekChangeCopy>();
@@ -162,6 +163,7 @@ app.MapOAuthEndpoints();
 app.MapVenueEndpoints();
 app.MapProfileEndpoints();
 app.MapDashboardEndpoints();
+app.MapDashboardStatsEndpoints();
 app.MapCheckoutEndpoints();
 app.MapSupportEndpoints();
 
