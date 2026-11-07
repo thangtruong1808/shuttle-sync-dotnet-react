@@ -799,7 +799,7 @@ public sealed class BookingPayments(
         return customer.Id;
     }
 
-    private static async Task<Session> CreateCheckoutSessionAsync(
+    private async Task<Session> CreateCheckoutSessionAsync(
         CheckoutPrepared prepared,
         string customerId,
         string successUrl,
@@ -826,6 +826,7 @@ public sealed class BookingPayments(
         }
 
         var productName = string.IsNullOrWhiteSpace(prepared.ProductName) ? "Court booking" : prepared.ProductName;
+        var lineName = CheckoutLine(await bookings.VenueNameAsync(prepared.VenueId, cancellationToken), productName);
         return await new SessionService().CreateAsync(
             new SessionCreateOptions
             {
@@ -866,7 +867,7 @@ public sealed class BookingPayments(
                             UnitAmount = Cents(prepared.Cash),
                             ProductData = new SessionLineItemPriceDataProductDataOptions
                             {
-                                Name = productName,
+                                Name = lineName,
                                 Description = prepared.ProductName == "Court rate change"
                                     ? "Extra court charge because the venue rate changed."
                                     : "Shuttle Sync court booking. Later weeks in a series stay held until you pay each one from My bookings.",
@@ -1159,16 +1160,17 @@ public sealed class BookingPayments(
         }
 
         var customerId = await CustomerIdAsync(hold.StripeCustomerId, hold.Email, userId, cancellationToken);
+        var venueName = await bookings.VenueNameAsync(venueId, cancellationToken);
         Session session;
         try
         {
-            session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: true, replacePayment, cancellationToken);
+            session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: true, replacePayment, venueName, cancellationToken);
         }
         catch (StripeException exception) when (MentionsPayTo(exception))
         {
             try
             {
-                session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: false, replacePayment, cancellationToken);
+                session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: false, replacePayment, venueName, cancellationToken);
             }
             catch (StripeException retry)
             {
@@ -1243,16 +1245,17 @@ public sealed class BookingPayments(
         }
 
         var customerId = await CustomerIdAsync(hold.StripeCustomerId, hold.Email, userId, cancellationToken);
+        var venueName = await bookings.VenueNameAsync(venueId, cancellationToken);
         Session session;
         try
         {
-            session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: true, hold.Requoted, cancellationToken);
+            session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: true, hold.Requoted, venueName, cancellationToken);
         }
         catch (StripeException exception) when (MentionsPayTo(exception))
         {
             try
             {
-                session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: false, hold.Requoted, cancellationToken);
+                session = await CreateSocialSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: false, hold.Requoted, venueName, cancellationToken);
             }
             catch (StripeException retry)
             {
@@ -1329,16 +1332,17 @@ public sealed class BookingPayments(
         }
 
         var customerId = await CustomerIdAsync(hold.StripeCustomerId, hold.Email, userId, cancellationToken);
+        var venueName = await bookings.VenueNameAsync(venueId, cancellationToken);
         Session session;
         try
         {
-            session = await CreateFriendSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: true, hold.Requoted, cancellationToken);
+            session = await CreateFriendSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: true, hold.Requoted, venueName, cancellationToken);
         }
         catch (StripeException exception) when (MentionsPayTo(exception))
         {
             try
             {
-                session = await CreateFriendSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: false, hold.Requoted, cancellationToken);
+                session = await CreateFriendSessionAsync(hold, customerId, successUrl, cancelUrl, includePayTo: false, hold.Requoted, venueName, cancellationToken);
             }
             catch (StripeException retry)
             {
@@ -1912,6 +1916,7 @@ public sealed class BookingPayments(
         string cancelUrl,
         bool includePayTo,
         bool replacement,
+        string venueName,
         CancellationToken cancellationToken)
     {
         var types = new List<string> { "card", "au_becs_debit" };
@@ -1936,7 +1941,7 @@ public sealed class BookingPayments(
             ["kind"] = hold.Waitlist ? "social-waitlist" : "social",
             ["registrationId"] = hold.RegistrationId.ToString(),
         };
-        var socialName = hold.Waitlist ? "Drop-in social waitlist" : "Drop-in social";
+        var socialName = CheckoutLine(venueName, hold.Waitlist ? "Drop-in social waitlist" : "Drop-in social");
         return await new SessionService().CreateAsync(
             new SessionCreateOptions
             {
@@ -2083,6 +2088,7 @@ public sealed class BookingPayments(
         string cancelUrl,
         bool includePayTo,
         bool replacement,
+        string venueName,
         CancellationToken cancellationToken)
     {
         var types = new List<string> { "card", "au_becs_debit" };
@@ -2110,7 +2116,7 @@ public sealed class BookingPayments(
             ["registrationId"] = hold.RegistrationId.ToString(),
             ["friendGroupId"] = groupId.ToString(),
         };
-        var friendName = hold.Waitlist ? $"Drop-in social waitlist · {people}" : $"Drop-in social · {people}";
+        var friendName = CheckoutLine(venueName, hold.Waitlist ? $"Drop-in social waitlist · {people}" : $"Drop-in social · {people}");
         return await new SessionService().CreateAsync(
             new SessionCreateOptions
             {
@@ -2173,6 +2179,14 @@ public sealed class BookingPayments(
 
     private static bool IsRateBalance(IDictionary<string, string>? metadata) =>
         metadata is not null && metadata.TryGetValue("kind", out var kind) && kind == "rate-balance";
+
+    private static string CheckoutLine(string? venueName, string product)
+    {
+        var venue = venueName?.Trim() ?? "";
+        var item = string.IsNullOrWhiteSpace(product) ? "Court booking" : product.Trim();
+        var line = string.IsNullOrWhiteSpace(venue) ? item : $"{venue} · {item}";
+        return line.Length <= 120 ? line : line[..120];
+    }
 
     private static Dictionary<string, string> SessionMetadata(CheckoutPrepared prepared)
     {

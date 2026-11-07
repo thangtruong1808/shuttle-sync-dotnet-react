@@ -217,10 +217,10 @@ export default function SocialPayPage() {
 
   return (
     <main>
-      <div className="w-full px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-8 lg:px-8">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <Link to={`/${slug}/social`} className="text-sm text-accent-text hover:underline">Back to drop-in times</Link>
+            <Link to={`/${slug}/social`} className="inline-flex min-h-11 items-center text-sm text-accent-text hover:underline">Back to drop-in times</Link>
             <h1 className="mt-1 flex items-center gap-2 font-display text-2xl text-fg sm:text-3xl">
               {waiting || paymentProcessing ? <Spinner className="h-6 w-6 shrink-0 text-accent-text" /> : null}
               <span>{title}</span>
@@ -347,7 +347,7 @@ export default function SocialPayPage() {
                         key={percent}
                         type="button"
                         disabled={paying || waiting || maxPoints === 0}
-                        className={`rounded-full px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg" : "border border-fg/15 text-fg"}`}
+                        className={`min-h-11 min-w-11 rounded-full px-3.5 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg" : "border border-fg/15 text-fg"}`}
                         onClick={() => choosePercent(percent)}
                       >
                         {percent}%

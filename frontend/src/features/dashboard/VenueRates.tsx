@@ -79,7 +79,7 @@ export function Rates({ venueId, currency, hourlyRate }: { venueId: string; curr
           <legend className="text-sm text-fg/80">Days</legend>
           <div className="mt-2 flex flex-wrap gap-2">
             {weekDays.map((name, index) => (
-              <label key={name} className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm transition-colors ${days[index] ? "border-accent-text/50 bg-accent/15 text-fg" : "border-fg/10 text-fg hover:bg-fg/10"} ${busy !== null ? "cursor-not-allowed opacity-60" : ""}`}>
+              <label key={name} className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-full border px-3.5 py-2 text-sm transition-colors ${days[index] ? "border-accent-text/50 bg-accent/15 text-fg" : "border-fg/10 text-fg hover:bg-fg/10"} ${busy !== null ? "cursor-not-allowed opacity-60" : ""}`}>
                 <input
                   type="checkbox"
                   className="sr-only"

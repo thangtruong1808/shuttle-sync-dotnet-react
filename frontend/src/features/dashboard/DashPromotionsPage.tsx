@@ -63,11 +63,11 @@ export function PromotionsPage() {
       extra={
         <div className="mt-4 grid gap-4">
           <form className="flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); setFiltering(true); setApplied(venueId); setRevision((value) => value + 1); setNote("Filters applied."); }}>
-            <select className={`${control} max-w-xs`} value={venueId} disabled={filtering} onChange={(event) => setVenueId(event.target.value)}>
+            <select className={`${control} sm:max-w-xs`} value={venueId} disabled={filtering} onChange={(event) => setVenueId(event.target.value)}>
               <option value="">All codes</option>
               {venues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
             </select>
-            <Button type="submit" variant="secondary" loading={filtering}>Filter</Button>
+            <Button type="submit" variant="secondary" className="w-full sm:w-auto" loading={filtering}>Filter</Button>
             <Success message={note} />
           </form>
           <form
@@ -163,8 +163,8 @@ function PromoRow({ row, admin, venues, onChanged }: { row: DashPromo; admin: bo
   return (
     <li className="rounded-2xl border border-border bg-surface p-3 text-sm text-fg shadow-card transition-colors hover:bg-surface-2 dark:shadow-none">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium text-fg">{row.code}</span>
-        <span>{row.discountType} {row.discountValue} · {row.usedCount} used · {row.isActive ? "active" : "inactive"} · {venueName}</span>
+        <span className="break-words font-medium text-fg">{row.code}</span>
+        <span className="break-words">{row.discountType} {row.discountValue} · {row.usedCount} used · {row.isActive ? "active" : "inactive"} · {venueName}</span>
         <span>{localDate(row.validFrom)} 00:01 → {localDate(row.validTo)} 23:59</span>
         {admin ? (
           <div className="flex w-full flex-wrap gap-2 sm:w-auto">

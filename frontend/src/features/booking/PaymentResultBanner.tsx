@@ -74,7 +74,7 @@ export function PaymentResultBanner({ kind, subject = "courts", retryTo, onRetry
           Stripe received the payment, but it is not confirmed yet. Your {labels.one} stay held until the bank confirms. Direct debit can take a few business days. PayTo can take a few minutes. The {labels.place} is only secured after confirmation.
         </p>
         <NextSteps>
-          <Link to="/profile/bookings" className="inline-flex items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
+          <Link to="/profile/bookings" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
             <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
             View my bookings
           </Link>

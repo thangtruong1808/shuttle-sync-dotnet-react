@@ -32,16 +32,16 @@ export function RewardsPage() {
   const [note, setNote] = useState<string | null>(null);
   return (
     <div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button variant={tab === "awards" ? "primary" : "secondary"} disabled={filtering} onClick={() => setTab("awards")}>Awards</Button>
         <Button variant={tab === "redemptions" ? "primary" : "secondary"} disabled={filtering} onClick={() => setTab("redemptions")}>Redemptions</Button>
       </div>
       <form className="mt-4 flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); setFiltering(true); setApplied(venueId); setTick((value) => value + 1); setNote("Filters applied."); }}>
-        <select className={`${control} max-w-xs`} value={venueId} disabled={filtering} onChange={(event) => setVenueId(event.target.value)}>
+        <select className={`${control} sm:max-w-xs`} value={venueId} disabled={filtering} onChange={(event) => setVenueId(event.target.value)}>
           <option value="">All venues</option>
           {venues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
         </select>
-        <Button type="submit" variant="secondary" loading={filtering}>Filter</Button>
+        <Button type="submit" variant="secondary" className="w-full sm:w-auto" loading={filtering}>Filter</Button>
         <Success message={note} />
       </form>
       {tab === "awards" ? (
@@ -54,7 +54,7 @@ export function RewardsPage() {
           onSettled={() => setFiltering(false)}
           rowKey={(row: DashAward) => row.id}
           columns={[
-            { label: "Player", cell: (row) => <span className="text-fg">{row.userEmail}</span> },
+            { label: "Player", cell: (row) => <span className="break-all text-fg">{row.userEmail}</span> },
             { label: "Venue", cell: (row) => row.venueName },
             {
               label: "Source",
@@ -80,8 +80,8 @@ export function RewardsPage() {
           onSettled={() => setFiltering(false)}
           rowKey={(row: DashRedemption) => row.id}
           columns={[
-            { label: "Code", cell: (row) => <span className="text-fg">{row.code}</span> },
-            { label: "Player", cell: (row) => row.userEmail },
+            { label: "Code", cell: (row) => <span className="break-words text-fg">{row.code}</span> },
+            { label: "Player", cell: (row) => <span className="break-all">{row.userEmail}</span> },
             { label: "Venue", cell: (row) => row.venueName },
             { label: "Discount", className: "whitespace-nowrap", cell: (row) => <Money amount={row.discountAmount} currency="AUD" /> },
             { label: "When", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.createdAt, "UTC") },

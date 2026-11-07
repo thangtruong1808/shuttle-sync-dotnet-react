@@ -37,13 +37,13 @@ export function HomeHero({
   const place = [venue.suburb, venue.state].filter(Boolean).join(", ");
   return (
     <section>
-      <div className="relative overflow-hidden rounded-3xl border border-border shadow-card dark:shadow-none">
+      <div className="relative overflow-hidden rounded-3xl border border-border shadow-card dark:shadow-none reveal-scale">
         <div className="relative min-h-[22rem] sm:min-h-[26rem]">
-          {venue.imageUrl ? <img src={venue.imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" /> : null}
+          {venue.imageUrl ? <img src={venue.imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover hero-parallax-bg" /> : null}
           <div className={`absolute inset-0 ${venue.imageUrl ? "bg-gradient-to-t from-[#07140f] via-[#07140f]/80 to-[#07140f]/20" : "bg-gradient-to-br from-[#10261c] via-[#0c1c16] to-[#163528]"}`} />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgb(198_245_78/0.35),transparent_52%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgb(198_245_78/0.35),transparent_52%)] hero-parallax-bg" />
           <div className="relative flex min-h-[22rem] flex-col justify-end gap-6 p-6 sm:min-h-[26rem] sm:p-10 md:flex-row md:items-end md:justify-between md:gap-6 lg:gap-8">
-            <div className="min-w-0 max-w-3xl flex-1">
+            <div className="min-w-0 max-w-3xl flex-1 reveal-left">
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#c6f54e]">{place || "Badminton booking"}</p>
               <h1 className="mt-2 font-display text-display font-semibold text-white">{venue.name}</h1>
               <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/80 sm:text-base">
@@ -62,10 +62,10 @@ export function HomeHero({
                 ) : null}
               </div>
               {showDefault ? (
-                <label className="mt-5 flex max-w-xl items-start gap-2 text-sm text-white/90">
+                <label className="mt-5 flex max-w-xl cursor-pointer items-start gap-2.5 py-1 text-sm text-white/90">
                   <input
                     type="checkbox"
-                    className="mt-1 h-4 w-4 shrink-0 accent-[#c6f54e]"
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-[#c6f54e]"
                     checked={isDefault}
                     onChange={(event) => onDefault(event.target.checked)}
                   />
@@ -77,7 +77,7 @@ export function HomeHero({
           </div>
         </div>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-3 reveal-stagger">
         <StatCard label="Hours" value={hours} icon={<Clock className="h-4 w-4" aria-hidden="true" />} />
         <StatCard label="Courts" value={courts} icon={<LayoutGrid className="h-4 w-4" aria-hidden="true" />} />
         <StatCard
@@ -128,7 +128,7 @@ function clockLabel(value: string): string {
 function PricePanel({ currency, hourlyRate, rates, loading }: { currency: string; hourlyRate: number; rates: PublicRate[] | null; loading: boolean }) {
   const windows = [...(rates ?? [])].sort((left, right) => left.start.localeCompare(right.start) || dayLabel(left.days).localeCompare(dayLabel(right.days)));
   return (
-    <section className="mt-3 rounded-2xl border border-border bg-surface p-4 shadow-card dark:shadow-none sm:p-5" aria-labelledby="court-prices">
+    <section className="mt-3 rounded-2xl border border-border bg-surface p-4 shadow-card dark:shadow-none sm:p-5 reveal-scale" aria-labelledby="court-prices">
       <div className="flex items-center justify-between gap-3">
         <h2 id="court-prices" className="text-sm font-medium text-fg-muted">Price</h2>
         <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent/15 text-accent-text"><Ticket className="h-4 w-4" aria-hidden="true" /></span>
@@ -139,7 +139,7 @@ function PricePanel({ currency, hourlyRate, rates, loading }: { currency: string
           <Skeleton className="h-16" />
         </div>
       ) : (
-        <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 reveal-stagger">
           {windows.map((rate) => (
             <li key={`${dayLabel(rate.days)}-${rate.start}-${rate.end}-${rate.hourlyRate}`} className="rounded-xl border border-border bg-surface-2 px-3 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{dayLabel(rate.days)}</p>

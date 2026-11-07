@@ -225,9 +225,9 @@ function FreshCourtBooking() {
   const canSubmit = !(busy || releasing || loading || quoting || cashTooSmall || form.courtIds.length === 0 || !date || !form.start || !form.end);
 
   return (
-    <main className="w-full px-4 py-8 sm:px-6 lg:px-8">
-      <Link to={`/${slug}`} className="text-sm text-accent-text hover:underline">Back to the venue</Link>
-      <h1 className="mt-3 font-display text-3xl font-semibold text-fg">Book a court</h1>
+    <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+      <Link to={`/${slug}`} className="inline-flex min-h-11 items-center text-sm text-accent-text hover:underline">Back to the venue</Link>
+      <h1 className="mt-2 font-display text-3xl font-semibold text-fg">Book a court</h1>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-fg-muted">Choose the courts and the time you want each week. A week that starts in more than 24 hours can be held, and you pay it before that session. A week that starts within 24 hours is not saved unless you pay for it now.</p>
       {status === "unknown" || (!date && !venue) ? (
         <div className="mt-6" aria-busy="true">
@@ -275,11 +275,11 @@ function FreshCourtBooking() {
                     <label
                       key={court.id}
                       title={taken ? `${court.courtName} is ${taken.toLowerCase()} at this time` : undefined}
-                      className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${taken ? "cursor-not-allowed border-fg/5 bg-inset text-fg/40" : checked ? "border-accent-text/50 bg-accent/10 text-fg" : "border-fg/10 bg-inset text-fg"}`}
+                      className={`flex min-h-11 min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${taken ? "cursor-not-allowed border-fg/5 bg-inset text-fg/40" : checked ? "border-accent-text/50 bg-accent/10 text-fg" : "border-fg/10 bg-inset text-fg"}`}
                     >
                       <input
                         type="checkbox"
-                        className="accent-accent-text"
+                        className="h-4 w-4 shrink-0 accent-accent-text"
                         checked={checked}
                         disabled={busy || loading || Boolean(taken)}
                         onChange={() => {
@@ -301,10 +301,10 @@ function FreshCourtBooking() {
             </fieldset>
             </Step>
             <Step index={3} title="Repeat">
-              <label className="flex items-start gap-2 text-sm text-fg">
+              <label className="flex min-h-11 items-start gap-2.5 py-1 text-sm text-fg">
                 <input
                   type="checkbox"
-                  className="mt-1 accent-accent-text"
+                  className="mt-1 h-4 w-4 shrink-0 accent-accent-text"
                   checked={form.repeat}
                   disabled={busy}
                   onChange={(event) => setForm({ ...form, repeat: event.target.checked })}
@@ -343,7 +343,7 @@ function FreshCourtBooking() {
                     <p className="text-sm font-medium text-fg">Reward points</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {pointPercents.map((percent) => (
-                        <button key={percent} type="button" disabled={busy || releasing || maxPoints === 0} className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg hover:bg-lime-300" : "border border-border text-fg hover:bg-fg/5"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
+                        <button key={percent} type="button" disabled={busy || releasing || maxPoints === 0} className={`min-h-11 min-w-11 rounded-full px-3.5 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg hover:bg-lime-300" : "border border-border text-fg hover:bg-fg/5"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
                           {percent}%
                         </button>
                       ))}

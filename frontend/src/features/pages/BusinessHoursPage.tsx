@@ -59,14 +59,14 @@ export function BusinessHoursPage() {
           <div className="grid gap-8">
             {rows.map(({ venue, closures }) => (
               <section key={venue.id} className="grid gap-4">
-                {rows.length > 1 ? <h2 className="font-display text-xl font-semibold text-fg">{venue.name}</h2> : null}
+                {rows.length > 1 ? <h2 className="break-words font-display text-xl font-semibold text-fg">{venue.name}</h2> : null}
                 {closures.length === 0 ? (
                   <Card title={venue.name} description="No closures are set. Courts follow the normal booking hours." />
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2">
                     {closures.map((closure) => (
                       <Card key={closure.id} title={closure.courtName} description={closure.reason || "Closed"}>
-                        <p className="text-sm leading-relaxed text-fg/80">{closureWhen(closure, venue.timeZone)}</p>
+                        <p className="break-words text-sm leading-relaxed text-fg/80">{closureWhen(closure, venue.timeZone)}</p>
                       </Card>
                     ))}
                   </div>

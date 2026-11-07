@@ -74,8 +74,8 @@ export function UsersPage() {
           setAttempt((value) => value + 1);
         }}
       >
-        <input className={`${control} max-w-sm`} placeholder="Name or email" aria-label="Name or email" value={query} disabled={filtering} onChange={(event) => setQuery(event.target.value)} />
-        <Button type="submit" variant="secondary" loading={filtering} disabled={pending !== null || pendingSize !== null}>Search</Button>
+        <input className={`${control} sm:max-w-sm`} placeholder="Name or email" aria-label="Name or email" value={query} disabled={filtering} onChange={(event) => setQuery(event.target.value)} />
+        <Button type="submit" variant="secondary" className="w-full sm:w-auto" loading={filtering} disabled={pending !== null || pendingSize !== null}>Search</Button>
       </form>
       {rows && !error ? (
         <PageSummary
@@ -105,13 +105,13 @@ export function UsersPage() {
           rows={rows}
           rowKey={(user) => user.id}
           columns={[
-            { label: "Name", cell: (user) => <Link to={`/dashboard/users/${user.id}`} className="font-medium text-fg hover:text-accent-text">{user.displayName || "—"}</Link> },
-            { label: "Email", cell: (user) => user.email },
+            { label: "Name", cell: (user) => <Link to={`/dashboard/users/${user.id}`} className="inline-flex min-h-11 items-center break-words font-medium text-fg hover:text-accent-text">{user.displayName || "—"}</Link> },
+            { label: "Email", cell: (user) => <span className="break-all">{user.email}</span> },
             { label: "Mobile", cell: (user) => user.mobile || "—" },
             { label: "Role", cell: (user) => <Tag value={user.role} /> },
             { label: "Points", className: "whitespace-nowrap", cell: (user) => `${user.rewardPoints} pts` },
             { label: "Verified", cell: (user) => (user.emailVerified ? "Yes" : "No") },
-            { label: "Open", cell: (user) => <Link to={`/dashboard/users/${user.id}`} className="font-medium text-accent-text hover:text-lime-700 dark:hover:text-lime-200">View</Link> },
+            { label: "Open", cell: (user) => <Link to={`/dashboard/users/${user.id}`} className="inline-flex min-h-11 items-center font-medium text-accent-text hover:text-lime-700 dark:hover:text-lime-200">View</Link> },
           ]}
         />
       )}
@@ -243,8 +243,8 @@ export function UserDesk() {
         {user.role !== "staff" ? <p className="mt-2 text-sm text-fg/65">Change the role to staff before assigning a venue.</p> : null}
         <ul className="mt-3 grid gap-2">
           {detail.venues.map((venue) => (
-            <li key={venue.id} className="flex items-center justify-between gap-2 rounded-xl border border-fg/10 px-3 py-2">
-              <span className="text-fg">{venue.name}</span>
+            <li key={venue.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-fg/10 px-3 py-2">
+              <span className="min-w-0 break-words text-fg">{venue.name}</span>
               <Button variant="secondary" loading={busy === venue.id} disabled={busy !== null && busy !== venue.id} onClick={() => {
                 void run(venue.id, async () => {
                   setMessage(null);
@@ -276,17 +276,17 @@ export function UserDesk() {
             }
           });
         }}>
-          <select className={`${control} max-w-sm`} value={venueId} disabled={user.role !== "staff" || busy !== null} onChange={(event) => setVenueId(event.target.value)}>
+          <select className={`${control} sm:max-w-sm`} value={venueId} disabled={user.role !== "staff" || busy !== null} onChange={(event) => setVenueId(event.target.value)}>
             <option value="">Choose a venue</option>
             {venues.filter((venue) => !assigned.has(venue.id)).map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
           </select>
-          <Button type="submit" loading={busy === "assign"} disabled={user.role !== "staff" || !venueId || (busy !== null && busy !== "assign")}>Assign</Button>
+          <Button type="submit" className="w-full sm:w-auto" loading={busy === "assign"} disabled={user.role !== "staff" || !venueId || (busy !== null && busy !== "assign")}>Assign</Button>
         </form>
       </section>
       <section>
         <h2 className="font-display text-xl text-fg">Linked accounts</h2>
         {detail.logins.length === 0 ? <p className="mt-2 text-sm text-fg/65">No linked accounts.</p> : (
-          <ul className="mt-2 text-sm text-fg">{detail.logins.map((login) => <li key={login.provider}>{login.provider} · {login.emailAtLink || "no email"}</li>)}</ul>
+          <ul className="mt-2 text-sm text-fg">{detail.logins.map((login) => <li key={login.provider} className="break-all">{login.provider} · {login.emailAtLink || "no email"}</li>)}</ul>
         )}
       </section>
       <section>
@@ -294,7 +294,7 @@ export function UserDesk() {
         <ul className="mt-2 grid gap-2">
           {detail.sessions.map((session) => (
             <li key={session.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-fg/10 px-3 py-2 text-sm text-fg">
-              <span>{session.userAgent || "Unknown device"} · {formatVenueDateTime(session.lastUsedAt, "UTC")}</span>
+              <span className="min-w-0 break-words">{session.userAgent || "Unknown device"} · {formatVenueDateTime(session.lastUsedAt, "UTC")}</span>
               <Button variant="danger" loading={busy === session.id} disabled={busy !== null && busy !== session.id} onClick={() => {
                 void run(session.id, async () => {
                   try {

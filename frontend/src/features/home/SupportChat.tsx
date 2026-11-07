@@ -230,20 +230,20 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
   }
 
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] flex-col items-end gap-3">
+    <div className="pointer-events-none fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] right-[max(0.75rem,env(safe-area-inset-right))] z-40 flex max-h-[calc(100dvh-1.5rem)] w-[min(36rem,calc(100vw-1.5rem))] flex-col items-end gap-2.5 sm:bottom-4 sm:right-4 sm:max-h-[calc(100dvh-2rem)] sm:w-[min(36rem,calc(100vw-2rem))] sm:gap-3">
       {open ? (
-        <section className="pointer-events-auto flex h-[min(40rem,calc(100dvh-6.5rem))] min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-border bg-surface p-4 shadow-pop" aria-label="AI booking agent">
-          <div className="flex items-center gap-3">
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-canvas text-accent-text ring-1 ring-accent-text/60">
-              <AssistantMark className="h-6 w-6" />
+        <section className="pointer-events-auto flex h-[min(40rem,calc(100dvh-5.25rem))] min-h-0 w-full flex-col overflow-y-auto rounded-3xl border border-border bg-surface p-3 shadow-pop sm:h-[min(40rem,calc(100dvh-6.5rem))] sm:overflow-hidden sm:p-4" aria-label="AI booking agent">
+          <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-canvas text-accent-text ring-1 ring-accent-text/60 sm:h-11 sm:w-11">
+              <AssistantMark className="h-5 w-5 sm:h-6 sm:w-6" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="font-display text-lg leading-tight text-fg">Court Agent</p>
+              <p className="truncate font-display text-base leading-tight text-fg sm:text-lg">Court Agent</p>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-text">AI booking</p>
             </div>
             <Button type="button" size="sm" variant="secondary" icon={<RotateCcw className="h-4 w-4" aria-hidden="true" />} disabled={sending} onClick={resetChat}>Refresh</Button>
           </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="mt-2.5 grid shrink-0 gap-1.5 min-[380px]:grid-cols-2 sm:mt-3 sm:gap-2">
             <ChatChoice
               label="You"
               value={mode}
@@ -257,8 +257,8 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
               onVoice={() => setReplyMode("voice")}
             />
           </div>
-          <p className="mt-3 text-sm text-fg-muted">Help for {venueName}.</p>
-          <div ref={threadRef} className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto" data-chat-thread>
+          <p className="mt-2 shrink-0 truncate text-xs text-fg-muted sm:mt-3 sm:text-sm">Help for {venueName}.</p>
+          <div ref={threadRef} className="mt-2.5 min-h-[8.5rem] flex-1 space-y-3 overflow-y-auto sm:mt-3 sm:min-h-0" data-chat-thread>
             {messages.length === 0 ? (
               <div className="space-y-3">
                 <p className="text-sm text-fg-muted">Choose a starting point, or type your own question.</p>
@@ -325,15 +325,15 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
             </div>
           ) : null}
           {mode === "text" ? (
-            <form className="mt-3 flex items-end gap-2" onSubmit={onSend}>
+            <form className="mt-2.5 flex shrink-0 items-end gap-2 sm:mt-3" onSubmit={onSend}>
               <textarea
                 ref={draftRef}
-                rows={3}
+                rows={2}
                 value={draft}
                 disabled={sending}
                 placeholder={asksStart ? "Type a start time, for example 6:00 PM" : "Ask about a court or a time"}
                 aria-label="Question"
-                className="min-h-[5.25rem] w-full resize-none rounded-2xl border border-border bg-surface-2 px-3 py-2 text-sm text-fg disabled:opacity-60"
+                className="min-h-[3.5rem] w-full resize-none rounded-2xl border border-border bg-surface-2 px-3 py-2 text-base text-fg disabled:opacity-60 sm:min-h-[4.75rem] sm:text-sm"
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -345,19 +345,19 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
               <Button type="submit" className="shrink-0" icon={<Send className="h-4 w-4" aria-hidden="true" />} loading={sending} disabled={sending || draft.trim().length === 0}>Send</Button>
             </form>
           ) : (
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="mt-2.5 flex shrink-0 flex-col gap-2 sm:mt-3 sm:flex-row sm:items-center">
               <Button type="button" className="w-full sm:w-auto" icon={recording ? undefined : <Mic className="h-4 w-4" aria-hidden="true" />} loading={sending} disabled={sending} onClick={() => void onVoice()}>
                 {recording ? "Send voice" : "Tap to talk"}
               </Button>
             </div>
           )}
-          {speaking ? <button type="button" className="mt-2 self-start text-sm font-semibold text-accent-text" onClick={stopSpeaking}>Stop speaking</button> : null}
-          <p className="mt-2 text-xs text-fg-muted">{asksStart ? (mode === "text" ? "Pick a time or type one, then send." : "Pick a time, or tap to talk.") : mode === "text" ? "Enter starts a new line." : recording ? "Listening… tap Send voice when you finish. It stops after 20 seconds." : "Tap to talk, then tap again to send."}{replyMode === "voice" ? " Replies are read aloud." : ""}</p>
+          {speaking ? <button type="button" className="mt-2 inline-flex min-h-10 items-center self-start rounded-lg px-2 py-1 text-sm font-semibold text-accent-text hover:bg-fg/5" onClick={stopSpeaking}>Stop speaking</button> : null}
+          <p className="mt-1.5 shrink-0 text-xs text-fg-muted sm:mt-2">{asksStart ? (mode === "text" ? "Pick a time or type one, then send." : "Pick a time, or tap to talk.") : mode === "text" ? "Enter starts a new line." : recording ? "Listening… tap Send voice when you finish. It stops after 20 seconds." : "Tap to talk, then tap again to send."}{replyMode === "voice" ? " Replies are read aloud." : ""}</p>
         </section>
       ) : null}
       <button
         type="button"
-        className="pointer-events-auto inline-flex items-center gap-2.5 rounded-full bg-accent py-2 pl-2 pr-4 text-sm font-semibold text-accent-fg shadow-pop"
+        className="pointer-events-auto inline-flex min-h-11 items-center gap-2.5 rounded-full bg-accent py-1.5 pl-2 pr-4 text-sm font-semibold text-accent-fg shadow-pop"
         aria-expanded={open}
         aria-label={open ? "Close the booking agent" : "Open the AI booking agent"}
         onClick={() => {
@@ -382,11 +382,11 @@ export function SupportChat({ venueName, venueSlug, date }: { venueName: string;
 
 function ChatChoice({ label, value, onText, onVoice }: { label: string; value: "text" | "voice"; onText: () => void; onVoice: () => void }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-full bg-surface-2 p-1 pl-3">
-      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-fg-muted">{label}</span>
+    <div className="flex items-center justify-between gap-1.5 rounded-full bg-surface-2 p-1 pl-2.5 sm:gap-2 sm:pl-3">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-fg-muted sm:text-xs">{label}</span>
       <div className="grid grid-cols-2 rounded-full text-xs font-semibold" role="group" aria-label={label}>
-        <button type="button" className={`rounded-full px-3 py-1.5 ${value === "text" ? "bg-accent text-accent-fg" : "text-fg"}`} aria-pressed={value === "text"} onClick={onText}>Text</button>
-        <button type="button" className={`rounded-full px-3 py-1.5 ${value === "voice" ? "bg-accent text-accent-fg" : "text-fg"}`} aria-pressed={value === "voice"} onClick={onVoice}>Voice</button>
+        <button type="button" className={`min-h-8 rounded-full px-2.5 py-1 sm:px-3 sm:py-1.5 ${value === "text" ? "bg-accent text-accent-fg" : "text-fg"}`} aria-pressed={value === "text"} onClick={onText}>Text</button>
+        <button type="button" className={`min-h-8 rounded-full px-2.5 py-1 sm:px-3 sm:py-1.5 ${value === "voice" ? "bg-accent text-accent-fg" : "text-fg"}`} aria-pressed={value === "voice"} onClick={onVoice}>Voice</button>
       </div>
     </div>
   );

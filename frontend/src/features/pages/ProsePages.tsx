@@ -11,18 +11,33 @@ function ProseLayout({ title, lede, toc, children }: { title: string; lede: stri
           <nav aria-label="On this page" className="mb-8 hidden lg:block">
             <div className="sticky top-24">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-fg-muted">On this page</p>
-              <ul className="mt-3 space-y-2 text-sm">
+              <ul className="mt-3 space-y-1 text-sm">
                 {toc.map((item) => (
                   <li key={item.id}>
-                    <a href={`#${item.id}`} className="text-fg-muted hover:text-fg">{item.label}</a>
+                    <a href={`#${item.id}`} className="inline-flex min-h-9 items-center py-1 text-fg-muted transition hover:text-fg">{item.label}</a>
                   </li>
                 ))}
               </ul>
             </div>
           </nav>
-          <article>
+          <article className="min-w-0 break-words">
             <PageHeader title={title} description={lede} />
-            <div className="space-y-10 text-[15px] leading-7 text-fg/85">{children}</div>
+            <nav aria-label="On this page" className="mb-8 lg:hidden">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-fg-muted">On this page</p>
+              <ul className="mt-2.5 flex flex-wrap gap-2 text-sm">
+                {toc.map((item) => (
+                  <li key={item.id}>
+                    <a
+                      href={`#${item.id}`}
+                      className="inline-flex min-h-11 items-center rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-fg-muted transition hover:bg-surface-2 hover:text-fg"
+                    >
+                      {item.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+            <div className="space-y-8 text-[15px] leading-7 text-fg/85 sm:space-y-10">{children}</div>
           </article>
         </div>
       </PageSection>

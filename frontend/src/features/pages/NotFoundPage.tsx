@@ -12,9 +12,9 @@ export function NotFoundPage() {
           <MissingCourt />
           <h1 className="mt-6 font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">Page not found</h1>
           <p className="mt-3 text-fg-muted">That page is not on Shuttle Sync. Head home, or book a court if you already know where you are playing.</p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link to="/" className={buttonClass("primary", "lg")}>Back home</Link>
-            {slug ? <Link to={`/${slug}/book`} className={buttonClass("secondary", "lg")}>Book a court</Link> : null}
+          <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
+            <Link to="/" className={`${buttonClass("primary", "lg")} w-full sm:w-auto`}>Back home</Link>
+            {slug ? <Link to={`/${slug}/book`} className={`${buttonClass("secondary", "lg")} w-full sm:w-auto`}>Book a court</Link> : null}
           </div>
         </div>
       </PageSection>

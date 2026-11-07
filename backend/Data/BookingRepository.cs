@@ -436,6 +436,15 @@ public sealed partial class BookingRepository(IConfiguration configuration)
         }
     }
 
+    public async Task<string> VenueNameAsync(Guid venueId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        return await connection.ExecuteScalarAsync<string>(new CommandDefinition(
+            "SELECT Name FROM Venues WHERE Id = @Id",
+            new { Id = venueId },
+            cancellationToken: cancellationToken)) ?? "";
+    }
+
     public async Task<HoldPriceChange[]> RefreshGroupPricesAsync(Guid venueId, Guid userId, Guid groupId, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);

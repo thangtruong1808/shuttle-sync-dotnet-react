@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Alert, Badge, Button } from "../../components/ui";
 
 export const control =
-  "w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm text-fg shadow-sm outline-none transition-colors focus:border-accent-text focus:ring-2 focus:ring-accent-text/20 disabled:cursor-not-allowed disabled:opacity-60";
+  "min-h-11 w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-base sm:text-sm text-fg shadow-sm outline-none transition-colors focus:border-accent-text focus:ring-2 focus:ring-accent-text/20 disabled:cursor-not-allowed disabled:opacity-60";
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -105,7 +105,7 @@ export function Pager({
             <Button
               key={item}
               variant={item === page ? "primary" : "secondary"}
-              className="min-w-10 px-2.5"
+              className="min-w-11 px-2.5"
               aria-label={`Page ${item}`}
               aria-current={item === page ? "page" : undefined}
               loading={pending === item}
@@ -155,6 +155,7 @@ export function PageSummary({
           <Button
             key={option}
             variant={option === pageSize ? "primary" : "secondary"}
+            className="min-w-11 px-2.5"
             aria-label={`View ${option} per page`}
             aria-pressed={option === pageSize}
             loading={pendingSize === option}
@@ -192,8 +193,8 @@ export function Check({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-fg">
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+    <label className="flex min-h-11 cursor-pointer items-center gap-2 py-1 text-sm text-fg">
+      <input type="checkbox" className="h-4 w-4 shrink-0 accent-accent-text" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
       {label}
     </label>
   );

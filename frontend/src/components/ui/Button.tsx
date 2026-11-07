@@ -20,9 +20,9 @@ export const buttonVariants: Record<ButtonVariant, string> = {
 };
 
 export const buttonSizes: Record<ButtonSize, string> = {
-  sm: "rounded-lg px-3 py-1.5 text-sm",
-  md: "rounded-xl px-4 py-2.5 text-sm",
-  lg: "rounded-xl px-5 py-3 text-base",
+  sm: "min-h-10 rounded-lg px-3 py-1.5 text-sm sm:min-h-9",
+  md: "min-h-11 rounded-xl px-4 py-2.5 text-sm",
+  lg: "min-h-12 rounded-xl px-5 py-3 text-base",
 };
 
 export function buttonClass(variant: ButtonVariant = "primary", size: ButtonSize = "md", className = "") {

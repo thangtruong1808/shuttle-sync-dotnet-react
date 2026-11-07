@@ -22,7 +22,7 @@ function VenueNotFound({ slug, venues }: { slug: string; venues: { slug: string;
           </span>
           <h1 className="mt-5 font-display text-3xl font-semibold tracking-tight text-fg">Venue not found</h1>
           <p className="mt-2 text-fg-muted">
-            There is no venue at <span className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-sm text-fg">/{slug}</span>. It may have moved to a new address.
+            There is no venue at <span className="break-all rounded bg-surface-2 px-1.5 py-0.5 font-mono text-sm text-fg">/{slug}</span>. It may have moved to a new address.
           </p>
           {venues.length ? (
             <ul className="mt-8 grid gap-2 text-left sm:grid-cols-2">
@@ -30,7 +30,7 @@ function VenueNotFound({ slug, venues }: { slug: string; venues: { slug: string;
                 <li key={venue.slug}>
                   <Link
                     to={`/${venue.slug}`}
-                    className="group flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-3 shadow-card transition-colors hover:border-accent-text/40 dark:shadow-none"
+                    className="group flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-3 shadow-card transition-colors hover:border-accent-text/40 dark:shadow-none"
                   >
                     <span className="min-w-0">
                       <span className="block truncate font-medium text-fg">{venue.name}</span>

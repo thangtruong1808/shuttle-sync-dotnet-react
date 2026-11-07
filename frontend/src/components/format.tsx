@@ -108,7 +108,7 @@ export function ErrorState({
         type="button"
         disabled={loading}
         aria-busy={loading}
-        className="mt-3 inline-flex items-center gap-2 rounded-lg border border-fg/15 px-3 py-1.5 text-sm font-semibold text-fg hover:bg-fg/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg border border-fg/15 px-3.5 py-2 text-sm font-semibold text-fg hover:bg-fg/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text disabled:cursor-not-allowed disabled:opacity-60"
         onClick={onRetry}
       >
         {loading ? <Spinner className="h-4 w-4" /> : null}

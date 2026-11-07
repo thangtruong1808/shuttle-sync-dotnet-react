@@ -81,8 +81,8 @@ export default function SocialPage() {
   return (
     <main>
       <PageSection>
-        <Link to={`/${slug}`} className="text-sm text-accent-text hover:underline">Back to the venue</Link>
-        <h1 className="mt-3 font-display text-3xl text-fg sm:text-4xl">Register for public social</h1>
+        <Link to={`/${slug}`} className="inline-flex min-h-11 items-center text-sm text-accent-text hover:underline">Back to the venue</Link>
+        <h1 className="mt-2 font-display text-3xl text-fg sm:text-4xl">Register for public social</h1>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-fg/75">Choose one or more open times. You register and pay for them together. A court is assigned when you register, filling court 1 first up to the players and courts set for that time.</p>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-fg/75">{`More than 24 hours before the start, you get a full refund. Within 24 hours, the venue keeps ${Number(fee.toFixed(2))}% and refunds the rest.`}</p>
         <div className="mt-6">
@@ -160,7 +160,7 @@ function SessionCard({
         {waiting > 0 ? <Badge tone="neutral">{waiting} waiting</Badge> : null}
       </div>
       <p className="text-sm font-semibold text-fg">{formatVenueDay(social.startTime, timeZone)}</p>
-      <p className="whitespace-nowrap text-sm text-fg">{formatVenueRange(social.startTime, social.endTime, timeZone)}</p>
+      <p className="break-words text-sm text-fg">{formatVenueRange(social.startTime, social.endTime, timeZone)}</p>
       <SessionClock start={social.startTime} end={social.endTime} />
       {limit > 0 ? (
         <div className="mt-2">

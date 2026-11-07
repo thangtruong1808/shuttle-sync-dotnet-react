@@ -39,6 +39,7 @@ export function ListPager({
             <Button
               key={option}
               variant={option === pageSize ? "primary" : "secondary"}
+              className="min-w-11 px-2.5"
               aria-label={`View ${option} per page`}
               aria-pressed={option === pageSize}
               loading={pageMove === `size-${option}`}
@@ -57,7 +58,7 @@ export function ListPager({
           <Button
             key={number}
             variant={number === safePage ? "primary" : "secondary"}
-            className="min-w-10 px-2.5"
+            className="min-w-11 px-2.5"
             aria-label={`Page ${number}`}
             aria-current={number === safePage ? "page" : undefined}
             loading={loading && pageMove === `page-${number}`}

@@ -157,9 +157,9 @@ export default function BookingStubPage() {
   const paidView = Boolean(outcome?.status === "confirmed" || waiting || paymentProcessing);
 
   return (
-    <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
-      <Link to={`/${slug}/courts`} className="text-sm text-accent-text hover:underline">Back to courts</Link>
-      <h1 className="mt-3 flex items-center gap-2 font-display text-3xl text-fg">
+    <main className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-8 lg:px-8">
+      <Link to={`/${slug}/courts`} className="inline-flex min-h-11 items-center text-sm text-accent-text hover:underline">Back to courts</Link>
+      <h1 className="mt-2 flex items-center gap-2 font-display text-3xl text-fg">
         {waiting || paymentProcessing ? <Spinner className="h-7 w-7 shrink-0 text-accent-text" /> : outcome?.status === "confirmed" ? <CircleCheck className="h-8 w-8 shrink-0 text-accent-text" aria-hidden="true" /> : null}
         <span>{waiting ? "Checking your payment" : paymentFailed ? "Payment not confirmed" : paymentProcessing ? "Waiting for bank confirmation" : outcome?.status === "confirmed" ? "Court secured" : "Checkout"}</span>
       </h1>
@@ -289,7 +289,7 @@ export default function BookingStubPage() {
                         key={percent}
                         type="button"
                         disabled={paying || waiting || maxPoints === 0}
-                        className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg hover:bg-lime-300" : "border border-fg/15 text-fg hover:bg-fg/10"}`}
+                        className={`min-h-11 min-w-11 rounded-full px-3.5 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg hover:bg-lime-300" : "border border-fg/15 text-fg hover:bg-fg/10"}`}
                         onClick={() => choosePercent(percent)}
                       >
                         {percent}%

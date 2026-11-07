@@ -102,9 +102,9 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
   }
 
   return (
-    <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
-      <Link to={`/profile/bookings?venue=${encodeURIComponent(slug)}`} className="text-sm text-accent-text hover:underline">Back to my bookings</Link>
-      <h1 className="mt-3 font-display text-3xl text-fg">Add a court</h1>
+    <main className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-8 lg:px-8">
+      <Link to={`/profile/bookings?venue=${encodeURIComponent(slug)}`} className="inline-flex min-h-11 items-center text-sm text-accent-text hover:underline">Back to my bookings</Link>
+      <h1 className="mt-2 font-display text-3xl text-fg">Add a court</h1>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg/75">Courts already on this week stay ticked. Tick another free court, then pick a time that works for every ticked court. This updates the same week.</p>
       {loadError ? (
         <div className="mt-4">
@@ -120,17 +120,17 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
       ) : courts ? (
         <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <form id="week-extend" className="grid gap-4" onSubmit={(event) => { event.preventDefault(); if (picked) void confirm(picked); }}>
-          <fieldset>
+          <fieldset className="min-w-0">
             <legend className="mb-2 text-sm text-fg/70">Courts</legend>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
               {courts.map((court) => {
                 const checked = court.yours || extra.includes(court.id);
                 const unavailable = !court.yours && !court.free;
                 return (
-                  <label key={court.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${unavailable ? "cursor-not-allowed border-fg/5 text-fg/40" : "border-fg/10 text-fg"}`}>
+                  <label key={court.id} className={`flex min-h-11 min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${unavailable ? "cursor-not-allowed border-fg/5 text-fg/40" : "border-fg/10 text-fg"}`}>
                     <input
                       type="checkbox"
-                      className="accent-accent-text"
+                      className="h-4 w-4 shrink-0 accent-accent-text"
                       checked={checked}
                       disabled={busy || court.yours || unavailable}
                       onChange={() => {
@@ -138,14 +138,14 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
                         setExtra((current) => current.includes(court.id) ? current.filter((id) => id !== court.id) : [...current, court.id]);
                       }}
                     />
-                    <span className={unavailable ? "line-through" : ""}>{court.courtName}</span>
-                    {court.yours ? <span className="ml-auto text-xs text-fg/60">This week</span> : unavailable ? <span className="ml-auto text-xs text-fg/50">Booked</span> : null}
+                    <span className={`truncate ${unavailable ? "line-through" : ""}`}>{court.courtName}</span>
+                    {court.yours ? <span className="ml-auto shrink-0 text-xs text-fg/60">This week</span> : unavailable ? <span className="ml-auto shrink-0 text-xs text-fg/50">Booked</span> : null}
                   </label>
                 );
               })}
             </div>
           </fieldset>
-          <Field label="Date" className="max-w-xs">
+          <Field label="Date" className="w-full sm:max-w-xs">
             {({ id }) => <PickerInput id={id} type="date" required value={date} disabled={busy} onChange={(event) => { setDate(event.target.value); setBlock(null); }} className={controlClass} />}
           </Field>
           <div>
@@ -155,9 +155,9 @@ export function WeekExtendPage({ slug, groupId, search }: { slug: string; groupI
             ) : times.length === 0 ? (
               <p className="mt-2 text-sm text-fg" role="status">{held ? "That time is held for a later week because you keep weeks ahead. Choose another date, or cancel that held week and book again." : "No open time on this date fits every court you ticked. Untick a court or pick another date."}</p>
             ) : (
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <div className="mt-2 grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
                 {times.map((slot) => (
-                  <button key={`${slot.date}-${slot.start}`} type="button" aria-pressed={picked?.start === slot.start && picked.date === slot.date} disabled={busy} className={`rounded-xl border px-3 py-2 text-left text-sm disabled:opacity-60 ${picked?.start === slot.start && picked.date === slot.date ? "border-accent-text bg-accent/15 text-fg" : "border-fg/10 text-fg"}`} onClick={() => { setPicked(slot); setBlock(null); }}>
+                  <button key={`${slot.date}-${slot.start}`} type="button" aria-pressed={picked?.start === slot.start && picked.date === slot.date} disabled={busy} className={`min-h-11 rounded-xl border px-3 py-2.5 text-left text-sm disabled:opacity-60 ${picked?.start === slot.start && picked.date === slot.date ? "border-accent-text bg-accent/15 text-fg" : "border-fg/10 text-fg"}`} onClick={() => { setPicked(slot); setBlock(null); }}>
                     {slot.label}
                   </button>
                 ))}

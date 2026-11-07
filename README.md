@@ -29,6 +29,16 @@ A court price is not one hourly number. The API slices a booking at each rate-wi
 
 Sign-in is cookie based, not a token stored in `localStorage`.
 
+#### Demo / Reviewer Admin Credentials
+
+To explore the Staff & Admin Dashboard (`/dashboard`) when reviewing the project, sign in at `/login` with:
+
+| Field | Value |
+| --- | --- |
+| Email | `admin@gmail.com` |
+| Password | `Toyota2025!@#` |
+| Role | `admin` (full access to all venues, courts, rates, users, bookings, payments, and AI tools) |
+
 - `POST /api/auth/register` and `POST /api/auth/login` check the email and password, then set an access cookie and a refresh cookie.
 - `POST /api/auth/refresh` rotates the refresh token and issues a new access token. The access token is short lived.
 - `GET /api/auth/me` returns the current player. `PUT /api/auth/profile` updates the profile.

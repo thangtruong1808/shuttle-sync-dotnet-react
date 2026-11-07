@@ -51,12 +51,18 @@ export function Dialog({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !locked) onClose();
       }}
     >
-      <div ref={panel} role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-pop">
+      <div
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-surface p-4 shadow-pop sm:max-h-[calc(100dvh-2rem)] sm:p-5"
+      >
         <h2 id={titleId} className="font-display text-lg font-semibold text-fg">{title}</h2>
         {description ? <div className="mt-2 text-sm leading-relaxed text-fg-muted">{description}</div> : null}
         {children ? <div className="mt-4">{children}</div> : null}
@@ -109,7 +115,7 @@ export function Dropdown({
           id={id}
           role="menu"
           aria-label={label}
-          className={`absolute top-full z-40 mt-2 w-64 rounded-2xl border border-border bg-surface p-1.5 shadow-pop ${align === "right" ? "right-0" : "left-0"}`}
+          className={`absolute top-full z-40 mt-2 max-h-[calc(100dvh-5rem)] w-64 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-2xl border border-border bg-surface p-1.5 shadow-pop ${align === "right" ? "right-0" : "left-0"}`}
         >
           {children(() => setOpen(false))}
         </div>

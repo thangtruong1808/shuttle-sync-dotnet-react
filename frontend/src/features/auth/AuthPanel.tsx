@@ -157,12 +157,12 @@ export default function AuthPanel({
     return (
       <div className="mt-5 space-y-5">
         <div className="flex items-start gap-3 rounded-2xl bg-fg/5 p-4">
-          <span className="mt-0.5 rounded-full bg-accent/15 p-2 text-accent-text">
+          <span className="mt-0.5 shrink-0 rounded-full bg-accent/15 p-2 text-accent-text">
             <CircleCheck className="h-5 w-5" aria-hidden="true" />
           </span>
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-sm text-fg/70">Signed in</p>
-            <p className="font-medium text-fg">{user.email}</p>
+            <p className="break-all font-medium text-fg">{user.email}</p>
           </div>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -203,10 +203,11 @@ export default function AuthPanel({
               {sessions.map((session) => (
                 <li key={session.id} className="rounded-2xl border border-fg/10 px-4 py-3 text-sm">
                   <p className="font-medium text-fg">{session.isCurrent ? "This device" : "Other device"}</p>
-                  <p className="mt-1 text-fg/60">{session.userAgent ?? "Unknown browser"}</p>
+                  <p className="mt-1 break-words text-fg/60">{session.userAgent ?? "Unknown browser"}</p>
                   <Button
                     variant="danger"
-                    className="mt-3 px-3 py-1.5"
+                    size="sm"
+                    className="mt-3"
                     loading={pendingAction === session.id}
                     disabled={pendingAction !== null}
                     onClick={() => void runAction(session.id)}
@@ -230,14 +231,14 @@ export default function AuthPanel({
             key={value}
             type="button"
             aria-pressed={mode === value}
-            className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-medium transition-colors ${mode === value ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
+            className={`inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-2 text-xs font-medium transition-colors min-[380px]:gap-2 min-[380px]:px-3 min-[380px]:text-sm ${mode === value ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
             onClick={() => {
               setMode(value);
               setFieldErrors({});
               setFormMessage(null);
             }}
           >
-            {value === "login" ? <LogIn className="h-4 w-4" aria-hidden="true" /> : <UserPlus className="h-4 w-4" aria-hidden="true" />}
+            {value === "login" ? <LogIn className="h-4 w-4 shrink-0" aria-hidden="true" /> : <UserPlus className="h-4 w-4 shrink-0" aria-hidden="true" />}
             {value === "login" ? "Sign in" : "Create account"}
           </button>
         ))}

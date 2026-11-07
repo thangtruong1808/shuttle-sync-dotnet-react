@@ -94,18 +94,18 @@ export function SessionGroupCard({
                   <span key={label} className={`rounded-full px-2 py-0.5 text-xs font-semibold ${value.tone}`}>{value.count} {label}</span>
                 ))}
               </div>
-              <p className="mt-2 font-medium text-fg">{first.venueName}</p>
-              <p className="flex items-center gap-1.5 text-sm text-fg/80">
+              <p className="mt-2 break-words font-medium text-fg">{first.venueName}</p>
+              <p className="flex flex-wrap items-center gap-1.5 text-sm text-fg/80">
                 <Clock className="h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" />
-                {formatVenueRange(first.startTime, first.endTime, first.timeZone)}
+                <span>{formatVenueRange(first.startTime, first.endTime, first.timeZone)}</span>
                 <span className="text-fg/55">· {duration(first.startTime, first.endTime)}</span>
               </p>
-              <p className="mt-0.5 flex items-start gap-1.5 text-xs leading-5 text-fg/65">
+              <p className="mt-0.5 flex items-start gap-1.5 break-words text-xs leading-5 text-fg/65">
                 <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" />
-                {names}
+                <span className="min-w-0">{names}</span>
               </p>
             </div>
-            <div className="text-right">
+            <div className="sm:text-right">
               <p className="font-semibold text-fg"><Money amount={total} currency={first.currency} /></p>
               <p className="text-xs text-fg/55">Total for {bookings.length} {unit}</p>
             </div>
@@ -127,7 +127,7 @@ export function SessionGroupCard({
           </div>
           <button
             type="button"
-            className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-fg/10 px-3 py-1.5 text-sm font-medium text-fg hover:bg-fg/10"
+            className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-fg/10 px-3 py-2 text-sm font-medium text-fg hover:bg-fg/10"
             aria-expanded={open}
             aria-controls={panelId}
             onClick={onToggle}
@@ -185,15 +185,15 @@ export function BookingSummary({ booking, tab }: { booking: BookingRow; tab: Boo
                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${soon ? "bg-amber-400/15 text-amber-700 dark:text-amber-200" : "bg-fg/5 text-fg/80"}`}>{startsIn(booking.startTime)}</span>
               ) : null}
             </div>
-            <p className="mt-2 font-medium text-fg">{booking.venueName}</p>
-            <p className="flex items-center gap-1.5 text-sm text-fg/80"><MapPin className="h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" />{place}</p>
-            <p className="flex items-center gap-1.5 text-sm text-fg/80">
+            <p className="mt-2 break-words font-medium text-fg">{booking.venueName}</p>
+            <p className="flex items-start gap-1.5 break-words text-sm text-fg/80"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" /><span className="min-w-0">{place}</span></p>
+            <p className="flex flex-wrap items-center gap-1.5 text-sm text-fg/80">
               <Clock className="h-3.5 w-3.5 shrink-0 text-fg/60" aria-hidden="true" />
-              {formatVenueRange(booking.startTime, booking.endTime, booking.timeZone)}
+              <span>{formatVenueRange(booking.startTime, booking.endTime, booking.timeZone)}</span>
               <span className="text-fg/55">· {duration(booking.startTime, booking.endTime)}</span>
             </p>
           </div>
-          <div className="text-right">
+          <div className="sm:text-right">
             <p className="font-semibold text-fg"><Money amount={booking.totalAmount} currency={booking.currency} /></p>
             {discount > 0 || pointsUsed > 0 ? (
               <>

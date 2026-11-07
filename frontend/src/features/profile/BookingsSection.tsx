@@ -155,7 +155,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
             aria-selected={tab === item.id}
             aria-busy={loading && pageMove === null && tab === item.id}
             disabled={loading}
-            className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60 ${tab === item.id ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
+            className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60 ${tab === item.id ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
             onClick={() => {
               if (item.id === tab) {
                 return;
@@ -193,7 +193,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
                 type="button"
                 role="tab"
                 aria-selected={holdFilter === item.id}
-                className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${holdFilter === item.id ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
+                className={`min-h-11 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${holdFilter === item.id ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
                 onClick={() => { setHoldFilter(item.id); setSeriesPage(1); }}
               >
                 {item.label}
@@ -261,7 +261,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
               <BookingSummary booking={booking} tab={tab} />
               {booking.socialId && booking.canCancel && booking.status !== "waitlist" ? (
                 <div className="mt-4 flex flex-col gap-2 rounded-xl border border-border bg-inset p-2 sm:flex-row sm:items-center">
-                  <Link to={`/${booking.venueSlug}/social/${booking.socialId}`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
+                  <Link to={`/${booking.venueSlug}/social/${booking.socialId}`} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
                     <UserPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
                     Add friends
                   </Link>
@@ -302,7 +302,7 @@ function VenueBookings({ venueSlug, venueName }: { venueSlug: string | null; ven
                       ) : (
                         <ul className="mt-1">
                           {(booking.friends ?? []).map((friend) => (
-                            <li key={friend.id} className="text-sm text-fg/80">{friend.name} · {friend.courtName || "Waitlist"} · {friend.status}</li>
+                            <li key={friend.id} className="break-words text-sm text-fg/80">{friend.name} · {friend.courtName || "Waitlist"} · {friend.status}</li>
                           ))}
                         </ul>
                       )}

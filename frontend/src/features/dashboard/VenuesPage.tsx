@@ -171,7 +171,7 @@ export default function VenuesPage() {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               disabled={busy !== null}
-              className="mt-1 block w-full text-sm text-fg file:mr-3 file:rounded-lg file:border-0 file:bg-fg/10 file:px-3 file:py-2 file:text-fg"
+              className="mt-1 block w-full text-sm text-fg file:mr-3 file:min-h-11 file:rounded-lg file:border-0 file:bg-fg/10 file:px-3 file:py-2 file:text-fg"
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 event.target.value = "";
@@ -220,8 +220,8 @@ export default function VenuesPage() {
           {venues.map((venue) => (
             <li key={venue.id}>
               <Link to={`/dashboard/venues/${venue.id}`} className="block rounded-2xl border border-border bg-surface p-4 shadow-card hover:bg-surface-2 dark:shadow-none">
-                <p className="font-medium text-fg">{venue.name}</p>
-                <p className="text-sm text-fg/65">/{venue.slug}</p>
+                <p className="break-words font-medium text-fg">{venue.name}</p>
+                <p className="break-words text-sm text-fg/65">/{venue.slug}</p>
               </Link>
             </li>
           ))}

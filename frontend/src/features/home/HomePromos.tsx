@@ -15,7 +15,7 @@ export function HomePromos({
   timeZone: string;
 }) {
   return (
-    <div id="promotions" className="w-full border-t border-white/20 pt-5 md:w-72 md:shrink-0 md:border-l md:border-t-0 md:pl-8 md:pt-0 lg:w-80 xl:w-96" aria-labelledby="promotions-heading">
+    <div id="promotions" className="w-full border-t border-white/20 pt-5 md:w-72 md:shrink-0 md:border-l md:border-t-0 md:pl-8 md:pt-0 lg:w-80 xl:w-96 reveal-right" aria-labelledby="promotions-heading">
       <h2 id="promotions-heading" className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-[#c6f54e]">
         <Tag className="h-4 w-4" aria-hidden="true" />
         Promotion codes
@@ -32,7 +32,7 @@ export function HomePromos({
             <li key={promotion.id}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="break-all font-display text-2xl font-semibold text-white">{promotion.code}</p>
+                  <p className="break-all font-display text-xl font-semibold text-white sm:text-2xl">{promotion.code}</p>
                   <p className="mt-1 text-sm font-semibold text-[#c6f54e]">
                     {promotion.discountType === "percent" ? `${promotion.discountValue}% off` : <Money amount={promotion.discountValue} currency={currency} />}
                     {promotion.venueId ? "" : " · all venues"}
@@ -60,7 +60,7 @@ function CopyCode({ code }: { code: string }) {
   return (
     <button
       type="button"
-      className="shrink-0 rounded-xl border border-white/40 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-white/10"
+      className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl border border-white/40 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-white/10"
       onClick={() => {
         void navigator.clipboard.writeText(code).then(() => {
           setCopied(true);

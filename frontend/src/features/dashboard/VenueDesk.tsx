@@ -60,7 +60,7 @@ export default function VenueDesk() {
         </div>
       ) : (
         <>
-          <h1 className="font-display text-3xl text-fg">{venue.name}</h1>
+          <h1 className="break-words font-display text-2xl text-fg sm:text-3xl">{venue.name}</h1>
           <nav className="mt-4 flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface-2 p-1" aria-label="Venue sections">
             {sections
               .filter((item) => (item !== "incentives" && item !== "rates") || admin)
@@ -69,7 +69,7 @@ export default function VenueDesk() {
                   key={item}
                   to={item === "details" ? `/dashboard/venues/${venueId}` : `/dashboard/venues/${venueId}/${item}`}
                   end={item === "details"}
-                  className={({ isActive }) => `shrink-0 rounded-lg px-3 py-2 text-sm capitalize ${isActive ? "bg-surface font-medium text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
+                  className={({ isActive }) => `inline-flex min-h-11 shrink-0 items-center rounded-lg px-3.5 py-2 text-sm capitalize ${isActive ? "bg-surface font-medium text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
                 >
                   {item}
                 </NavLink>

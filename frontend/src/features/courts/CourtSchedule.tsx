@@ -102,9 +102,9 @@ export function SocialTimes({ times, timeZone, now, slug, courtNumber }: { times
             time.totalPlayers >= allowed
           );
           return (
-          <li key={time.id} className="rounded-2xl border border-accent-text/40 px-3 py-2">
+          <li key={time.id} className="min-w-0 rounded-2xl border border-accent-text/40 px-3 py-2">
             <p className="text-sm font-semibold text-fg">{formatVenueDay(time.startTime, timeZone)}</p>
-            <p className="whitespace-nowrap text-sm text-fg">{formatVenueRange(time.startTime, time.endTime, timeZone)}</p>
+            <p className="break-words text-sm text-fg">{formatVenueRange(time.startTime, time.endTime, timeZone)}</p>
             <p className="text-sm text-fg/80">{time.players === 0 ? "No one on this court yet" : `${time.players} of ${each} on this court`}</p>
             {typeof time.totalPlayers === "number" && allowed > 0 ? (
               <p className="text-sm text-fg/70">
@@ -149,10 +149,10 @@ export function upcomingBookings<T extends { startTime: string; endTime: string 
 
 export function BookedTime({ start, end, timeZone, unpaid = false }: { start: string; end: string; timeZone: string; unpaid?: boolean }) {
   return (
-    <p className={`text-sm ${unpaid ? "text-amber-800 dark:text-amber-100" : "text-fg"}`}>
+    <p className={`break-words text-sm ${unpaid ? "text-amber-800 dark:text-amber-100" : "text-fg"}`}>
       <span className={`font-semibold ${unpaid ? "text-amber-700 dark:text-amber-200" : ""}`}>{unpaid ? "Held" : "Booked"}</span>
       <span className="text-fg-muted"> · </span>
-      <span className="whitespace-nowrap">{formatVenueRange(start, end, timeZone)}</span>
+      <span>{formatVenueRange(start, end, timeZone)}</span>
     </p>
   );
 }
@@ -296,7 +296,7 @@ export function compactSlotLabel(startIso: string, endIso: string, timeZone: str
 
 const freeTrack = "bg-inset";
 const closedBand = "bg-surface-2 bg-[repeating-linear-gradient(-45deg,rgb(var(--fg)/0.28)_0_3px,transparent_3px_7px)]";
-const chartColumns = "grid-cols-[7.5rem_minmax(28rem,1fr)]";
+const chartColumns = "grid-cols-[5.5rem_minmax(24rem,1fr)] sm:grid-cols-[7.5rem_minmax(28rem,1fr)]";
 
 function ChartLegend() {
   const items = [
@@ -363,8 +363,8 @@ export function DayChart({ schedule, now, compact = false, collapsible = false }
       <div id={collapsible ? "day-chart-panel" : undefined}>
       <p className="mt-1 text-sm text-fg-muted">Each booking shows its time above its block.</p>
       <ChartLegend />
-      <div className="mt-4 overflow-x-auto">
-      <div className="min-w-[36rem]">
+      <div className="mt-4 overflow-x-auto overscroll-x-contain pb-2">
+      <div className="min-w-[30rem] sm:min-w-[36rem]">
       <div className={`grid text-[11px] tabular-nums text-fg-muted ${chartColumns}`}>
         <span className="sticky left-0 z-20 bg-canvas" />
         <div className="relative h-4">
@@ -434,7 +434,7 @@ export function DayChart({ schedule, now, compact = false, collapsible = false }
                         >
                           {label}
                         </span>
-                        <span className="pointer-events-none absolute bottom-[calc(100%+0.35rem)] left-1/2 z-20 hidden w-max max-w-[16rem] -translate-x-1/2 rounded-lg bg-canvas px-2.5 py-1.5 text-left text-xs font-medium leading-snug text-fg shadow-lg group-hover:block group-focus-visible:block">
+                        <span className="pointer-events-none absolute bottom-[calc(100%+0.35rem)] left-1/2 z-20 hidden w-max max-w-[16rem] -translate-x-1/2 rounded-lg bg-canvas px-2.5 py-1.5 text-left text-xs font-medium leading-snug text-fg shadow-lg group-hover:block group-focus:block group-focus-visible:block">
                           {tip}
                         </span>
                       </button>

@@ -71,7 +71,7 @@ export function FaqPage() {
                   <button
                     id={buttonId}
                     type="button"
-                    className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left text-base font-medium text-fg hover:bg-surface-2"
+                    className="flex min-h-11 w-full items-start justify-between gap-3 px-4 py-3.5 text-left text-base font-medium text-fg transition hover:bg-surface-2 sm:gap-4 sm:px-5 sm:py-4"
                     aria-expanded={expanded}
                     aria-controls={panelId}
                     onClick={() => setOpen((current) => {
@@ -87,11 +87,11 @@ export function FaqPage() {
                       }
                     }}
                   >
-                    <span>{item.question}</span>
+                    <span className="min-w-0 break-words">{item.question}</span>
                     <ChevronDown className={`mt-1 h-4 w-4 shrink-0 text-accent-text transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
                   </button>
                 </h2>
-                <div id={panelId} role="region" aria-labelledby={buttonId} hidden={!expanded} className="px-5 pb-4 text-sm leading-relaxed text-fg/80">
+                <div id={panelId} role="region" aria-labelledby={buttonId} hidden={!expanded} className="break-words px-4 pb-4 text-sm leading-relaxed text-fg/80 sm:px-5">
                   {item.answer}
                 </div>
               </div>

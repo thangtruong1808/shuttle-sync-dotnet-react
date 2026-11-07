@@ -255,7 +255,7 @@ export function FriendPanel({
                           value={draftName}
                           maxLength={80}
                           disabled={savingId === friend.id}
-                          className="mt-1 w-full rounded-2xl border border-fg/15 bg-inset px-3 py-2 text-fg outline-none focus:border-accent-text focus-visible:ring-2 focus-visible:ring-accent-text/30 disabled:opacity-60"
+                          className="mt-1 min-h-11 w-full rounded-2xl border border-fg/15 bg-inset px-3 py-2 text-base text-fg outline-none focus:border-accent-text focus-visible:ring-2 focus-visible:ring-accent-text/30 disabled:opacity-60 sm:text-sm"
                           onChange={(event) => setDraftName(event.target.value)}
                         />
                       </label>
@@ -310,7 +310,7 @@ export function FriendPanel({
                     value={name}
                     disabled={paying || waiting}
                     maxLength={80}
-                    className="mt-1 w-full rounded-2xl border border-fg/15 bg-inset px-3 py-2 text-fg outline-none focus:border-accent-text focus-visible:ring-2 focus-visible:ring-accent-text/30 disabled:opacity-60"
+                    className="mt-1 min-h-11 w-full rounded-2xl border border-fg/15 bg-inset px-3 py-2 text-base text-fg outline-none focus:border-accent-text focus-visible:ring-2 focus-visible:ring-accent-text/30 disabled:opacity-60 sm:text-sm"
                     onChange={(event) => setNames((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
                   />
                 </label>
@@ -356,7 +356,7 @@ export function FriendPanel({
                   key={percent}
                   type="button"
                   disabled={paying || waiting || maxPoints === 0}
-                  className={`rounded-full px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg" : "border border-fg/15 text-fg"}`}
+                  className={`min-h-11 min-w-11 rounded-full px-3.5 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg" : "border border-fg/15 text-fg"}`}
                   onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}
                 >
                   {percent}%

@@ -147,14 +147,14 @@ function ClosureRow({ venueId, venueName, courts, row, onChanged }: { venueId: s
   return (
     <li className="grid gap-3 rounded-2xl border border-fg/10 p-3 text-sm text-fg">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-fg">{row.courtName}</span>
+        <span className="break-words text-fg">{row.courtName}</span>
         {row.repeatsDaily ? (
           <span>Every day from {prettyDay(row.fromDate || form.date)}{row.untilDate ? ` to ${prettyDay(row.untilDate)}` : ""}</span>
         ) : (
           <span>{formatVenueDay(row.startTime, zone)}</span>
         )}
         <span>{formatVenueRange(row.startTime, row.endTime, zone)}</span>
-        <span>{row.reason}</span>
+        <span className="break-words">{row.reason}</span>
         <Button variant="secondary" disabled={busy !== null} onClick={() => { setMessage(null); setEditing((open) => !open); }}>Edit</Button>
         <Button variant="danger" loading={busy === "delete"} disabled={busy !== null && busy !== "delete"} onClick={() => {
           void run("delete", async () => {

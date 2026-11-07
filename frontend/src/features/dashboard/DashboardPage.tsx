@@ -66,8 +66,8 @@ export default function DashboardPage() {
               {venues.map((venue) => (
                 <li key={venue.id}>
                   <Link to={`/dashboard/venues/${venue.id}`} className="block rounded-2xl border border-border bg-surface p-4 shadow-card hover:bg-surface-2 dark:shadow-none">
-                    <p className="font-medium text-fg">{venue.name}</p>
-                    <p className="text-sm text-fg-muted">{[venue.suburb, venue.state].filter(Boolean).join(", ") || venue.slug}</p>
+                    <p className="break-words font-medium text-fg">{venue.name}</p>
+                    <p className="break-words text-sm text-fg-muted">{[venue.suburb, venue.state].filter(Boolean).join(", ") || venue.slug}</p>
                   </Link>
                 </li>
               ))}

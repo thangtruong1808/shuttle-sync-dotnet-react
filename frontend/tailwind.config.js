@@ -25,7 +25,7 @@ export default {
         },
       },
       fontSize: {
-        display: ["clamp(2.5rem, 5vw, 3.5rem)", { lineHeight: "1.05", letterSpacing: "-0.02em" }],
+        display: ["clamp(1.875rem, 4.8vw, 3.5rem)", { lineHeight: "1.08", letterSpacing: "-0.02em" }],
       },
       boxShadow: {
         card: "0 1px 2px rgb(var(--shadow) / 0.06), 0 4px 16px -4px rgb(var(--shadow) / 0.08)",

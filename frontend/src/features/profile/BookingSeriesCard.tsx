@@ -89,7 +89,7 @@ export function SeriesCard({ weeks, topUps = [], open, onToggle, openWeek, onOpe
   return (
     <li className="rounded-2xl border border-border bg-surface p-4 shadow-card dark:shadow-none">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <button type="button" className="min-w-0 flex-1 rounded-xl px-1 py-1 text-left transition-colors hover:bg-fg/5" aria-expanded={open} onClick={onToggle}>
+        <button type="button" className="min-h-11 min-w-0 flex-1 rounded-xl px-1 py-1 text-left transition-colors hover:bg-fg/5" aria-expanded={open} onClick={onToggle}>
           <span className="flex items-start gap-2">
             <ChevronDown className={`mt-1 h-4 w-4 shrink-0 text-fg transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
             <span className="min-w-0">
@@ -102,7 +102,7 @@ export function SeriesCard({ weeks, topUps = [], open, onToggle, openWeek, onOpe
         </button>
         <div className="flex w-full shrink-0 flex-col gap-2 rounded-xl border border-border bg-inset p-2 sm:w-auto">
           {nextUnpaid ? (
-            <Link to={withSavedPromo(`/${sample.venueSlug}/book/group/${sample.groupId}?bookings=${nextUnpaid.filter((court) => court.status === "pending").map((court) => court.bookingId).join(",")}`, sample.groupId)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
+            <Link to={withSavedPromo(`/${sample.venueSlug}/book/group/${sample.groupId}?bookings=${nextUnpaid.filter((court) => court.status === "pending").map((court) => court.bookingId).join(",")}`, sample.groupId)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto">
               <CreditCard className="h-4 w-4 shrink-0" aria-hidden="true" />
               Pay next week
             </Link>
@@ -171,8 +171,8 @@ export function SeriesCard({ weeks, topUps = [], open, onToggle, openWeek, onOpe
       {seriesError ? <p className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/15 px-3 py-2 text-sm font-medium leading-relaxed text-rose-800 dark:text-rose-100" role="alert">{seriesError}</p> : null}
       {open ? (
         <div className="mt-4">
-          <label className="flex items-start gap-2 text-sm text-fg">
-            <input type="checkbox" className="mt-1 accent-accent-text" checked={Boolean(sample.repeatHold)} disabled={repeatBusy || seriesBusy} onChange={(event) => void onRepeat(event.target.checked)} />
+          <label className="flex min-h-11 items-start gap-2.5 py-1 text-sm text-fg">
+            <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-accent-text" checked={Boolean(sample.repeatHold)} disabled={repeatBusy || seriesBusy} onChange={(event) => void onRepeat(event.target.checked)} />
             <span>Keep {horizon} {horizon === 1 ? "week" : "weeks"} ahead. When one week starts, the next free week is held for you. You still pay each week before 24 hours of that session.</span>
           </label>
           {repeatBusy ? <span className="mt-2 inline-flex items-center gap-2 text-sm text-fg" role="status"><Spinner className="h-3.5 w-3.5" /> Saving repeat</span> : null}
@@ -190,7 +190,7 @@ export function SeriesCard({ weeks, topUps = [], open, onToggle, openWeek, onOpe
               const allPaid = payNote === null;
               return (
                 <li key={key} className={`rounded-xl border border-l-4 border-fg/10 ${allPaid ? "border-l-accent/70" : "border-l-amber-300/70"}`}>
-                  <button type="button" className="flex w-full flex-col gap-2 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-accent/10 sm:flex-row sm:items-center sm:justify-between" aria-expanded={opened} onClick={() => onOpenWeek(opened ? null : key)}>
+                  <button type="button" className="flex min-h-11 w-full flex-col gap-2 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-accent/10 sm:flex-row sm:items-center sm:justify-between" aria-expanded={opened} onClick={() => onOpenWeek(opened ? null : key)}>
                     <span className="min-w-0">
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="font-medium text-fg">Week {yearWeek.week} of {yearWeek.year}</span>

@@ -2,7 +2,7 @@ import { forwardRef, useId, useState, type InputHTMLAttributes, type ReactNode, 
 import { Calendar, CircleAlert, Eye, EyeOff } from "lucide-react";
 
 export const controlClass =
-  "w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm text-fg shadow-sm outline-none transition-colors placeholder:text-fg-muted/70 focus:border-accent-text focus:ring-2 focus:ring-accent-text/20 disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-rose-500";
+  "min-h-11 w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-base text-fg shadow-sm outline-none transition-colors placeholder:text-fg-muted/70 focus:border-accent-text focus:ring-2 focus:ring-accent-text/20 disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-rose-500 sm:text-sm";
 
 export function Field({
   label,
@@ -64,7 +64,7 @@ export function PasswordInput({ className = "", disabled, ...props }: Omit<Input
       <input {...props} disabled={disabled} type={visible ? "text" : "password"} className={`${controlClass} pr-11 ${className}`} />
       <button
         type="button"
-        className="absolute right-1.5 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-fg-muted transition hover:bg-fg/5 hover:text-fg disabled:cursor-not-allowed disabled:opacity-50"
+        className="absolute right-1 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-fg-muted transition hover:bg-fg/5 hover:text-fg disabled:cursor-not-allowed disabled:opacity-50"
         aria-label={visible ? "Hide password" : "Show password"}
         aria-pressed={visible}
         disabled={disabled}

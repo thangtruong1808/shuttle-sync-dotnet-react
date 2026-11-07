@@ -102,7 +102,7 @@ export function OverviewSection() {
               <Skeleton className="h-12" />
             </div>
           ) : nextBooking ? (
-            <p className="text-sm text-fg">
+            <p className="break-words text-sm text-fg">
               Next booking: {nextBooking.venueName}, {nextBooking.place}, {formatVenueDay(nextBooking.startTime, nextBooking.timeZone)}, {formatVenueRange(nextBooking.startTime, nextBooking.endTime, nextBooking.timeZone)}
             </p>
           ) : (
@@ -195,7 +195,7 @@ export function DetailsSection() {
               <span className="block text-sm font-medium text-fg" id="profile-photo-label">Photo</span>
               <p className="mt-1 text-sm text-fg-muted">JPEG, PNG, or WebP, up to 2 MB.</p>
               <label className={`group relative mt-3 inline-flex max-w-full rounded-xl focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent-text ${busy ? "cursor-not-allowed" : "cursor-pointer"}`}>
-                <span className={`pointer-events-none inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-fg shadow-sm ${busy ? "opacity-60" : "group-hover:bg-surface-2"}`} aria-hidden="true">
+                <span className={`pointer-events-none inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-fg shadow-sm ${busy ? "opacity-60" : "group-hover:bg-surface-2"}`} aria-hidden="true">
                   {uploading ? <Spinner /> : null}
                   Upload photo
                 </span>
@@ -223,7 +223,7 @@ export function DetailsSection() {
           </div>
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-muted">
             <span>Email</span>
-            <span className="font-medium text-fg">{user.email}</span>
+            <span className="break-all font-medium text-fg">{user.email}</span>
             {user.emailVerified ? <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent-text">Verified</span> : <span className="text-xs text-fg/50">Not verified</span>}
           </p>
           {message ? <Alert tone={message.tone === "ok" ? "success" : "danger"}>{message.text}</Alert> : null}

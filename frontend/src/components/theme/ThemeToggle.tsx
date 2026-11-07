@@ -23,7 +23,7 @@ export function ThemeToggle({ showLabels = false, className = "" }: { showLabels
             aria-label={`${option.label} theme`}
             title={`${option.label} theme`}
             onClick={() => setTheme(option.value)}
-            className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg text-xs font-medium transition-colors ${showLabels ? "flex-1 px-2.5" : "w-8"} ${
+            className={`inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-medium transition-colors ${showLabels ? "min-h-10 flex-1 px-2.5" : "h-9 w-9"} ${
               active ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"
             }`}
           >

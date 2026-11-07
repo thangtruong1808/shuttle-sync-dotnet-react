@@ -49,7 +49,7 @@ export function RecommendationBell() {
       to="/profile/recommendations"
       title={label}
       aria-label={label}
-      className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-accent-text/40 text-accent-text hover:bg-accent/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text"
+      className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-accent-text/40 text-accent-text hover:bg-accent/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text"
     >
       <Sparkles className="h-4 w-4" aria-hidden="true" />
       <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-bold text-accent-fg">

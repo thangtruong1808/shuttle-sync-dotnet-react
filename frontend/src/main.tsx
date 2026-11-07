@@ -4,6 +4,7 @@ import { Provider } from "react-redux";
 import { store } from "./app/store";
 import { ThemeProvider } from "./components/theme/ThemeProvider";
 import "./index.css";
+import "./styles/scroll-animations.css";
 import App from "./App.tsx";
 
 createRoot(document.getElementById("root")!).render(

@@ -234,10 +234,10 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
       <ul className="mt-3 grid gap-2 sm:grid-cols-2">
         {courts.map((court) => (
           <li key={court.bookingId}>
-            <label className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm text-fg">
+            <label className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2.5 text-sm text-fg">
               <input
                 type="checkbox"
-                className="h-4 w-4 accent-accent-text"
+                className="h-4 w-4 shrink-0 accent-accent-text"
                 checked={checked.has(court.courtId)}
                 disabled={locked || rescheduling || sessionCourt !== null || changingHours || hourCourt !== null}
                 onChange={() => {
@@ -251,16 +251,16 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
                 }}
               />
               <span className={`min-w-0 ${!checked.has(court.courtId) ? "text-fg/50 line-through" : ""}`}>
-                <span className="block">{court.courtName}</span>
+                <span className="block truncate">{court.courtName}</span>
                 <span className="block text-xs text-fg/60">{formatVenueRange(court.startTime, court.endTime, court.timeZone)}</span>
               </span>
-              <span className="ml-auto text-xs text-fg/60">{court.status === "confirmed" ? "Paid" : "Held"}</span>
+              <span className="ml-auto shrink-0 text-xs text-fg/60">{court.status === "confirmed" ? "Paid" : "Held"}</span>
             </label>
-            <div className="mt-1 flex flex-wrap gap-3">
+            <div className="mt-1 flex flex-wrap gap-2">
               <button
                 type="button"
                 aria-expanded={sessionId === court.bookingId}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-accent-text hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-accent-text hover:bg-fg/5 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={locked || dirty}
                 onClick={() => {
                   setRescheduling(false);
@@ -271,14 +271,14 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
                   setBlock(null);
                 }}
               >
-                <CalendarClock className="h-3 w-3" aria-hidden="true" />
+                <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
                 Reschedule
-                <ChevronDown className={`h-3 w-3 transition-transform ${sessionId === court.bookingId ? "rotate-180" : ""}`} aria-hidden="true" />
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${sessionId === court.bookingId ? "rotate-180" : ""}`} aria-hidden="true" />
               </button>
               <button
                 type="button"
                 aria-expanded={hourBookingId === court.bookingId}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-accent-text hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-accent-text hover:bg-fg/5 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={locked || dirty}
                 onClick={() => {
                   setRescheduling(false);
@@ -289,9 +289,9 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
                   setBlock(null);
                 }}
               >
-                <Clock className="h-3 w-3" aria-hidden="true" />
+                <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                 Change hours
-                <ChevronDown className={`h-3 w-3 transition-transform ${hourBookingId === court.bookingId ? "rotate-180" : ""}`} aria-hidden="true" />
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${hourBookingId === court.bookingId ? "rotate-180" : ""}`} aria-hidden="true" />
               </button>
             </div>
           </li>
@@ -431,13 +431,13 @@ export function WeekEditor({ courts, pendingTopUp = [], onChanged }: { courts: C
       <div className="mt-3 flex flex-col gap-2 rounded-xl border border-border bg-inset p-2 sm:flex-row sm:flex-wrap">
         <Button type="button" variant="danger" className="w-full sm:w-auto" loading={deleting} disabled={locked && !deleting} onClick={() => void removeWeek()}>{confirmDelete ? "Confirm delete" : "Delete this week"}</Button>
         {availability === "full" ? (
-          <button type="button" aria-disabled="true" aria-describedby={reasonId} className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-semibold text-fg-muted sm:w-auto" onClick={(event) => event.preventDefault()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") event.preventDefault(); }}>
+          <button type="button" aria-disabled="true" aria-describedby={reasonId} className="inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-semibold text-fg-muted sm:w-auto" onClick={(event) => event.preventDefault()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") event.preventDefault(); }}>
             Add another court
           </button>
         ) : availability === "loading" ? (
           <Button type="button" variant="secondary" className="w-full sm:w-auto" loading disabled>Add another court</Button>
         ) : (
-          <Link to={`/${first.venueSlug}/book?${addParams}`} className="inline-flex w-full items-center justify-center rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-fg hover:bg-surface-2 sm:w-auto">Add another court</Link>
+          <Link to={`/${first.venueSlug}/book?${addParams}`} className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-fg hover:bg-surface-2 sm:w-auto">Add another court</Link>
         )}
         {pendingTopUp.length > 0 ? (
           <Link to={withSavedPromo(`/${first.venueSlug}/book/group/${first.groupId}?bookings=${pendingTopUp.map((court) => court.bookingId).join(",")}`, first.groupId)} className={buttonClass("primary", "md", "w-full sm:w-auto")}>

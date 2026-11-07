@@ -50,7 +50,7 @@ export function SecuritySection() {
           {(logins ?? []).map((login) => (
             <li key={login.provider} className="rounded-xl border border-border bg-inset px-3 py-2 text-sm">
               <span className="font-medium capitalize text-fg">{login.provider}</span>
-              <span className="ml-2 text-fg/65">{login.emailAtLink}</span>
+              <span className="ml-2 break-all text-fg/65">{login.emailAtLink}</span>
             </li>
           ))}
         </ul>
@@ -62,7 +62,7 @@ export function SecuritySection() {
                 <a
                   key={provider}
                   href={providerStartUrl(provider)}
-                  className="inline-flex items-center rounded-xl border border-border bg-inset px-3 py-1.5 text-sm font-medium text-fg transition hover:border-brand/50"
+                  className="inline-flex min-h-11 items-center rounded-xl border border-border bg-inset px-3.5 py-2 text-sm font-medium text-fg transition hover:border-brand/50"
                 >
                   Connect {provider === "github" ? "GitHub" : "Google"}
                 </a>
@@ -97,10 +97,10 @@ export function SecuritySection() {
             {sessions.map((session) => (
               <li key={session.id} className="rounded-2xl border border-border bg-inset px-4 py-3 text-sm">
                 <p className="font-medium text-fg">{session.isCurrent ? "This device" : "Other device"}</p>
-                <p className="mt-1 text-fg/65">{session.userAgent ?? "Unknown browser"}</p>
-                <p className="text-fg/65">{session.ipAddress ?? "Unknown address"} · {formatVenueDateTime(session.lastUsedAt, "Australia/Melbourne")}</p>
+                <p className="mt-1 break-words text-fg/65">{session.userAgent ?? "Unknown browser"}</p>
+                <p className="break-words text-fg/65">{session.ipAddress ?? "Unknown address"} · {formatVenueDateTime(session.lastUsedAt, "Australia/Melbourne")}</p>
                 <Button
-                  className="mt-3"
+                  className="mt-3 w-full sm:w-auto"
                   variant="danger"
                   icon={<LogOut className="h-4 w-4" aria-hidden="true" />}
                   loading={pending === session.id}

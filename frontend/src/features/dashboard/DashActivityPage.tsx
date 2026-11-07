@@ -75,10 +75,10 @@ export function ActivityPage() {
       rowKey={(row: DashActivity) => row.id}
       extra={
         <form className="mt-4 flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); setFiltering(true); setApplied({ userId: admin ? userId.trim() : "", from, to }); setTick((value) => value + 1); setNote("Filters applied."); }}>
-          {admin ? <input className={`${control} max-w-xs`} placeholder="Staff user id" aria-label="Staff user id" value={userId} disabled={filtering} onChange={(event) => setUserId(event.target.value)} /> : null}
-          <PickerInput className={control} type="date" value={from} disabled={filtering} onChange={(event) => setFrom(event.target.value)} aria-label="From" />
-          <PickerInput className={control} type="date" value={to} disabled={filtering} onChange={(event) => setTo(event.target.value)} aria-label="To" />
-          <Button type="submit" variant="secondary" loading={filtering}>Filter</Button>
+          {admin ? <input className={`${control} sm:max-w-xs`} placeholder="Staff user id" aria-label="Staff user id" value={userId} disabled={filtering} onChange={(event) => setUserId(event.target.value)} /> : null}
+          <PickerInput className={`${control} sm:w-auto`} type="date" value={from} disabled={filtering} onChange={(event) => setFrom(event.target.value)} aria-label="From" />
+          <PickerInput className={`${control} sm:w-auto`} type="date" value={to} disabled={filtering} onChange={(event) => setTo(event.target.value)} aria-label="To" />
+          <Button type="submit" variant="secondary" className="w-full sm:w-auto" loading={filtering}>Filter</Button>
           <Success message={note} />
         </form>
       }
@@ -87,14 +87,14 @@ export function ActivityPage() {
           label: "Staff",
           cell: (row) => (
             <div className="min-w-0">
-              <p className="font-medium text-fg">{row.displayName || row.userEmail || "Staff"}</p>
-              {row.displayName && row.userEmail ? <p className="text-xs text-fg/60">{row.userEmail}</p> : null}
+              <p className="break-all font-medium text-fg">{row.displayName || row.userEmail || "Staff"}</p>
+              {row.displayName && row.userEmail ? <p className="break-all text-xs text-fg/60">{row.userEmail}</p> : null}
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 {row.role ? <Tag value={row.role} /> : null}
                 {admin && row.userId && (applied.userId !== row.userId || filtering) ? (
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 text-xs font-medium text-accent-text hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs font-medium text-accent-text hover:bg-fg/5 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={filtering}
                     onClick={() => { setFiltering(true); setUserId(row.userId!); setApplied({ userId: row.userId!, from, to }); setTick((value) => value + 1); setNote(`Showing ${row.displayName || row.userEmail || "this staff member"} only.`); }}
                   >
@@ -110,8 +110,8 @@ export function ActivityPage() {
           label: "Page",
           cell: (row) => (
             <div className="min-w-0">
-              <p className="text-fg">{row.title || activityPage(row.detail)}</p>
-              {activityPath(row) ? <p className="font-mono text-xs text-fg/55">{activityPath(row)}</p> : null}
+              <p className="break-words text-fg">{row.title || activityPage(row.detail)}</p>
+              {activityPath(row) ? <p className="break-all font-mono text-xs text-fg/55">{activityPath(row)}</p> : null}
             </div>
           ),
         },

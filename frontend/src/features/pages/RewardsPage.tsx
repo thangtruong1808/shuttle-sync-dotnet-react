@@ -6,7 +6,7 @@ import { Card, PageHeader } from "../../components/ui";
 function GuideCard({ title, children }: { title: string; children: ReactNode }) {
   return (
     <Card title={title}>
-      <div className="space-y-3 text-sm leading-relaxed text-fg/80">{children}</div>
+      <div className="space-y-3 break-words text-sm leading-relaxed text-fg/80">{children}</div>
     </Card>
   );
 }

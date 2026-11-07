@@ -14,7 +14,7 @@ export function BrandMark({ className = "h-8 w-8" }: { className?: string }) {
 
 export function Wordmark() {
   return (
-    <span className="font-display text-base font-semibold tracking-tight text-fg">
+    <span className="whitespace-nowrap font-display text-sm font-semibold tracking-tight text-fg min-[360px]:text-base">
       Shuttle <span className="text-accent-text">Sync</span>
     </span>
   );

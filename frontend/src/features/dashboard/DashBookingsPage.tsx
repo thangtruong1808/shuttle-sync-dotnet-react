@@ -23,20 +23,20 @@ export function BookingsPage() {
       rowKey={(row: DashBooking) => row.id}
       extra={
         <form className="mt-4 flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); setFiltering(true); setApplied({ venueId, status }); setTick((value) => value + 1); setNote("Filters applied."); }}>
-          <select className={`${control} max-w-xs`} value={venueId} disabled={filtering} onChange={(event) => setVenueId(event.target.value)}>
+          <select className={`${control} sm:max-w-xs`} value={venueId} disabled={filtering} onChange={(event) => setVenueId(event.target.value)}>
             <option value="">All venues</option>
             {venues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
           </select>
-          <select className={`${control} max-w-[12rem]`} value={status} disabled={filtering} onChange={(event) => setStatus(event.target.value)}>
+          <select className={`${control} sm:max-w-[12rem]`} value={status} disabled={filtering} onChange={(event) => setStatus(event.target.value)}>
             <option value="">Any status</option>
             {["pending", "confirmed", "cancelled", "completed", "no_show", "expired"].map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
-          <Button type="submit" variant="secondary" loading={filtering}>Filter</Button>
+          <Button type="submit" variant="secondary" className="w-full sm:w-auto" loading={filtering}>Filter</Button>
           <Success message={note} />
         </form>
       }
       columns={[
-        { label: "Player", cell: (row) => <span className="text-fg">{row.userEmail}</span> },
+        { label: "Player", cell: (row) => <span className="break-all text-fg">{row.userEmail}</span> },
         { label: "Venue", cell: (row) => row.venueName },
         { label: "Type", cell: (row) => <Tag value={row.kind || "Court"} /> },
         { label: "Court", className: "whitespace-nowrap", cell: (row) => row.courtName },
@@ -59,7 +59,7 @@ function BookingActions({ row, onChanged }: { row: DashBooking; onChanged: (mess
     : [];
   if (next.length === 0) return <span className="text-fg/50">—</span>;
   return (
-    <div className="min-w-[11rem]">
+    <div className="min-w-0 sm:min-w-[11rem]">
       <div className="flex flex-wrap gap-2">
         {next.map((status) => (
           <Button key={status} variant="secondary" loading={busy === status} disabled={busy !== null && busy !== status} onClick={() => {

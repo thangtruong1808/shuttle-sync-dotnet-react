@@ -71,7 +71,7 @@ export function PromotionsPage() {
                   key={venue.id}
                   type="button"
                   aria-pressed={isSelected}
-                  className={`shrink-0 rounded-lg px-3 py-2 text-sm transition ${isSelected ? "bg-surface font-medium text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
+                  className={`min-h-11 shrink-0 rounded-lg px-3 py-2 text-sm transition ${isSelected ? "bg-surface font-medium text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
                   onClick={() => {
                     setSelectedSlug(venue.slug);
                     setError(null);
@@ -124,13 +124,13 @@ export function PromotionsPage() {
             <Card
               title={currentOffers.venue.name}
               description={`${currentOffers.venue.pointsPerDollar} points = ${currentOffers.venue.currency} 1 · late cancel ${Number(currentOffers.venue.lateCancelFeePercent.toFixed(2))}%`}
-              actions={<Link to={`/${currentOffers.venue.slug}`} className="text-sm font-semibold text-accent-text hover:underline">View courts</Link>}
+              actions={<Link to={`/${currentOffers.venue.slug}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-accent-text hover:underline">View courts</Link>}
             >
               <h3 className="text-sm font-semibold text-fg">Promotion codes</h3>
               {own.length === 0 ? (
                 <p className="mt-2 text-sm text-fg-muted">{shared.length > 0 ? "No code just for this venue. Codes in Every venue still apply." : "No promotion code for this venue right now."}</p>
               ) : (
-                <ul className="mt-2 grid gap-2">
+                <ul className="mt-2 grid gap-2 sm:grid-cols-2">
                   {own.map((code) => (
                     <CodeCard key={code.id} code={code} currency={currentOffers.venue.currency} />
                   ))}
@@ -140,7 +140,7 @@ export function PromotionsPage() {
               {currentOffers.incentives.length === 0 ? (
                 <p className="mt-2 text-sm text-fg-muted">No incentive points on today's date.</p>
               ) : (
-                <ul className="mt-2 grid gap-2">
+                <ul className="mt-2 grid gap-2 sm:grid-cols-2">
                   {currentOffers.incentives.map((incentive) => (
                     <li key={incentive.id} className="rounded-2xl border border-border bg-surface-2 px-3 py-2.5">
                       <Badge tone="accent">+{incentive.points} pts</Badge>
@@ -169,7 +169,7 @@ function CodeCard({ code, currency }: { code: Promotion; currency: string }) {
       </div>
       <button
         type="button"
-        className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-semibold text-fg hover:bg-canvas sm:w-auto"
+        className="min-h-11 w-full shrink-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-fg transition hover:bg-canvas sm:w-auto"
         onClick={() => {
           void navigator.clipboard.writeText(code.code).then(() => {
             setCopied(true);

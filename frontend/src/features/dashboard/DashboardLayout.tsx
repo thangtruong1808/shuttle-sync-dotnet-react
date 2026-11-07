@@ -61,7 +61,7 @@ export default function DashboardLayout() {
   const user = useSelector((state: RootState) => state.auth.user);
   const location = useLocation();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(() => (typeof window === "undefined" ? true : window.innerWidth >= 1024));
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
@@ -76,7 +76,7 @@ export default function DashboardLayout() {
 
   if (status === "unknown") {
     return (
-      <div className="min-h-screen bg-canvas px-4 py-8" aria-busy="true">
+      <div className="min-h-dvh bg-canvas px-4 py-8" aria-busy="true">
         <span className="sr-only">Checking your session</span>
         <Skeleton className="h-40" />
       </div>
@@ -93,16 +93,16 @@ export default function DashboardLayout() {
 
   const title = pageTitle(location.pathname);
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${isActive ? "bg-accent/15 text-accent-text" : "text-fg-muted hover:bg-fg/5 hover:text-fg"}`;
+    `flex min-h-11 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${isActive ? "bg-accent/15 text-accent-text" : "text-fg-muted hover:bg-fg/5 hover:text-fg"}`;
 
   return (
-    <div className="flex min-h-screen flex-col bg-canvas text-fg">
+    <div className="flex min-h-dvh flex-col bg-canvas text-fg">
       <SkipLink />
-      <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-3 border-b border-border bg-canvas/85 px-4 backdrop-blur-md">
+      <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-2 border-b border-border bg-canvas/85 px-4 backdrop-blur-md sm:gap-3">
         <button
           type="button"
           title={open ? "Close sidebar" : "Open sidebar"}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface text-fg shadow-sm hover:bg-surface-2"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-fg shadow-sm hover:bg-surface-2"
           aria-expanded={open}
           aria-controls="dashboard-nav"
           onClick={() => setOpen((value) => !value)}
@@ -119,27 +119,27 @@ export default function DashboardLayout() {
             <li className="hidden text-fg-muted sm:block">
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </li>
-            <li className="truncate text-fg-muted">Dashboard</li>
-            <li aria-hidden="true"><ChevronRight className="h-4 w-4 text-fg-muted" /></li>
+            <li className="hidden truncate text-fg-muted min-[380px]:block">Dashboard</li>
+            <li aria-hidden="true" className="hidden min-[380px]:block"><ChevronRight className="h-4 w-4 text-fg-muted" /></li>
             <li className="truncate font-medium text-fg" aria-current="page">{title}</li>
           </ol>
         </nav>
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
           <ThemeToggle className="hidden sm:inline-flex" />
-          <div className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 shadow-sm">
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-accent/20 text-xs font-semibold text-accent-text" aria-hidden="true">{initials(user.displayName, user.email)}</span>
+          <div className="flex min-h-11 items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1.5 pr-2.5 shadow-sm sm:pr-3">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent/20 text-xs font-semibold text-accent-text" aria-hidden="true">{initials(user.displayName, user.email)}</span>
             <span className="hidden min-w-0 leading-tight md:block">
               <span className="block max-w-44 truncate text-sm font-medium text-fg">{user.displayName || user.email}</span>
               <span className="block text-xs capitalize text-fg-muted">{user.role}</span>
             </span>
-            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-accent-text">{user.rewardPoints} pts</span>
+            <span className="hidden rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-accent-text min-[360px]:inline-block">{user.rewardPoints} pts</span>
           </div>
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
         <aside
           id="dashboard-nav"
-          className={`${open ? "fixed bottom-0 top-16 z-30 flex w-64 flex-col border-r border-border bg-surface lg:sticky lg:bottom-auto lg:top-16 lg:h-[calc(100vh-4rem)]" : "hidden"}`}
+          className={`${open ? "fixed bottom-0 top-16 z-30 flex w-64 max-w-[calc(100vw-3rem)] flex-col border-r border-border bg-surface pb-[env(safe-area-inset-bottom)] lg:sticky lg:bottom-auto lg:top-16 lg:h-[calc(100dvh-4rem)] lg:pb-0" : "hidden"}`}
         >
           <nav className="flex flex-1 flex-col gap-5 overflow-auto px-3 py-5" aria-label="Dashboard">
             {groups.map((group) => {
@@ -165,7 +165,7 @@ export default function DashboardLayout() {
           </nav>
           <div className="mt-auto flex flex-col gap-1 border-t border-border px-3 py-3">
             <ThemeToggle showLabels className="mb-2 w-full sm:hidden" />
-            <NavLink to="/" title="Back to HomePage" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-fg-muted hover:bg-fg/5 hover:text-fg">
+            <NavLink to="/" title="Back to HomePage" className="flex min-h-11 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-fg-muted hover:bg-fg/5 hover:text-fg">
               <House className="h-4 w-4 shrink-0" aria-hidden="true" />
               Back to HomePage
             </NavLink>
@@ -174,7 +174,7 @@ export default function DashboardLayout() {
               title="Log out"
               disabled={leaving}
               aria-busy={leaving}
-              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-rose-700 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-200"
+              className="flex min-h-11 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-rose-700 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-200"
               onClick={() => {
                 setLeaving(true);
                 void dispatch(logout())

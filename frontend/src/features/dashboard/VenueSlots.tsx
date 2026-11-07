@@ -96,10 +96,10 @@ export function Slots({ venueId, currency, timeZone }: { venueId: string; curren
         <Field label="Court limit">
           <input className={control} type="number" min={1} max={courtTotal ?? 50} step={1} placeholder="All courts" value={draft.courtLimit} disabled={busy !== null} onChange={(event) => setDraft({ ...draft, courtLimit: event.target.value })} />
         </Field>
-        <label className="flex items-start gap-2 text-sm text-fg sm:col-span-2 lg:col-span-3">
+        <label className="flex min-h-11 cursor-pointer items-start gap-2 py-1 text-sm text-fg sm:col-span-2 lg:col-span-3">
           <input
             type="checkbox"
-            className="mt-0.5 accent-accent-text"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-accent-text"
             checked={draft.repeatWeekly}
             disabled={busy !== null}
             onChange={(event) => setDraft({ ...draft, repeatWeekly: event.target.checked })}
@@ -191,8 +191,8 @@ function SocialRow({ venueId, currency, row, onChanged }: { venueId: string; cur
           <Field label="Court limit">
             <input className={control} type="number" min={1} step={1} placeholder="All courts" value={form.courtLimit} disabled={busy !== null} onChange={(event) => setForm({ ...form, courtLimit: event.target.value })} />
           </Field>
-          <label className="flex items-start gap-2 text-sm text-fg sm:col-span-2">
-            <input type="checkbox" className="mt-0.5 accent-accent-text" checked={form.repeatWeekly} disabled={busy !== null} onChange={(event) => setForm({ ...form, repeatWeekly: event.target.checked })} />
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 py-1 text-sm text-fg sm:col-span-2">
+            <input type="checkbox" className="h-4 w-4 shrink-0 accent-accent-text" checked={form.repeatWeekly} disabled={busy !== null} onChange={(event) => setForm({ ...form, repeatWeekly: event.target.checked })} />
             <span>Repeat this slot weekly</span>
           </label>
           <div className="flex items-end">

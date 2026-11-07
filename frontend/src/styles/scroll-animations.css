@@ -1,0 +1,353 @@
+/* ==========================================================================
+   Shuttle Sync — Homepage Bidirectional Scroll Animations
+   --------------------------------------------------------------------------
+   Tweak all timing, easing, and distances using the CSS custom properties
+   in :root below. Only GPU-friendly properties (transform, opacity) are
+   animated to prevent layout shifts (CLS).
+   ========================================================================== */
+
+:root {
+  --reveal-duration: 700ms;
+  --reveal-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --reveal-distance: 42px;
+  --reveal-distance-sm: 28px;
+  --reveal-scale-from: 0.94;
+  --reveal-stagger-step: 85ms;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --reveal-duration: 560ms;
+    --reveal-distance: 24px;
+    --reveal-distance-sm: 16px;
+    --reveal-scale-from: 0.96;
+    --reveal-stagger-step: 60ms;
+  }
+}
+
+/* Prevent horizontal scrollbar when .reveal-left / .reveal-right translateX */
+html,
+body {
+  overflow-x: clip;
+}
+
+/* ==========================================================================
+   Top Scroll Progress Bar (Primary: animation-timeline: scroll(), JS fallback)
+   ========================================================================== */
+.scroll-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  height: 3px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--accent-text)),
+    rgb(var(--accent))
+  );
+  transform-origin: 0 50%;
+  transform: scaleX(var(--scroll-progress, 0));
+}
+
+@supports (animation-timeline: scroll()) {
+  .scroll-progress-bar {
+    animation: shuttle-scroll-progress linear both;
+    animation-timeline: scroll(root block);
+  }
+}
+
+@keyframes shuttle-scroll-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ==========================================================================
+   Hero Entrance & Subtle Background Parallax
+   ========================================================================== */
+.hero-load-fade {
+  animation: shuttle-hero-enter var(--reveal-duration) var(--reveal-ease) both;
+}
+
+.hero-load-delay-1 {
+  animation-delay: 90ms;
+}
+
+.hero-load-delay-2 {
+  animation-delay: 180ms;
+}
+
+@supports (animation-timeline: view()) {
+  .hero-parallax-bg {
+    animation: shuttle-hero-parallax linear both;
+    animation-timeline: view();
+    animation-range: contain 0% exit 100%;
+  }
+}
+
+@keyframes shuttle-hero-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--reveal-distance-sm), 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes shuttle-hero-parallax {
+  from {
+    transform: translate3d(0, -10px, 0) scale(1.03);
+  }
+  to {
+    transform: translate3d(0, 36px, 0) scale(1.1);
+  }
+}
+
+/* ==========================================================================
+   Staggered Child Index Variables (60–100ms sequence for cards, lists, grids)
+   ========================================================================== */
+.reveal-stagger > *:nth-child(1) { --stagger-index: 0; }
+.reveal-stagger > *:nth-child(2) { --stagger-index: 1; }
+.reveal-stagger > *:nth-child(3) { --stagger-index: 2; }
+.reveal-stagger > *:nth-child(4) { --stagger-index: 3; }
+.reveal-stagger > *:nth-child(5) { --stagger-index: 4; }
+.reveal-stagger > *:nth-child(6) { --stagger-index: 5; }
+.reveal-stagger > *:nth-child(7) { --stagger-index: 6; }
+.reveal-stagger > *:nth-child(8) { --stagger-index: 7; }
+.reveal-stagger > *:nth-child(9) { --stagger-index: 8; }
+.reveal-stagger > *:nth-child(10) { --stagger-index: 9; }
+.reveal-stagger > *:nth-child(11) { --stagger-index: 10; }
+.reveal-stagger > *:nth-child(12) { --stagger-index: 11; }
+
+/* ==========================================================================
+   1. Primary Pure-CSS Scroll-Driven Animations
+      Wrapped in @supports (animation-timeline: view())
+      Applies automatically when JS observer is not active, with inset view()
+      range so top sticky navbar and bottom edge don't hide the animation.
+   ========================================================================== */
+@supports (animation-timeline: view()) {
+  html:not(.js-scroll-reveal) .reveal-up,
+  html:not(.js-scroll-reveal) .reveal-down,
+  html:not(.js-scroll-reveal) .reveal-left,
+  html:not(.js-scroll-reveal) .reveal-right,
+  html:not(.js-scroll-reveal) .reveal-scale,
+  html:not(.js-scroll-reveal) .reveal-stagger > * {
+    animation-duration: 1ms;
+    animation-timing-function: var(--reveal-ease);
+    animation-fill-mode: both;
+    animation-timeline: view(block 14% 12%);
+    animation-range: entry 0% exit 100%;
+  }
+
+  html:not(.js-scroll-reveal) .reveal-up,
+  html:not(.js-scroll-reveal) .reveal-stagger > * {
+    animation-name: shuttle-view-up;
+  }
+
+  html:not(.js-scroll-reveal) .reveal-down {
+    animation-name: shuttle-view-down;
+  }
+
+  html:not(.js-scroll-reveal) .reveal-left {
+    animation-name: shuttle-view-left;
+  }
+
+  html:not(.js-scroll-reveal) .reveal-right {
+    animation-name: shuttle-view-right;
+  }
+
+  html:not(.js-scroll-reveal) .reveal-scale {
+    animation-name: shuttle-view-scale;
+  }
+}
+
+@keyframes shuttle-view-up {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, var(--reveal-distance), 0);
+  }
+  26%,
+  74% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, calc(var(--reveal-distance-sm) * -1), 0);
+  }
+}
+
+@keyframes shuttle-view-down {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, calc(var(--reveal-distance) * -1), 0);
+  }
+  26%,
+  74% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, var(--reveal-distance-sm), 0);
+  }
+}
+
+@keyframes shuttle-view-left {
+  0% {
+    opacity: 0;
+    transform: translate3d(calc(var(--reveal-distance) * -1), 0, 0);
+  }
+  26%,
+  74% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(calc(var(--reveal-distance-sm) * -1), 0, 0);
+  }
+}
+
+@keyframes shuttle-view-right {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--reveal-distance), 0, 0);
+  }
+  26%,
+  74% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--reveal-distance-sm), 0, 0);
+  }
+}
+
+@keyframes shuttle-view-scale {
+  0% {
+    opacity: 0;
+    transform: scale3d(var(--reveal-scale-from), var(--reveal-scale-from), 1)
+      translate3d(0, var(--reveal-distance-sm), 0);
+  }
+  26%,
+  74% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1) translate3d(0, 0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale3d(var(--reveal-scale-from), var(--reveal-scale-from), 1)
+      translate3d(0, calc(var(--reveal-distance-sm) * -1), 0);
+  }
+}
+
+/* ==========================================================================
+   2. Bidirectional Viewport Transitions (useScrollReveal)
+      Plays smooth --reveal-duration (700ms) & --reveal-stagger-step (85ms)
+      animations when scrolling DOWN (entering from bottom / exiting top)
+      AND when scrolling UP (entering from top / exiting bottom).
+      Progressive enhancement: elements stay 100% visible if JS is disabled.
+   ========================================================================== */
+html.js-scroll-reveal .reveal-up,
+html.js-scroll-reveal .reveal-down,
+html.js-scroll-reveal .reveal-left,
+html.js-scroll-reveal .reveal-right,
+html.js-scroll-reveal .reveal-scale,
+html.js-scroll-reveal .reveal-stagger > * {
+  opacity: 0;
+  transition-property: opacity, transform !important;
+  transition-duration: var(--reveal-duration) !important;
+  transition-timing-function: var(--reveal-ease) !important;
+}
+
+/* Default off-screen state (below the viewport — ready to animate IN when scrolling DOWN,
+   and animate OUT downward when scrolling UP) */
+html.js-scroll-reveal .reveal-up,
+html.js-scroll-reveal .reveal-stagger > * {
+  transform: translate3d(0, var(--reveal-distance), 0);
+}
+
+/* Above-viewport state (scrolled past top — ready to animate IN from top when scrolling UP,
+   and animate OUT upward when scrolling DOWN) */
+html.js-scroll-reveal .reveal-up.is-above-view,
+html.js-scroll-reveal .reveal-stagger > *.is-above-view {
+  transform: translate3d(0, calc(var(--reveal-distance) * -0.85), 0);
+}
+
+html.js-scroll-reveal .reveal-down {
+  transform: translate3d(0, calc(var(--reveal-distance) * -1), 0);
+}
+
+html.js-scroll-reveal .reveal-down.is-above-view {
+  transform: translate3d(0, var(--reveal-distance-sm), 0);
+}
+
+html.js-scroll-reveal .reveal-left {
+  transform: translate3d(calc(var(--reveal-distance) * -1), 0, 0);
+}
+
+html.js-scroll-reveal .reveal-left.is-above-view {
+  transform: translate3d(calc(var(--reveal-distance) * -1), calc(var(--reveal-distance-sm) * -0.6), 0);
+}
+
+html.js-scroll-reveal .reveal-right {
+  transform: translate3d(var(--reveal-distance), 0, 0);
+}
+
+html.js-scroll-reveal .reveal-right.is-above-view {
+  transform: translate3d(var(--reveal-distance), calc(var(--reveal-distance-sm) * -0.6), 0);
+}
+
+html.js-scroll-reveal .reveal-scale {
+  transform: scale3d(var(--reveal-scale-from), var(--reveal-scale-from), 1)
+    translate3d(0, var(--reveal-distance-sm), 0);
+}
+
+html.js-scroll-reveal .reveal-scale.is-above-view {
+  transform: scale3d(var(--reveal-scale-from), var(--reveal-scale-from), 1)
+    translate3d(0, calc(var(--reveal-distance-sm) * -1), 0);
+}
+
+html.js-scroll-reveal .reveal-stagger > * {
+  transition-delay: calc(var(--stagger-index, 0) * var(--reveal-stagger-step)) !important;
+}
+
+/* Active in-view state */
+html.js-scroll-reveal .reveal-up.is-in-view,
+html.js-scroll-reveal .reveal-down.is-in-view,
+html.js-scroll-reveal .reveal-left.is-in-view,
+html.js-scroll-reveal .reveal-right.is-in-view,
+html.js-scroll-reveal .reveal-scale.is-in-view,
+html.js-scroll-reveal .reveal-stagger > *.is-in-view {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+}
+
+/* ==========================================================================
+   Accessibility: Respect @media (prefers-reduced-motion: reduce)
+   Minimizes distances and durations rather than breaking scroll feedback
+   on Windows machines with OS-level reduced motion enabled.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --reveal-duration: 420ms;
+    --reveal-distance: 22px;
+    --reveal-distance-sm: 14px;
+    --reveal-scale-from: 0.97;
+    --reveal-stagger-step: 55ms;
+  }
+
+  .hero-parallax-bg {
+    animation: none !important;
+    transform: none !important;
+  }
+}

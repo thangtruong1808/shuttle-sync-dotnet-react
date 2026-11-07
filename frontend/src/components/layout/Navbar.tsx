@@ -76,7 +76,7 @@ export function Navbar() {
   }
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${focusRing} ${
+    `inline-flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors lg:min-h-10 ${focusRing} ${
       isActive ? "bg-accent/15 text-accent-text" : "text-fg-muted hover:bg-fg/5 hover:text-fg"
     }`;
 
@@ -102,8 +102,8 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-canvas/85 backdrop-blur-md supports-[backdrop-filter]:bg-canvas/70">
       <SkipLink />
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4 sm:px-6 lg:px-8">
-        <NavLink to={activeSlug ? `/${activeSlug}` : "/"} className={`flex shrink-0 items-center gap-2.5 rounded-lg ${focusRing}`}>
+      <div className="mx-auto flex h-16 max-w-6xl items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:px-8">
+        <NavLink to={activeSlug ? `/${activeSlug}` : "/"} className={`flex min-h-11 shrink-0 items-center gap-2 rounded-lg sm:gap-2.5 ${focusRing}`}>
           <BrandMark />
           <Wordmark />
         </NavLink>
@@ -122,7 +122,7 @@ export function Navbar() {
           ) : null}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1.5 lg:ml-2">
+        <div className="ml-auto flex items-center gap-1 sm:gap-1.5 lg:ml-2">
           {status === "unknown" ? (
             <div aria-busy="true">
               <span className="sr-only">Checking your session</span>
@@ -142,7 +142,7 @@ export function Navbar() {
           )}
           <button
             type="button"
-            className={`inline-flex h-10 w-10 items-center justify-center rounded-lg text-fg hover:bg-fg/5 lg:hidden ${focusRing}`}
+            className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-fg hover:bg-fg/5 lg:hidden ${focusRing}`}
             aria-expanded={menuOpen}
             aria-controls="mobile-nav"
             onClick={() => setMenuOpen((value) => !value)}
@@ -154,7 +154,7 @@ export function Navbar() {
       </div>
 
       {menuOpen ? (
-        <div id="mobile-nav" className="max-h-[calc(100vh-4rem)] overflow-y-auto border-t border-border bg-surface px-4 pb-5 pt-3 shadow-pop lg:hidden">
+        <div id="mobile-nav" className="max-h-[calc(100dvh-4rem)] overflow-y-auto border-t border-border bg-surface px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 shadow-pop lg:hidden">
           <div className="mb-3 md:hidden">{picker(`${listId}-mobile`)}</div>
           <nav className="flex flex-col gap-1" aria-label="Mobile">
             {links.map((link) => (
@@ -189,7 +189,7 @@ export function Navbar() {
 }
 
 function UserMenu({ user, staff, activeSlug }: { user: NavUser; staff: boolean; activeSlug: string }) {
-  const item = `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-fg hover:bg-fg/5 ${focusRing}`;
+  const item = `flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-fg hover:bg-fg/5 sm:min-h-10 ${focusRing}`;
   return (
     <Dropdown
       label="Account"
@@ -201,11 +201,11 @@ function UserMenu({ user, staff, activeSlug }: { user: NavUser; staff: boolean; 
           aria-controls={id}
           aria-label="Account menu"
           onClick={toggle}
-          className={`flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-2.5 shadow-sm transition-colors hover:bg-surface-2 ${focusRing}`}
+          className={`flex min-h-11 items-center gap-1.5 rounded-full border border-border bg-surface py-1 pl-1.5 pr-2 shadow-sm transition-colors hover:bg-surface-2 sm:gap-2 sm:pr-2.5 ${focusRing}`}
         >
           <Avatar user={user} />
           <span className="hidden rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-accent-text sm:inline">{user.rewardPoints} pts</span>
-          <ChevronDown className={`h-3.5 w-3.5 text-fg-muted transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+          <ChevronDown className={`hidden h-3.5 w-3.5 text-fg-muted transition-transform min-[360px]:block ${open ? "rotate-180" : ""}`} aria-hidden="true" />
         </button>
       )}
     >
@@ -280,7 +280,7 @@ function VenuePicker({
     <div ref={ref} className="relative">
       <button
         type="button"
-        className={`flex w-full items-center gap-2.5 rounded-xl border border-border bg-surface px-3 py-1.5 text-left shadow-sm transition-colors hover:bg-surface-2 ${focusRing}`}
+        className={`flex min-h-11 w-full items-center gap-2.5 rounded-xl border border-border bg-surface px-3 py-1.5 text-left shadow-sm transition-colors hover:bg-surface-2 ${focusRing}`}
         aria-expanded={open}
         aria-controls={listId}
         onClick={onToggle}
@@ -293,7 +293,7 @@ function VenuePicker({
         <ChevronDown className={`h-4 w-4 shrink-0 text-fg-muted transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
       {open ? (
-        <div className="absolute z-40 mt-2 w-full min-w-72 rounded-2xl border border-border bg-surface p-2 shadow-pop">
+        <div className="absolute z-40 mt-2 w-full min-w-0 rounded-2xl border border-border bg-surface p-2 shadow-pop sm:min-w-72">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
             <input
@@ -302,10 +302,10 @@ function VenuePicker({
               onChange={(event) => onQuery(event.target.value)}
               placeholder="Search venues"
               aria-label="Search venues"
-              className="w-full rounded-lg border border-border bg-surface-2 py-2 pl-9 pr-3 text-sm text-fg outline-none placeholder:text-fg-muted focus:border-accent-text focus-visible:ring-2 focus-visible:ring-accent-text/30"
+              className="min-h-11 w-full rounded-lg border border-border bg-surface-2 py-2 pl-9 pr-3 text-base text-fg outline-none placeholder:text-fg-muted focus:border-accent-text focus-visible:ring-2 focus-visible:ring-accent-text/30 sm:text-sm"
             />
           </label>
-          <ul id={listId} role="listbox" aria-label="Venues" className="mt-2 max-h-64 overflow-auto">
+          <ul id={listId} role="listbox" aria-label="Venues" className="mt-2 max-h-[min(16rem,calc(100dvh-10rem))] overflow-auto">
             {venues.length === 0 ? (
               <li className="px-2 py-3 text-sm text-fg-muted">No venues match.</li>
             ) : (
@@ -315,7 +315,7 @@ function VenuePicker({
                     type="button"
                     role="option"
                     aria-selected={venue.name === name}
-                    className={`flex w-full flex-col rounded-lg px-2.5 py-2 text-left hover:bg-fg/5 ${focusRing} ${venue.name === name ? "bg-accent/10" : ""}`}
+                    className={`flex min-h-11 w-full flex-col justify-center rounded-lg px-2.5 py-2 text-left hover:bg-fg/5 ${focusRing} ${venue.name === name ? "bg-accent/10" : ""}`}
                     onClick={() => onChoose(venue.slug)}
                   >
                     <span className="text-sm font-medium text-fg">{venue.name}</span>

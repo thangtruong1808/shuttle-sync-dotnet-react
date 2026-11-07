@@ -254,6 +254,10 @@ export default function CourtGroupPage() {
         window.location.assign(result.checkoutUrl);
         return;
       }
+      if (result.status === "pending") {
+        setFormError("This payment is still with the bank, so Stripe Checkout stays closed until that payment finishes.");
+        return;
+      }
       if (result.status === "confirmed" || result.cashAmount === 0) {
         setOutcome({
           id: result.bookingId,
@@ -288,6 +292,7 @@ export default function CourtGroupPage() {
         window.location.assign(result.checkoutUrl);
         return;
       }
+      setFormError("The payment page did not open. Try again.");
     } catch (reason) {
       setFormError(reason instanceof AuthRequestError ? reason.fieldErrors.form?.[0] ?? "The extra payment could not be started." : "The extra payment could not be started.");
     } finally {
@@ -296,9 +301,9 @@ export default function CourtGroupPage() {
   }
 
   return (
-    <main className="w-full px-4 py-4 sm:px-6 lg:px-8">
-      <Link to={`/${slug}/book`} className="text-sm text-accent-text hover:underline">Back to booking</Link>
-      <h1 className="mt-3 flex items-center gap-2 font-display text-3xl text-fg">
+    <main className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-8 lg:px-8">
+      <Link to={`/${slug}/book`} className="inline-flex min-h-11 items-center text-sm text-accent-text hover:underline">Back to booking</Link>
+      <h1 className="mt-2 flex items-center gap-2 font-display text-3xl text-fg">
         {waiting || paymentProcessing ? <Spinner className="h-7 w-7 shrink-0 text-accent-text" /> : paymentFailed ? null : paidView ? <CircleCheck className="h-8 w-8 shrink-0 text-accent-text" aria-hidden="true" /> : null}
         <span>{waiting ? "Checking your payment" : paymentFailed ? "Payment not confirmed" : paymentProcessing ? "Waiting for bank confirmation" : paidView ? "This week is paid" : "Pay one week"}</span>
       </h1>
@@ -339,12 +344,12 @@ export default function CourtGroupPage() {
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <Link
               to={released.retry ? bookAgainPath(slug, released.retry) : `/${slug}/book`}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg hover:bg-lime-300 sm:w-auto"
             >
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
               Try again
             </Link>
-            <Link to="/profile/bookings" className="inline-flex w-full items-center justify-center rounded-xl border border-fg/15 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg hover:bg-fg/10 sm:w-auto">
+            <Link to="/profile/bookings" className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-fg/15 bg-fg/5 px-4 py-2.5 text-sm font-semibold text-fg hover:bg-fg/10 sm:w-auto">
               My bookings
             </Link>
           </div>
@@ -373,7 +378,7 @@ export default function CourtGroupPage() {
               </p>
               {heldNote ? <p className="mt-2">{heldNote}</p> : null}
               {formError ? <p className="mt-2" role="alert">{formError}</p> : null}
-              <Link to="/profile/bookings" className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
+              <Link to="/profile/bookings" className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent-text hover:underline">
                 <CalendarDays className="h-4 w-4" aria-hidden="true" />
                 View my bookings
               </Link>
@@ -410,7 +415,7 @@ export default function CourtGroupPage() {
                       </div>
                       <button
                         type="button"
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-fg hover:bg-fg/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text"
+                        className="inline-flex min-h-11 shrink-0 self-start items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-fg hover:bg-fg/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text"
                         aria-expanded={open}
                         onClick={() => setOpenWeeks((current) => ({ ...current, [week[0].startTime]: !open }))}
                       >
@@ -482,7 +487,7 @@ export default function CourtGroupPage() {
                   <p className="text-sm text-fg/80">Reward points</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {pointPercents.map((percent) => (
-                      <button key={percent} type="button" disabled={paying || waiting || maxPoints === 0} className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg hover:bg-lime-300" : "border border-fg/15 text-fg hover:bg-fg/10"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
+                      <button key={percent} type="button" disabled={paying || waiting || maxPoints === 0} className={`min-h-11 min-w-11 rounded-full px-3.5 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${points === Math.floor(maxPoints * percent / 100) && maxPoints > 0 ? "bg-accent text-accent-fg hover:bg-lime-300" : "border border-fg/15 text-fg hover:bg-fg/10"}`} onClick={() => setPoints(Math.floor(maxPoints * percent / 100))}>
                         {percent}%
                       </button>
                     ))}

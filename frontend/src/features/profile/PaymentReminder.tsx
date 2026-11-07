@@ -55,7 +55,7 @@ export function PaymentBell() {
       to="/profile/bookings"
       title={label}
       aria-label={label}
-      className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-amber-300/40 text-amber-800 dark:text-amber-100 hover:bg-amber-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text"
+      className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-amber-300/40 text-amber-800 dark:text-amber-100 hover:bg-amber-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-text"
     >
       <Bell className="h-4 w-4" aria-hidden="true" />
       <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] font-bold text-accent-fg">
@@ -135,7 +135,7 @@ function NoticeRow({ item }: { item: UnpaidHold }) {
           <span>{noticeText(item)}</span>
         </p>
         <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-          <Link className="inline-flex items-center justify-center rounded-xl bg-amber-300 px-3 py-2 text-sm font-semibold text-accent-fg hover:bg-amber-200" to={item.kind === "social" && item.socialId ? withSavedPromo(`/${item.venueSlug}/social/${item.socialId}`) : withSavedPromo(`/${item.venueSlug}/book/group/${item.groupId}?bookings=${item.bookingIds.join(",")}`, item.groupId)}>
+          <Link className="inline-flex min-h-11 items-center justify-center rounded-xl bg-amber-300 px-3.5 py-2 text-sm font-semibold text-accent-fg hover:bg-amber-200" to={item.kind === "social" && item.socialId ? withSavedPromo(`/${item.venueSlug}/social/${item.socialId}`) : withSavedPromo(`/${item.venueSlug}/book/group/${item.groupId}?bookings=${item.bookingIds.join(",")}`, item.groupId)}>
             {item.kind === "social" ? "Pay for this social" : item.checkoutStarted ? "Complete payment" : "Pay this week"}
           </Link>
           {item.kind === "social" ? null : confirm && !busy ? (

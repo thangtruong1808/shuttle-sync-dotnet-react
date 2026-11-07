@@ -132,7 +132,7 @@ export function RecommendationsPage() {
           ) : venues.length === 0 ? (
             <Notice message="No venue is available for your account." />
           ) : (
-            <form className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_10rem_auto] lg:items-end" onSubmit={(event) => { void onWrite(event); }}>
+            <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_10rem_auto] lg:items-end" onSubmit={(event) => { void onWrite(event); }}>
               <Field label="Venue">
                 <select className={control} value={venueId} disabled={writing} onChange={(event) => setVenueId(event.target.value)}>
                   {venues.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -149,7 +149,7 @@ export function RecommendationsPage() {
                 <input className={control} type="number" min={1} max={maxPoints} step={1} value={points} disabled={writing} onChange={(event) => setPoints(event.target.value)} required />
                 <span className="mt-1 block text-xs text-fg/60">{Number.isFinite(dollar) ? `$${dollar.toFixed(2)} · max $10` : "Enter a point amount"}</span>
               </Field>
-              <Button type="submit" loading={writing} disabled={!venueId || !userId || playersLoading || !Number.isInteger(pointValue) || pointValue < 1 || pointValue > maxPoints}>Write recommendation</Button>
+              <Button type="submit" className="w-full sm:col-span-2 lg:col-span-1 lg:w-auto" loading={writing} disabled={!venueId || !userId || playersLoading || !Number.isInteger(pointValue) || pointValue < 1 || pointValue > maxPoints}>Write recommendation</Button>
             </form>
           )}
         </div>
@@ -160,14 +160,14 @@ export function RecommendationsPage() {
           label: "Player",
           cell: (row) => (
             <div className="min-w-0">
-              <p className="text-fg">{row.displayName?.trim() || row.userEmail}</p>
-              {row.displayName?.trim() ? <p className="text-xs text-fg/55">{row.userEmail}</p> : null}
+              <p className="break-all text-fg">{row.displayName?.trim() || row.userEmail}</p>
+              {row.displayName?.trim() ? <p className="break-all text-xs text-fg/55">{row.userEmail}</p> : null}
             </div>
           ),
         },
         { label: "Venue", className: "whitespace-nowrap", cell: (row) => row.venueName?.trim() ? <span className="text-fg">{row.venueName}</span> : <span className="text-fg/50">Any venue</span> },
         { label: "Time", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.createdAt, row.timeZone || "UTC") },
-        { label: "Payload", cell: (row) => <span className="text-fg">{payloadRead(row.payload)}</span> },
+        { label: "Payload", cell: (row) => <span className="break-words text-fg">{payloadRead(row.payload)}</span> },
       ]}
     />
   );

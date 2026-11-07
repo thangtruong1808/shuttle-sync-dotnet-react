@@ -152,7 +152,7 @@ export function FriendSpotsSection() {
             aria-selected={tab === item.id}
             aria-busy={loading && pageMove === null && tab === item.id}
             disabled={loading}
-            className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60 ${tab === item.id ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
+            className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60 ${tab === item.id ? "bg-surface text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}
             onClick={() => {
               if (item.id === tab) {
                 return;
@@ -259,7 +259,7 @@ export function FriendSpotsSection() {
                   type="button"
                   aria-expanded={open}
                   aria-controls={`friends-${session.socialId}`}
-                  className="flex w-full items-center justify-between gap-2 border-t border-fg/10 px-4 py-3 text-sm font-medium text-accent-text transition-colors hover:bg-fg/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-text sm:px-5"
+                  className="flex min-h-11 w-full items-center justify-between gap-2 border-t border-fg/10 px-4 py-3 text-sm font-medium text-accent-text transition-colors hover:bg-fg/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-text sm:px-5"
                   onClick={() => toggle(session.socialId)}
                 >
                   <span>{open ? "Hide friends" : `Show ${spots.length === 1 ? "1 friend" : `all ${spots.length} friends`}`}</span>
@@ -283,7 +283,7 @@ export function FriendSpotsSection() {
                               value={draftName}
                               maxLength={80}
                               disabled={savingId === spot.id}
-                              className="mt-1 w-full rounded-2xl border border-fg/15 bg-inset px-3 py-2 text-fg outline-none focus:border-accent-text focus-visible:ring-2 focus-visible:ring-accent-text/30 disabled:opacity-60"
+                              className="mt-1 min-h-11 w-full rounded-2xl border border-fg/15 bg-inset px-3 py-2 text-base text-fg outline-none focus:border-accent-text focus-visible:ring-2 focus-visible:ring-accent-text/30 disabled:opacity-60 sm:text-sm"
                               onChange={(event) => setDraftName(event.target.value)}
                             />
                           </label>

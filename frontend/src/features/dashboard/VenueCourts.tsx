@@ -91,7 +91,7 @@ export function Courts({ venueId }: { venueId: string }) {
             type="file"
             accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
             disabled={busy !== null}
-            className="mt-1 block w-full text-sm text-fg disabled:opacity-60"
+            className="mt-1 block w-full text-sm text-fg file:mr-3 file:min-h-11 file:rounded-lg file:border-0 file:bg-fg/10 file:px-3 file:py-2 file:text-fg disabled:opacity-60"
             onChange={(event) => {
               const file = event.target.files?.[0];
               event.target.value = "";
@@ -261,7 +261,7 @@ function CourtRow({ venueId, court, onChanged }: { venueId: string; court: DashC
           type="file"
           accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
           disabled={busy !== null}
-          className="mt-1 block w-full text-sm text-fg disabled:opacity-60"
+          className="mt-1 block w-full text-sm text-fg file:mr-3 file:min-h-11 file:rounded-lg file:border-0 file:bg-fg/10 file:px-3 file:py-2 file:text-fg disabled:opacity-60"
           onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";

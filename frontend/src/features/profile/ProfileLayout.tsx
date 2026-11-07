@@ -24,7 +24,7 @@ const sections = [
 
 function Tip({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <span className="group/tip relative flex w-full min-w-0">
+    <span className="group/tip relative flex min-w-0 shrink-0 lg:w-full">
       {children}
       <span
         role="tooltip"
@@ -48,7 +48,7 @@ export default function ProfileLayout() {
 
   if (status === "unknown") {
     return (
-      <div className="w-full px-4 py-8 sm:px-6 lg:px-8" aria-busy="true">
+      <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8" aria-busy="true">
         <span className="sr-only">Checking your session</span>
         <Skeleton className="h-40" />
       </div>
@@ -60,15 +60,15 @@ export default function ProfileLayout() {
   }
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-medium ${isActive ? "bg-accent/15 text-accent-text" : "text-fg-muted hover:bg-fg/5 hover:text-fg"} ${open ? "lg:w-full" : "lg:h-12 lg:w-full lg:justify-center lg:px-0"}`;
+    `flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-medium ${isActive ? "bg-accent/15 text-accent-text" : "text-fg-muted hover:bg-fg/5 hover:text-fg"} ${open ? "lg:w-full" : "lg:h-12 lg:w-full lg:justify-center lg:px-0"}`;
 
   return (
-    <div className={`grid w-full min-w-0 gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${open ? "lg:grid-cols-[16rem_minmax(0,1fr)]" : "lg:grid-cols-[4.5rem_minmax(0,1fr)]"}`}>
+    <div className={`mx-auto grid w-full max-w-7xl min-w-0 gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${open ? "lg:grid-cols-[16rem_minmax(0,1fr)]" : "lg:grid-cols-[4.5rem_minmax(0,1fr)]"}`}>
       <aside className={`min-w-0 rounded-2xl border border-border bg-surface shadow-card dark:shadow-none lg:min-h-[32rem] ${open ? "p-3 lg:p-4" : "p-3"}`}>
         <button
           type="button"
           title={open ? "Close sidebar" : "Open sidebar"}
-          className={`hidden items-center justify-center rounded-xl border border-border text-fg hover:bg-fg/5 lg:flex ${open ? "h-10 w-10" : "h-12 w-full"}`}
+          className={`hidden items-center justify-center rounded-xl border border-border text-fg hover:bg-fg/5 lg:flex ${open ? "h-11 w-11" : "h-12 w-full"}`}
           aria-expanded={open}
           aria-controls="profile-nav"
           onClick={() => setOpen((value) => !value)}
@@ -110,7 +110,7 @@ export default function ProfileLayout() {
             title="Log out"
             disabled={leaving}
             aria-busy={leaving}
-            className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2.5 text-left text-sm font-medium text-rose-700 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-200 ${open ? "lg:w-full" : "lg:h-12 lg:w-full lg:justify-center lg:px-0"}`}
+            className={`flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2.5 text-left text-sm font-medium text-rose-700 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-200 ${open ? "lg:w-full" : "lg:h-12 lg:w-full lg:justify-center lg:px-0"}`}
             onClick={() => {
               setLeaving(true);
               void dispatch(logout())

@@ -12,6 +12,7 @@ import { openSocials, rememberVenueSlug, venueAvailability, venuePromotions, ven
 import { HomeCourts } from "./HomeCourts";
 import { HomeHero } from "./HomeHero";
 import { SupportChat } from "./SupportChat";
+import { useScrollReveal } from "../../hooks/useScrollReveal";
 
 function openHours(availability: Availability | null): string {
   if (!availability) return "—";
@@ -39,6 +40,7 @@ export default function HomePage() {
   const [rates, setRates] = useState<PublicRate[] | null>(null);
   const [ratesLoading, setRatesLoading] = useState(true);
   const now = useNow();
+  useScrollReveal([slug, availability, rates, promotions, venues?.length]);
 
   useEffect(() => {
     if (!slug) return;
@@ -132,6 +134,7 @@ export default function HomePage() {
 
   return (
     <main>
+      <div className="scroll-progress-bar" aria-hidden="true" />
       <PageSection>
         {venue ? (
           <HomeHero
@@ -153,7 +156,7 @@ export default function HomePage() {
           <Skeleton className="h-80 rounded-3xl" />
         )}
 
-        <Card className="mt-8" title="Find a court" description="Choose a day to find a free court. A court with no bookings is available. Booked times are shown on that court.">
+        <Card className="mt-8 reveal-up" title="Find a court" description="Choose a day to find a free court. A court with no bookings is available. Booked times are shown on that court.">
           <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onSubmit={onFilter}>
             <Field label="Date" required>
               {({ id }) => (
@@ -202,8 +205,8 @@ export default function HomePage() {
 
         {others.length > 0 ? (
           <section className="mt-10" aria-labelledby="other-venues">
-            <h2 id="other-venues" className="font-display text-2xl text-fg">Other venues</h2>
-            <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <h2 id="other-venues" className="font-display text-2xl text-fg reveal-right">Other venues</h2>
+            <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 reveal-stagger">
               {others.map((item) => (
                 <li key={item.id}>
                   <Link to={`/${item.slug}`} className="block rounded-2xl border border-border bg-surface p-4 shadow-card hover:border-accent-text/40 dark:shadow-none">

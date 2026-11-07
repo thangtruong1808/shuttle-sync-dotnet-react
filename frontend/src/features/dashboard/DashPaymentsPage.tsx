@@ -22,11 +22,11 @@ export function PaymentsPage() {
       </div>
       {tab !== "webhooks" ? (
         <form className="mt-4 flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); setFiltering(true); setApplied(venueId); setTick((value) => value + 1); setNote("Filters applied."); }}>
-          <select className={`${control} max-w-xs`} value={venueId} disabled={filtering} onChange={(event) => setVenueId(event.target.value)}>
+          <select className={`${control} sm:max-w-xs`} value={venueId} disabled={filtering} onChange={(event) => setVenueId(event.target.value)}>
             <option value="">All venues</option>
             {venues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
           </select>
-          <Button type="submit" variant="secondary" loading={filtering}>Filter</Button>
+          <Button type="submit" variant="secondary" className="w-full sm:w-auto" loading={filtering}>Filter</Button>
           <Success message={note} />
         </form>
       ) : null}
@@ -47,7 +47,7 @@ function MoneyList({ title, refreshKey, load, locked = false, onSettled }: { tit
       onSettled={onSettled}
       rowKey={(row) => row.id}
       columns={[
-        { label: "Player", cell: (row) => <span className="text-fg">{row.userEmail || "—"}</span> },
+        { label: "Player", cell: (row) => <span className="break-all text-fg">{row.userEmail || "—"}</span> },
         { label: "Venue", cell: (row) => row.venueName },
         { label: "Type", cell: (row) => <Tag value={row.kind || "Court"} /> },
         { label: "Court", cell: (row) => <CourtNames names={row.courtName} /> },
@@ -105,7 +105,7 @@ function WebhookList() {
       load={(page, pageSize) => listWebhooks(page, pageSize)}
       rowKey={(row: DashWebhook) => row.id}
       columns={[
-        { label: "Event", cell: (row) => <span className="text-fg">{row.eventType}</span> },
+        { label: "Event", cell: (row) => <span className="break-all text-fg">{row.eventType}</span> },
         { label: "Status", cell: (row) => <Tag value={row.status} /> },
         { label: "Received", className: "whitespace-nowrap", cell: (row) => formatVenueDateTime(row.createdAt, "UTC") },
       ]}

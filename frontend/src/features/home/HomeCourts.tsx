@@ -36,7 +36,7 @@ export function HomeCourts({
 }) {
   return (
     <section className="mt-10" aria-labelledby="available-courts">
-      <div className="leading-snug">
+      <div className="leading-snug reveal-left">
         <h2 id="available-courts" className="inline align-baseline font-display text-2xl text-fg">Courts</h2>
         {!loading && !error && availability
           ? (availability.incentives ?? []).map((incentive) => (
@@ -56,7 +56,7 @@ export function HomeCourts({
         <div className="mt-4"><ErrorState message={error} loading={retrying} onRetry={onRetry} /></div>
       ) : availability && availability.courts.length > 0 ? (
         <>
-          <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 reveal-stagger">
             {availability.courts.map((court) => {
               const bookings = upcomingBookings(court.bookings, now);
               return (
@@ -71,7 +71,7 @@ export function HomeCourts({
                     showPrice={false}
                   >
                     {bookings.length === 0 ? null : (
-                      <ul className="mt-3 grid grid-cols-2 gap-2">
+                      <ul className="mt-3 grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:grid-cols-1 xl:grid-cols-2">
                         {bookings.map((booking) => (
                           <li key={booking.id} className={`min-w-0 rounded-2xl px-3 py-2 ${booking.status === "pending" ? "border border-amber-300/40 bg-amber-400/10" : "border border-border bg-surface-2"}`}>
                             <BookedTime start={booking.startTime} end={booking.endTime} timeZone={availability.venue.timeZone} unpaid={booking.status === "pending"} />
@@ -88,7 +88,7 @@ export function HomeCourts({
           </ul>
         </>
       ) : (
-        <div className="mt-4">
+        <div className="mt-4 reveal-scale">
           <EmptyState
             title="No courts on this day"
             body="Try the next day or look at another venue."

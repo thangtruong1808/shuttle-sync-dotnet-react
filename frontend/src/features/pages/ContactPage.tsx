@@ -34,17 +34,36 @@ export function ContactPage() {
               const map = mapHref(venue);
               const address = [venue.address, venue.suburb, venue.state, venue.postcode].filter(Boolean).join(", ");
               return (
-                <li key={venue.id} className="rounded-2xl border border-border bg-surface p-5 shadow-card dark:shadow-none">
-                  <h2 className="font-display text-xl font-semibold text-fg">{venue.name}</h2>
-                  <ul className="mt-4 space-y-2.5 text-sm text-fg-muted">
-                    {address ? <li className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{address}</li> : null}
-                    {venue.phone ? <li><a className="inline-flex items-center gap-2 hover:text-fg" href={`tel:${venue.phone}`}><Phone className="h-4 w-4" aria-hidden="true" />{venue.phone}</a></li> : null}
-                    {venue.email ? <li><a className="inline-flex items-center gap-2 hover:text-fg" href={`mailto:${venue.email}`}><Mail className="h-4 w-4" aria-hidden="true" />{venue.email}</a></li> : null}
+                <li key={venue.id} className="min-w-0 rounded-2xl border border-border bg-surface p-4 shadow-card dark:shadow-none sm:p-5">
+                  <h2 className="break-words font-display text-xl font-semibold text-fg">{venue.name}</h2>
+                  <ul className="mt-3 space-y-1 text-sm text-fg-muted sm:mt-4">
+                    {address ? (
+                      <li className="flex items-start gap-2 py-1.5">
+                        <MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                        <span className="min-w-0 break-words">{address}</span>
+                      </li>
+                    ) : null}
+                    {venue.phone ? (
+                      <li>
+                        <a className="inline-flex min-h-11 items-center gap-2 py-1 hover:text-fg" href={`tel:${venue.phone}`}>
+                          <Phone className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span className="break-words">{venue.phone}</span>
+                        </a>
+                      </li>
+                    ) : null}
+                    {venue.email ? (
+                      <li>
+                        <a className="inline-flex min-h-11 max-w-full items-center gap-2 py-1 hover:text-fg" href={`mailto:${venue.email}`}>
+                          <Mail className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span className="min-w-0 break-all">{venue.email}</span>
+                        </a>
+                      </li>
+                    ) : null}
                     {map ? (
                       <li>
-                        <a className="inline-flex items-center gap-1.5 font-medium text-accent-text hover:underline" href={map} target="_blank" rel="noreferrer">
+                        <a className="inline-flex min-h-11 items-center gap-1.5 py-1 font-medium text-accent-text hover:underline" href={map} target="_blank" rel="noreferrer">
                           Open map
-                          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                          <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                         </a>
                       </li>
                     ) : null}
